@@ -68,6 +68,39 @@ describe("validateRequest", () => {
     expect(issues.some((i) => i.code === "INPUT_INVALID_ITEM")).toBe(true);
   });
 
+  it("should detect message items without content array", () => {
+    const issues = validateRequest(
+      validRequest({
+        input: [{ type: "message", role: "user" } as unknown as AIRequest["input"][number]],
+      }),
+    );
+    expect(issues.some((i) => i.code === "MESSAGE_CONTENT_INVALID")).toBe(true);
+  });
+
+  it("should detect unknown input item types", () => {
+    const issues = validateRequest(
+      validRequest({
+        input: [{ type: "mystery" } as unknown as AIRequest["input"][number]],
+      }),
+    );
+    expect(issues.some((i) => i.code === "INPUT_ITEM_UNKNOWN_TYPE")).toBe(true);
+  });
+
+  it("should detect invalid content blocks", () => {
+    const issues = validateRequest(
+      validRequest({
+        input: [
+          {
+            type: "message",
+            role: "user",
+            content: [{ type: "image" } as unknown as AIRequest["input"][number]["content"][number]],
+          },
+        ],
+      }),
+    );
+    expect(issues.some((i) => i.code === "CONTENT_BLOCK_INVALID")).toBe(true);
+  });
+
   it("should detect temperature out of range (negative)", () => {
     const issues = validateRequest(validRequest({ temperature: -1 }));
     expect(issues.some((i) => i.code === "TEMPERATURE_OUT_OF_RANGE")).toBe(true);
@@ -105,6 +138,27 @@ describe("validateRequest", () => {
 
   it("should accept valid maxOutputTokens", () => {
     expect(validateRequest(validRequest({ maxOutputTokens: 100 }))).toHaveLength(0);
+  });
+
+  it("should detect duplicate tool names", () => {
+    const issues = validateRequest(
+      validRequest({
+        tools: [
+          { name: "weather", inputSchema: {} },
+          { name: "weather", inputSchema: {} },
+        ],
+      }),
+    );
+    expect(issues.some((i) => i.code === "TOOLS_DUPLICATE_NAME")).toBe(true);
+  });
+
+  it("should detect invalid tool schema", () => {
+    const issues = validateRequest(
+      validRequest({
+        tools: [{ name: "weather", inputSchema: null as unknown as Record<string, unknown> }],
+      }),
+    );
+    expect(issues.some((i) => i.code === "TOOL_INPUT_SCHEMA_INVALID")).toBe(true);
   });
 
   it("should detect toolChoice references unknown tool", () => {

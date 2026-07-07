@@ -9,6 +9,7 @@
  */
 
 import { AdapterBase } from "../helpers/adapter-base.js";
+import { AIRequestError } from "../core/errors.js";
 import {
   textBlock,
   messageItem,
@@ -107,10 +108,16 @@ const REASONING_FIELDS: readonly ReasoningFieldName[] = ["reasoning_content", "r
 
 // ── SSE 解析 ──────────────────────────────────────────────────
 
+/**
+ * Chat Completions 的简化 SSE 解析器。
+ *
+ * 约束：
+ * - 每条 `data:` 行必须已经是一个完整 JSON 对象
+ * - 允许传输层把单行拆成多个 chunk，但不接受 provider 把一个 JSON event 改写成多条 `data:` 行
+ */
 function parseChatSSE(buffer: string): { chunks: ChatChunk[]; rest: string } {
   const chunks: ChatChunk[] = [];
   let rest = buffer;
-  let lastProcessedIndex = 0;
 
   while (true) {
     const lineEnd = rest.indexOf("\n");
@@ -121,7 +128,6 @@ function parseChatSSE(buffer: string): { chunks: ChatChunk[]; rest: string } {
 
     const line = rest.slice(0, lineEnd).trim();
     rest = rest.slice(lineEnd + 1);
-    lastProcessedIndex += lineEnd + 1;
 
     if (!line.startsWith("data: ")) continue;
 
@@ -131,11 +137,33 @@ function parseChatSSE(buffer: string): { chunks: ChatChunk[]; rest: string } {
     try {
       chunks.push(JSON.parse(data));
     } catch {
-      // skip malformed
+      // Chat Completions adapter only accepts one complete JSON object per data: line.
+      // Multi-line JSON events are treated as malformed instead of being reassembled.
     }
   }
 
   return { chunks, rest };
+}
+
+function ensureTextCompatibleBlocks(
+  blocks: import("../index.js").ContentBlock[],
+  field: string,
+): import("../index.js").ContentBlock[] {
+  for (let i = 0; i < blocks.length; i++) {
+    const block = blocks[i];
+    if (block.type !== "text" && block.type !== "json") {
+      throw new AIRequestError(
+        `chat-completions does not support ${field}[${i}] of type "${block.type}"; only text/json blocks are supported`,
+        "UNSUPPORTED_CONTENT_BLOCK",
+      );
+    }
+  }
+
+  return blocks;
+}
+
+function contentBlocksToChatText(blocks: import("../index.js").ContentBlock[], field: string): string {
+  return contentBlocksToText(ensureTextCompatibleBlocks(blocks, field));
 }
 
 function extractReasoningText(value: unknown): string {
@@ -247,7 +275,11 @@ export class ChatCompletionsAdapter extends AdapterBase {
 
     // handle instructions → system message
     if (request.instructions) {
-      messages.push({ role: "system", content: instructionsToText(request.instructions) });
+      const content =
+        typeof request.instructions === "string"
+          ? request.instructions
+          : contentBlocksToChatText(request.instructions, "instructions");
+      messages.push({ role: "system", content });
     }
 
     for (const item of request.input) {
@@ -257,11 +289,11 @@ export class ChatCompletionsAdapter extends AdapterBase {
             item.role === "developer"
               ? "system"
               : item.role === "system"
-                ? "system"
+              ? "system"
                 : item.role === "user"
                   ? "user"
                   : "assistant";
-          const text = contentBlocksToText(item.content);
+          const text = contentBlocksToChatText(item.content, `input message (${item.role}) content`);
           messages.push({ role, content: text || null });
           break;
         }
@@ -287,14 +319,17 @@ export class ChatCompletionsAdapter extends AdapterBase {
             role: "tool",
             tool_call_id: item.callId,
             name: item.toolName,
-            content: contentBlocksToText(item.content),
+            content: contentBlocksToChatText(item.content, `tool_result ${item.callId} content`),
           });
           break;
         }
         case "reasoning": {
           // chat.completions doesn't support reasoning items in input
           // Convert to a text message for best-effort
-          messages.push({ role: "assistant", content: contentBlocksToText(item.content) });
+          messages.push({
+            role: "assistant",
+            content: contentBlocksToChatText(item.content, "reasoning content"),
+          });
           break;
         }
         case "opaque": {
@@ -462,6 +497,8 @@ export class ChatCompletionsAdapter extends AdapterBase {
           }
 
           for (const choice of chunk.choices) {
+            if (choice.index !== 0) continue;
+
             const delta = choice.delta;
             const finishReason = choice.finish_reason;
             const reasoningDeltas = extractReasoningDeltas(delta);

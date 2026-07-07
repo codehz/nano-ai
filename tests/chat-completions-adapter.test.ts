@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect } from "bun:test";
-import { ChatCompletionsAdapter, collectStream } from "../src/index.js";
+import { AIRequestError, ChatCompletionsAdapter, collectStream } from "../src/index.js";
 
 import type { NormalizedRequest, FetchFn } from "../src/index.js";
 
@@ -54,7 +54,7 @@ describe("ChatCompletionsAdapter - text streaming", () => {
 
     const adapter = new ChatCompletionsAdapter({
       apiKey: "test-key",
-      fetch: mockFetch(sseResponse(...chunks)),
+      fetch: async () => sseResponse(...chunks),
     });
 
     const result = await collectStream(adapter.stream(makeRequest()));
@@ -74,7 +74,7 @@ describe("ChatCompletionsAdapter - text streaming", () => {
 
     const adapter = new ChatCompletionsAdapter({
       apiKey: "test-key",
-      fetch: mockFetch(sseResponse(...chunks)),
+      fetch: async () => sseResponse(...chunks),
     });
 
     const result = await collectStream(adapter.stream(makeRequest()));
@@ -95,7 +95,7 @@ describe("ChatCompletionsAdapter - text streaming", () => {
 
     const adapter = new ChatCompletionsAdapter({
       apiKey: "test-key",
-      fetch: mockFetch(sseResponse(...chunks)),
+      fetch: async () => sseResponse(...chunks),
     });
 
     const result = await collectStream(adapter.stream(makeRequest()));
@@ -119,6 +119,29 @@ describe("ChatCompletionsAdapter - text streaming", () => {
     const result = await collectStream(adapter.stream(makeRequest()));
     expect(result.stopReason).toBe("max_output_tokens");
     expect(result.text).toBe("Long text");
+  });
+
+  it("should ignore non-zero choices instead of mixing their deltas", async () => {
+    const chunks = [
+      'data: {"id":"chatcmpl-multi","choices":[{"index":0,"delta":{"content":"A"},"finish_reason":null},{"index":1,"delta":{"content":"B"},"finish_reason":"stop"}]}\n',
+      'data: {"id":"chatcmpl-multi","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n',
+      "data: [DONE]\n",
+    ];
+
+    const adapter = new ChatCompletionsAdapter({
+      apiKey: "test-key",
+      fetch: async () => sseResponse(...chunks),
+    });
+
+    const eventTypes: string[] = [];
+    for await (const event of adapter.stream(makeRequest())) {
+      eventTypes.push(event.type);
+    }
+
+    expect(eventTypes.filter((type) => type === "response.completed")).toHaveLength(1);
+
+    const result = await collectStream(adapter.stream(makeRequest()));
+    expect(result.text).toBe("A");
   });
 
   it("should extract reasoning_content as reasoning stream and preserve raw replay", async () => {
@@ -353,6 +376,27 @@ describe("ChatCompletionsAdapter - request building", () => {
     const body = captured.current as Record<string, unknown> | null;
     expect(body?.temperature).toBe(0.3);
     expect(body?.max_tokens).toBe(200);
+  });
+
+  it("should reject unsupported image content instead of silently dropping it", async () => {
+    const { fetch } = captureRequest();
+    const adapter = new ChatCompletionsAdapter({ apiKey: "test-key", fetch });
+
+    await expect(
+      collectStream(
+        adapter.stream(
+          makeRequest({
+            input: [
+              {
+                type: "message" as const,
+                role: "user" as const,
+                content: [{ type: "image" as const, imageUrl: "https://example.com/cat.png" }],
+              },
+            ],
+          }),
+        ),
+      ),
+    ).rejects.toBeInstanceOf(AIRequestError);
   });
 
   it("should replace canonical replay with raw assistant turn when opaque replay is present", async () => {
