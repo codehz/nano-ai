@@ -11,6 +11,10 @@ export {
   jsonBlock,
   imageBlock,
   opaqueBlock,
+  blockToText,
+  contentBlocksToText,
+  instructionsToText,
+  extractText,
   messageItem,
   reasoningItem,
   toolCallItem,
@@ -18,6 +22,9 @@ export {
   opaqueItem,
   replayFromOutput,
 } from "./mapping.js";
+
+export { parseSSEEvents } from "./sse-parser.js";
+export type { SSEEvent } from "./sse-parser.js";
 
 export { AdapterBase } from "./adapter-base.js";
 export type { StreamResult } from "./adapter-base.js";

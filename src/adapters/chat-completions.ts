@@ -17,6 +17,8 @@ import {
   opaqueItem,
   replayFromOutput,
   mapStopReason,
+  instructionsToText,
+  contentBlocksToText,
 } from "../helpers/mapping.js";
 
 import type { AdapterCapabilities, NormalizedRequest, AIStreamEvent, EventFactory, OutputItem, Usage, FetchFn } from "../index.js";
@@ -240,11 +242,7 @@ export class ChatCompletionsAdapter extends AdapterBase {
 
     // handle instructions → system message
     if (request.instructions) {
-      const text =
-        typeof request.instructions === "string"
-          ? request.instructions
-          : request.instructions.map((b) => (b.type === "text" ? b.text : "")).join("\n");
-      messages.push({ role: "system", content: text });
+      messages.push({ role: "system", content: instructionsToText(request.instructions) });
     }
 
     for (const item of request.input) {
@@ -258,10 +256,8 @@ export class ChatCompletionsAdapter extends AdapterBase {
                 : item.role === "user"
                   ? "user"
                   : "assistant";
-          const content = item.content
-            .map((b) => (b.type === "text" ? b.text : b.type === "json" ? JSON.stringify(b.json) : ""))
-            .join("\n");
-          messages.push({ role, content: content || null });
+          const text = contentBlocksToText(item.content);
+          messages.push({ role, content: text || null });
           break;
         }
         case "tool_call": {
@@ -280,26 +276,18 @@ export class ChatCompletionsAdapter extends AdapterBase {
           break;
         }
         case "tool_result": {
-          const text = item.content
-            .map((b) => {
-              if (b.type === "text") return b.text;
-              if (b.type === "json") return JSON.stringify(b.json);
-              return "";
-            })
-            .join("\n");
           messages.push({
             role: "tool",
             tool_call_id: item.callId,
             name: item.toolName,
-            content: text,
+            content: contentBlocksToText(item.content),
           });
           break;
         }
         case "reasoning": {
           // chat.completions doesn't support reasoning items in input
           // Convert to a text message for best-effort
-          const text = item.content.map((b) => (b.type === "text" ? b.text : "")).join("\n");
-          messages.push({ role: "assistant", content: text });
+          messages.push({ role: "assistant", content: contentBlocksToText(item.content) });
           break;
         }
         case "opaque": {

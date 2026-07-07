@@ -19,8 +19,14 @@ import {
   opaqueItem,
   replayFromOutput,
   mapStopReason,
+  blockToText,
+  instructionsToText,
+  contentBlocksToText,
 } from "../helpers/mapping.js";
 
+import { parseSSEEvents } from "../helpers/sse-parser.js";
+
+import { CAPABILITY_MATRIX } from "../index.js";
 import type { NormalizedRequest, AIStreamEvent, EventFactory, OutputItem, Usage, FetchFn } from "../index.js";
 
 // ── 类型 ──────────────────────────────────────────────────────
@@ -96,33 +102,7 @@ type MessagesAPIMessageResponse = {
 // ── SSE 解析 ──────────────────────────────────────────────────
 
 function parseMessagesSSE(chunk: string): MessagesSSEEvent[] {
-  const events: MessagesSSEEvent[] = [];
-  let eventType = "";
-  let dataLines: string[] = [];
-
-  for (const line of chunk.split("\n")) {
-    if (line.startsWith("event: ")) {
-      eventType = line.slice(7).trim();
-    } else if (line.startsWith("data: ")) {
-      dataLines.push(line.slice(6));
-    } else if (line === "" && eventType && dataLines.length > 0) {
-      const dataStr = dataLines.join("\n");
-      if (dataStr === "[DONE]") {
-        eventType = "";
-        dataLines = [];
-        continue;
-      }
-      try {
-        const data = JSON.parse(dataStr);
-        events.push({ type: eventType as MessagesSSEEvent["type"], data });
-      } catch {
-        // skip malformed JSON
-      }
-      eventType = "";
-      dataLines = [];
-    }
-  }
-  return events;
+  return parseSSEEvents(chunk) as MessagesSSEEvent[];
 }
 
 // ── Content block 映射 ─────────────────────────────────────────
@@ -134,28 +114,11 @@ function canonicalToMessagesBlock(b: import("../index.js").ContentBlock): Messag
   return { type: "text", text: "" };
 }
 
-function blockToText(b: import("../index.js").ContentBlock): string {
-  if (b.type === "text") return b.text;
-  if (b.type === "json") return JSON.stringify(b.json);
-  return "";
-}
-
 // ── Adapter ───────────────────────────────────────────────────
 
 export class MessagesAdapter extends AdapterBase {
   readonly kind = "messages" as const;
-  readonly capabilities = {
-    nativeStreaming: true,
-    messageStreaming: true,
-    reasoningStreaming: false, // 条件支持，由 adapter 在运行时判断
-    toolCallStreaming: true,
-    hiddenReasoningReplay: "partial" as const,
-    replayFidelity: "medium" as const,
-    tools: true,
-    usage: "full" as const,
-    billing: "lookup" as const,
-    providerMetadata: true,
-  };
+  readonly capabilities = CAPABILITY_MATRIX.messages;
 
   private apiKey: string;
   private apiVersion: string;
@@ -184,10 +147,7 @@ export class MessagesAdapter extends AdapterBase {
 
     // 处理 instructions → system prompt
     if (request.instructions) {
-      systemPrompt =
-        typeof request.instructions === "string"
-          ? request.instructions
-          : request.instructions.map((b) => (b.type === "text" ? b.text : "")).join("\n");
+      systemPrompt = instructionsToText(request.instructions);
     }
 
     // 处理 input items
@@ -197,7 +157,7 @@ export class MessagesAdapter extends AdapterBase {
           if (item.role === "system" || item.role === "developer") {
             // Anthropic 不支持 system/developer role 在 messages 中
             // 合并到 system prompt
-            const text = item.content.map((b) => (b.type === "text" ? b.text : "")).join("\n");
+            const text = contentBlocksToText(item.content);
             systemPrompt = systemPrompt ? `${systemPrompt}\n${text}` : text;
             break;
           }
@@ -240,7 +200,7 @@ export class MessagesAdapter extends AdapterBase {
         }
         case "reasoning": {
           // 将 reasoning item 转为 thinking block 在 assistant message 中
-          const text = item.content.map((b) => (b.type === "text" ? b.text : "")).join("\n");
+          const text = contentBlocksToText(item.content);
           const block: MessagesAPIContentBlock = { type: "thinking", thinking: text };
           const lastMsg = messages[messages.length - 1];
           if (lastMsg && lastMsg.role === "assistant" && typeof lastMsg.content !== "string") {

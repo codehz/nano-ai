@@ -22,12 +22,11 @@ import type {
   StopReason,
   Usage,
   BillingInfo,
-  MessageItem,
-  ContentBlock,
   ToolCallItem,
 } from "../types/index.js";
 import { createEventFactory } from "../core/event-factory.js";
 import type { EventFactory } from "../core/event-factory.js";
+import { extractText } from "./mapping.js";
 
 // ── Adapter 解析中间结果 ──────────────────────────────────────
 
@@ -126,11 +125,6 @@ export abstract class AdapterBase implements BackendAdapter {
 
   /** 从 output items 中提取文本内容。 */
   protected extractText(output: OutputItem[]): string {
-    return output
-      .filter((item): item is MessageItem => item.type === "message")
-      .flatMap((m) => m.content)
-      .filter((b): b is ContentBlock & { type: "text" } => b.type === "text")
-      .map((b) => b.text)
-      .join("");
+    return extractText(output);
   }
 }
