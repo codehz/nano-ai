@@ -209,6 +209,42 @@ v1 实现目标如下：
 - 默认值合并和请求归一化行为稳定
 - 非法请求在进入 adapter 前即报错
 
+#### Phase 2 实施结果 ✅
+
+**完成状态：** 已完成 (2026-07-07)
+
+**关键修改文件：**
+
+| 操作 | 文件 |
+|------|------|
+| 新建 | `src/core/errors.ts` — `AIRequestError` 错误类型 |
+| 新建 | `src/core/validation.ts` — `validateRequest()` + `assertValidRequest()` |
+| 新建 | `src/core/normalize.ts` — `normalizeRequest()` 归一化实现 |
+| 修改 | `src/core/client.ts` — `createAIClient()` 完整实现 |
+| 修改 | `src/core/index.ts` — 导出新模块 |
+| 新建 | `tests/core.test.ts` — 31 个核心单元测试 |
+
+**验证结果：**
+
+- `bun run typecheck` — 通过（无错误）
+- `bun run test` — 通过（62 tests, 62 pass, 89 expect calls）
+
+**验收标准对照：**
+
+1. ✅ 调用方可以创建 client 并触发 adapter — `createAIClient()` 返回 `AIClient`，`stream()` 同步调用 `adapter.stream(normalized)`
+2. ✅ 默认值合并和请求归一化行为稳定 — `defaults` 浅合并，`include` 三级合并（默认值 → defaults → 请求），`requestId` 由 `crypto.randomUUID()` 生成
+3. ✅ 非法请求在进入 adapter 前即报错 — `normalizeRequest` 内部调用 `assertValidRequest`，校验失败同步抛 `AIRequestError`
+
+**校验覆盖的非法场景：**
+
+- `input` 为空数组或未定义 → `INPUT_EMPTY`
+- `input` 元素为非法值 → `INPUT_INVALID_ITEM`
+- `temperature` 为 NaN → `TEMPERATURE_NOT_NUMBER`
+- `temperature < 0` 或 `> 2` → `TEMPERATURE_OUT_OF_RANGE`
+- `maxOutputTokens` 非整数或小于 1 → `MAX_OUTPUT_TOKENS_INVALID`
+- `toolChoice: { type: "tool", name }` 但 `tools` 未定义 → `TOOL_CHOICE_NO_TOOLS`
+- `toolChoice` 指定的 tool name 不在 `tools` 中 → `TOOL_CHOICE_UNKNOWN_TOOL`
+
 ### Phase 3: 事件工具与流聚合器
 
 目标：建立统一事件生产和统一结果聚合能力。
