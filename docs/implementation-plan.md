@@ -691,6 +691,49 @@ v1 实现目标如下：
 - 能 canonical 化的字段进入统一结构
 - 不能 canonical 化的字段保留 raw 出口
 
+#### Phase 9 实施结果 ✅
+
+**完成状态：** 已完成 (2026-07-07)
+
+**关键修改文件：**
+
+| 操作 | 文件 |
+|------|------|
+| 新建 | `src/helpers/auxiliary-collector.ts` — `AuxiliaryCollector` 类 |
+| 修改 | `src/helpers/index.ts` — 导出 `AuxiliaryCollector` |
+| 新建 | `tests/auxiliary-collector.test.ts` — 18 个测试 |
+
+**验证结果：**
+
+- `bun run typecheck` — 通过（无错误）
+- `bun run test` — 通过（188 tests, 188 pass, 443 expect calls）
+
+**验收标准对照：**
+
+1. ✅ 主生成链路不被辅助信息采集阻断 — `tryLookup` 失败只记 warning，不抛错；timeout 有界保护
+2. ✅ 能 canonical 化的字段进入统一结构 — `usage` / `billing` 累加到 canonical 类型中
+3. ✅ 不能 canonical 化的字段保留 raw 出口 — `providerUsage` / `providerBilling` / `providerMetadata` 保留原始数据
+
+**AuxiliaryCollector API：**
+
+| 方法 | 用途 |
+|---|---|
+| `recordUsage(usage, source, raw?)` | 记录 usage，标明来源和原始 payload |
+| `recordBilling(billing, source, raw?)` | 记录 billing，标明来源和原始 payload |
+| `recordMetadata(metadata)` | 记录 provider 特有元数据 |
+| `recordWarning(message)` | 记录 warning |
+| `tryLookup(fn, timeoutMs?)` | 一次有界 lookup（最多一次，超时保护） |
+| `build()` | 构建最终 `{ usage, billing, auxiliary, warnings }` |
+
+**Lookup 保护机制：**
+
+| 场景 | 行为 |
+|------|------|
+| 多次调用 `tryLookup` | 仅第一次执行，后续忽略 |
+| lookup 抛错 | 记录 warning，不传播异常 |
+| lookup 超时 | `withTimeout` 在指定 ms 后 reject，记 warning |
+| pre-lookup 数据 | lookup 失败时 pre-lookup 数据不受影响 |
+
 ### Phase 10: 错误模型与中断语义
 
 目标：把失败、降级、断流三类情况明确区分。
