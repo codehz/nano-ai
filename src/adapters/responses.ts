@@ -10,7 +10,7 @@
  */
 
 import { AdapterBase } from "../helpers/adapter-base.js";
-import { AIRequestError } from "../core/errors.js";
+import { AIRequestError, WarningCode } from "../core/errors.js";
 import {
   textBlock,
   messageItem,
@@ -44,6 +44,7 @@ type ResponsesAPIRequest = {
   instructions?: string;
   tools?: ResponsesTool[];
   tool_choice?: "auto" | "none" | { type: "function"; name: string };
+  metadata?: Record<string, string>;
   temperature?: number;
   max_output_tokens?: number;
   stream: true;
@@ -155,9 +156,9 @@ type ResponsesAPIOutputItem = {
 
 // ── SSE 解析 ──────────────────────────────────────────────────
 
-function parseSSE(chunk: string): { events: ResponsesSSEEvent[]; rest: string } {
+function parseSSE(chunk: string): { events: ResponsesSSEEvent[]; rest: string; malformedEvents: number } {
   const result = parseSSEEvents(chunk);
-  return { events: result.events as ResponsesSSEEvent[], rest: result.rest };
+  return { events: result.events as ResponsesSSEEvent[], rest: result.rest, malformedEvents: result.malformedEvents };
 }
 
 function isReplayCanonicalInput(item: ResponsesInputItem): boolean {
@@ -308,6 +309,7 @@ export class ResponsesAdapter extends AdapterBase {
 
     if (request.temperature !== undefined) body.temperature = request.temperature;
     if (request.maxOutputTokens !== undefined) body.max_output_tokens = request.maxOutputTokens;
+    if (request.metadata) body.metadata = request.metadata;
 
     return body;
   }
@@ -350,8 +352,12 @@ export class ResponsesAdapter extends AdapterBase {
         if (done) break;
 
         buffer += decoder.decode(value, { stream: true });
-        const { events, rest } = parseSSE(buffer);
+        const { events, rest, malformedEvents } = parseSSE(buffer);
         buffer = rest;
+
+        if (malformedEvents > 0) {
+          yield factory.responseWarning(`Skipped ${malformedEvents} malformed Responses SSE event(s)`, "STREAM_ERROR");
+        }
 
         for (const sseEvent of events) {
           if (sseEvent.type === "error") {
@@ -427,6 +433,10 @@ export class ResponsesAdapter extends AdapterBase {
       reader.releaseLock();
     }
 
+    if (buffer.trim().length > 0) {
+      yield factory.responseWarning("Stream ended with an incomplete Responses SSE frame", "STREAM_ERROR");
+    }
+
     // 解析完成响应中的 usage 和 replay
     let usage: Usage | undefined;
     let rawResponseId: string | undefined;
@@ -452,6 +462,10 @@ export class ResponsesAdapter extends AdapterBase {
 
     // 从 completedResponse 推断 stop reason
     const stopReason = completedResponse ? this.inferStopReason(completedResponse) : undefined;
+
+    if (request.include?.billing !== "off") {
+      yield factory.responseWarning("Billing information was not provided by the provider", WarningCode.BILLING_MISSING);
+    }
 
     yield factory.responseCompleted(
       this.buildResponse(request, { output, replay, stopReason, usage, rawResponseId }, factory),

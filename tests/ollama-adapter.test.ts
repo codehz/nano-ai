@@ -297,6 +297,20 @@ describe("OllamaAdapter - request building", () => {
     ).rejects.toBeInstanceOf(AIRequestError);
   });
 
+  it("should warn when request metadata is provided", async () => {
+    const adapter = new OllamaAdapter({
+      fetch: async () =>
+        ndjsonResponse(
+          `{"model":"llama3.2","created_at":"2024-01-01T00:00:00Z","message":{"role":"assistant","content":"OK"},"done":true,"done_reason":"stop"}\n`,
+        ),
+    });
+
+    const result = await collectStream(
+      adapter.stream(makeRequest({ metadata: { traceId: "trace-1" }, include: { billing: "off" } })),
+    );
+    expect(result.warnings?.some((w) => w.includes("Request metadata is not supported"))).toBe(true);
+  });
+
   it("should use custom baseUrl and apiKey", async () => {
     let capturedUrl: string | undefined;
     let capturedAuth: string | undefined;
@@ -413,6 +427,18 @@ describe("OllamaAdapter - error handling", () => {
 
     const result = await collectStream(adapter.stream(makeRequest({ include: { usage: "off" } })));
     expect(result.usage).toBeUndefined();
+  });
+
+  it("should emit warning for malformed NDJSON data", async () => {
+    const chunks = [
+      `{"bad":true}\n`,
+      `{"model":"llama3.2","created_at":"2024-01-01T00:00:00Z","message":{"role":"assistant","content":"Hi"},"done":true,"done_reason":"stop"}\n`,
+    ];
+
+    const adapter = new OllamaAdapter({ fetch: mockFetch(ndjsonResponse(...chunks)) });
+    const result = await collectStream(adapter.stream(makeRequest({ include: { billing: "off" } })));
+    expect(result.warnings?.some((w) => w.includes("malformed Ollama NDJSON"))).toBe(true);
+    expect(result.text).toBe("Hi");
   });
 });
 

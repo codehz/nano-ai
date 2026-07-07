@@ -24,6 +24,7 @@ export type SSEEvent = { type: string; data: unknown };
 export type SSEParseResult = {
   events: SSEEvent[];
   rest: string;
+  malformedEvents: number;
 };
 
 /**
@@ -42,6 +43,7 @@ export function parseSSEEvents(chunk: string): SSEParseResult {
   let dataLines: string[] = [];
   let consumedUntil = 0;
   let cursor = 0;
+  let malformedEvents = 0;
 
   while (cursor < chunk.length) {
     const lineEnd = chunk.indexOf("\n", cursor);
@@ -71,7 +73,7 @@ export function parseSSEEvents(chunk: string): SSEParseResult {
         const data = JSON.parse(dataStr);
         events.push({ type: eventType, data });
       } catch {
-        // skip malformed JSON
+        malformedEvents++;
       }
       eventType = "";
       dataLines = [];
@@ -81,5 +83,5 @@ export function parseSSEEvents(chunk: string): SSEParseResult {
     }
   }
 
-  return { events, rest: chunk.slice(consumedUntil) };
+  return { events, rest: chunk.slice(consumedUntil), malformedEvents };
 }

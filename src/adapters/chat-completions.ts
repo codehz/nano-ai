@@ -9,7 +9,7 @@
  */
 
 import { AdapterBase } from "../helpers/adapter-base.js";
-import { AIRequestError } from "../core/errors.js";
+import { AIRequestError, WarningCode } from "../core/errors.js";
 import {
   textBlock,
   messageItem,
@@ -38,6 +38,7 @@ type ChatRequest = {
   messages: ChatMessage[];
   tools?: ChatTool[];
   tool_choice?: "auto" | "none" | { type: "function"; function: { name: string } };
+  metadata?: Record<string, string>;
   temperature?: number;
   max_tokens?: number;
   stream: true;
@@ -123,9 +124,10 @@ function assertChatToolResultOutcome(outcome: import("../index.js").ToolResultIt
  * - 每条 `data:` 行必须已经是一个完整 JSON 对象
  * - 允许传输层把单行拆成多个 chunk，但不接受 provider 把一个 JSON event 改写成多条 `data:` 行
  */
-function parseChatSSE(buffer: string): { chunks: ChatChunk[]; rest: string } {
+function parseChatSSE(buffer: string): { chunks: ChatChunk[]; rest: string; malformedEvents: number } {
   const chunks: ChatChunk[] = [];
   let rest = buffer;
+  let malformedEvents = 0;
 
   while (true) {
     const lineEnd = rest.indexOf("\n");
@@ -145,12 +147,11 @@ function parseChatSSE(buffer: string): { chunks: ChatChunk[]; rest: string } {
     try {
       chunks.push(JSON.parse(data));
     } catch {
-      // Chat Completions adapter only accepts one complete JSON object per data: line.
-      // Multi-line JSON events are treated as malformed instead of being reassembled.
+      malformedEvents++;
     }
   }
 
-  return { chunks, rest };
+  return { chunks, rest, malformedEvents };
 }
 
 function ensureTextCompatibleBlocks(
@@ -392,6 +393,7 @@ export class ChatCompletionsAdapter extends AdapterBase {
 
     if (request.temperature !== undefined) body.temperature = request.temperature;
     if (request.maxOutputTokens !== undefined) body.max_tokens = request.maxOutputTokens;
+    if (request.metadata) body.metadata = request.metadata;
 
     return body;
   }
@@ -490,8 +492,15 @@ export class ChatCompletionsAdapter extends AdapterBase {
         if (done) break;
 
         buffer += decoder.decode(value, { stream: true });
-        const { chunks, rest } = parseChatSSE(buffer);
+        const { chunks, rest, malformedEvents } = parseChatSSE(buffer);
         buffer = rest;
+
+        if (malformedEvents > 0) {
+          yield factory.responseWarning(
+            `Skipped ${malformedEvents} malformed Chat Completions SSE event(s)`,
+            "STREAM_ERROR",
+          );
+        }
 
         for (const chunk of chunks) {
           responseId = chunk.id;
@@ -612,6 +621,10 @@ export class ChatCompletionsAdapter extends AdapterBase {
                 );
               }
 
+              if (request.include?.billing !== "off") {
+                yield factory.responseWarning("Billing information was not provided by the provider", WarningCode.BILLING_MISSING);
+              }
+
               yield factory.responseCompleted(
                 this.buildResponse(request, { output, replay, stopReason, usage, rawResponseId: chunk.id }, factory),
               );
@@ -621,6 +634,10 @@ export class ChatCompletionsAdapter extends AdapterBase {
       }
     } finally {
       reader.releaseLock();
+    }
+
+    if (buffer.trim().length > 0) {
+      yield factory.responseWarning("Stream ended with an incomplete Chat Completions SSE frame", "STREAM_ERROR");
     }
 
     // 如果流结束时没有 finish_reason（断流），也尝试关闭
@@ -642,6 +659,10 @@ export class ChatCompletionsAdapter extends AdapterBase {
             messages: [assistantReplayMessage],
           }),
         );
+      }
+
+      if (request.include?.billing !== "off") {
+        yield factory.responseWarning("Billing information was not provided by the provider", WarningCode.BILLING_MISSING);
       }
 
       yield factory.responseCompleted(
