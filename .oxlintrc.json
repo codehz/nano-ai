@@ -17,6 +17,31 @@
     "unicorn/prefer-module": "off",
     "unicorn/prefer-top-level-await": "off"
   },
+  "overrides": [
+    {
+      "files": ["tests/**/*.ts"],
+      "rules": {
+        "typescript/no-non-null-assertion": "off",
+        "unicorn/no-array-reverse": "off"
+      }
+    },
+    {
+      "files": ["examples/**/*.ts"],
+      "rules": {
+        "no-await-in-loop": "off"
+      }
+    },
+    {
+      "files": [
+        "src/adapters/chat-completions.ts",
+        "src/adapters/messages.ts",
+        "src/adapters/responses.ts"
+      ],
+      "rules": {
+        "no-await-in-loop": "off"
+      }
+    }
+  ],
   "env": {
     "builtin": true,
     "node": true
