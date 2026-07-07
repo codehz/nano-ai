@@ -391,6 +391,15 @@ describe("ChatCompletionsAdapter - request building", () => {
     expect(body?.tool_choice).toEqual({ type: "function", function: { name: "get_weather" } });
   });
 
+  it("should include metadata when provided", async () => {
+    const { captured, fetch } = captureRequest();
+    const adapter = new ChatCompletionsAdapter({ apiKey: "test-key", fetch });
+
+    await collectStream(adapter.stream(makeRequest({ metadata: { traceId: "trace-1" } })));
+    const body = captured.current as Record<string, unknown> | null;
+    expect(body?.metadata).toEqual({ traceId: "trace-1" });
+  });
+
   it("should include temperature and max_tokens", async () => {
     const { captured, fetch } = captureRequest();
     const adapter = new ChatCompletionsAdapter({ apiKey: "test-key", fetch });
@@ -544,6 +553,23 @@ describe("ChatCompletionsAdapter - error handling", () => {
     expect(result.warnings).toBeDefined();
     expect(result.warnings!.some((w) => w.includes("INCOMPLETE_STREAM") || w.includes("finish_reason"))).toBe(true);
     expect(result.text).toBe("Partial");
+  });
+
+  it("should emit warning for malformed SSE data", async () => {
+    const chunks = [
+      "data: {bad json}\n",
+      'data: {"id":"chatcmpl-ok","choices":[{"index":0,"delta":{"content":"Hi"},"finish_reason":"stop"}]}\n',
+      "data: [DONE]\n",
+    ];
+
+    const adapter = new ChatCompletionsAdapter({
+      apiKey: "test-key",
+      fetch: mockFetch(sseResponse(...chunks)),
+    });
+
+    const result = await collectStream(adapter.stream(makeRequest({ include: { billing: "off" } })));
+    expect(result.warnings?.some((w) => w.includes("malformed Chat Completions SSE"))).toBe(true);
+    expect(result.text).toBe("Hi");
   });
 });
 

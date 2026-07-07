@@ -12,7 +12,7 @@
 
 import { AdapterBase } from "../helpers/adapter-base.js";
 import { AuxiliaryCollector } from "../helpers/auxiliary-collector.js";
-import { AIRequestError } from "../core/errors.js";
+import { AIRequestError, WarningCode } from "../core/errors.js";
 import {
   textBlock,
   messageItem,
@@ -151,9 +151,9 @@ type MessagesAPIMessageResponse = {
 
 // ── SSE 解析 ──────────────────────────────────────────────────
 
-function parseMessagesSSE(chunk: string): { events: MessagesSSEEvent[]; rest: string } {
+function parseMessagesSSE(chunk: string): { events: MessagesSSEEvent[]; rest: string; malformedEvents: number } {
   const result = parseSSEEvents(chunk);
-  return { events: result.events as MessagesSSEEvent[], rest: result.rest };
+  return { events: result.events as MessagesSSEEvent[], rest: result.rest, malformedEvents: result.malformedEvents };
 }
 
 function rollbackTrailingAssistantMessages(messages: MessagesAPIMessage[]): void {
@@ -402,6 +402,10 @@ export class MessagesAdapter extends AdapterBase {
   ): AsyncIterable<AIStreamEvent> {
     this.warningAccumulator = [];
 
+    if (request.metadata) {
+      yield factory.responseWarning("Request metadata is not supported by the Messages adapter", "UNSUPPORTED_METADATA");
+    }
+
     const response = await this.fetchFn(`${this.baseUrl}/messages`, {
       method: "POST",
       headers: {
@@ -463,8 +467,12 @@ export class MessagesAdapter extends AdapterBase {
         if (done) break;
 
         buffer += decoder.decode(value, { stream: true });
-        const { events, rest } = parseMessagesSSE(buffer);
+        const { events, rest, malformedEvents } = parseMessagesSSE(buffer);
         buffer = rest;
+
+        if (malformedEvents > 0) {
+          yield factory.responseWarning(`Skipped ${malformedEvents} malformed Messages SSE event(s)`, "STREAM_ERROR");
+        }
 
         for (const sseEvent of events) {
           switch (sseEvent.type) {
@@ -624,6 +632,10 @@ export class MessagesAdapter extends AdapterBase {
       reader.releaseLock();
     }
 
+    if (buffer.trim().length > 0) {
+      yield factory.responseWarning("Stream ended with an incomplete Messages SSE frame", "STREAM_ERROR");
+    }
+
     // 构造 replay
     const replay = [...replayFromOutput(output)];
 
@@ -660,6 +672,10 @@ export class MessagesAdapter extends AdapterBase {
     }
 
     const auxiliaryResult = auxiliary.build();
+
+    if (request.include?.billing !== "off") {
+      yield factory.responseWarning("Billing information was not provided by the provider", WarningCode.BILLING_MISSING);
+    }
 
     yield factory.responseCompleted(
       this.buildResponse(

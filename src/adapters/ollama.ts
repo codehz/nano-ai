@@ -16,7 +16,7 @@
  */
 
 import { AdapterBase } from "../helpers/adapter-base.js";
-import { AIRequestError } from "../core/errors.js";
+import { AIRequestError, WarningCode } from "../core/errors.js";
 import {
   textBlock,
   messageItem,
@@ -168,9 +168,10 @@ type OllamaChatChunk = {
 
 // ── NDJSON 解析 ───────────────────────────────────────────────
 
-function parseOllamaNDJSON(buffer: string): { chunks: OllamaChatChunk[]; rest: string } {
+function parseOllamaNDJSON(buffer: string): { chunks: OllamaChatChunk[]; rest: string; malformedLines: number } {
   const chunks: OllamaChatChunk[] = [];
   let rest = buffer;
+  let malformedLines = 0;
 
   while (true) {
     const lineEnd = rest.indexOf("\n");
@@ -186,13 +187,15 @@ function parseOllamaNDJSON(buffer: string): { chunks: OllamaChatChunk[]; rest: s
       // Ollama chunks have a "message" field in streaming mode
       if (parsed && typeof parsed === "object" && "message" in parsed) {
         chunks.push(parsed as OllamaChatChunk);
+      } else {
+        malformedLines++;
       }
     } catch {
-      // skip malformed JSON lines
+      malformedLines++;
     }
   }
 
-  return { chunks, rest };
+  return { chunks, rest, malformedLines };
 }
 
 function rollbackTrailingAssistantMessages(messages: OllamaMessage[]): void {
@@ -358,6 +361,10 @@ export class OllamaAdapter extends AdapterBase {
     factory: EventFactory,
     request: NormalizedRequest,
   ): AsyncIterable<AIStreamEvent> {
+    if (request.metadata) {
+      yield factory.responseWarning("Request metadata is not supported by the Ollama adapter", "UNSUPPORTED_METADATA");
+    }
+
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
     };
@@ -402,8 +409,12 @@ export class OllamaAdapter extends AdapterBase {
         if (done) break;
 
         buffer += decoder.decode(value, { stream: true });
-        const { chunks, rest } = parseOllamaNDJSON(buffer);
+        const { chunks, rest, malformedLines } = parseOllamaNDJSON(buffer);
         buffer = rest;
+
+        if (malformedLines > 0) {
+          yield factory.responseWarning(`Skipped ${malformedLines} malformed Ollama NDJSON line(s)`, "STREAM_ERROR");
+        }
 
         for (const chunk of chunks) {
           responseId = chunk.created_at;
@@ -495,6 +506,10 @@ export class OllamaAdapter extends AdapterBase {
               );
             }
 
+            if (request.include?.billing !== "off") {
+              yield factory.responseWarning("Billing information is not available for the Ollama adapter", WarningCode.BILLING_MISSING);
+            }
+
             yield factory.responseCompleted(
               this.buildResponse(request, { output, replay, stopReason, usage, rawResponseId: chunk.created_at }, factory),
             );
@@ -509,6 +524,10 @@ export class OllamaAdapter extends AdapterBase {
       }
     } finally {
       reader.releaseLock();
+    }
+
+    if (buffer.trim().length > 0) {
+      yield factory.responseWarning("Stream ended with an incomplete Ollama NDJSON line", "STREAM_ERROR");
     }
 
     // 流结束但无 done=true（断流保护）
@@ -532,6 +551,9 @@ export class OllamaAdapter extends AdapterBase {
       }
 
       const replay = replayFromOutput(output);
+      if (request.include?.billing !== "off") {
+        yield factory.responseWarning("Billing information is not available for the Ollama adapter", WarningCode.BILLING_MISSING);
+      }
       yield factory.responseCompleted(
         this.buildResponse(request, { output, replay, rawResponseId: responseId }, factory),
       );

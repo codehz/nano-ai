@@ -229,6 +229,15 @@ describe("ResponsesAdapter - request building", () => {
     expect(body?.instructions).toBe("Be helpful.");
   });
 
+  it("should include metadata when provided", async () => {
+    const { captured, fetch } = captureRequest();
+    const adapter = new ResponsesAdapter({ apiKey: "test-key", fetch });
+
+    await collectStream(adapter.stream(makeRequest({ metadata: { traceId: "trace-1" } })));
+    const body = captured.current as Record<string, unknown> | null;
+    expect(body?.metadata).toEqual({ traceId: "trace-1" });
+  });
+
   it("should include tools in request body", async () => {
     const { captured, fetch } = captureRequest();
     const adapter = new ResponsesAdapter({ apiKey: "test-key", fetch });
@@ -399,6 +408,42 @@ describe("ResponsesAdapter - error handling", () => {
 
     const result = await collectStream(adapter.stream(makeRequest({ include: { usage: "off" } })));
     expect(result.usage).toBeUndefined();
+  });
+
+  it("should omit billing warning when include.billing is off", async () => {
+    const sse = [
+      `event: response.completed\ndata: ${JSON.stringify({
+        response: { id: "resp-billing-off", model: "gpt-4o", output: [] },
+      })}\n\n`,
+    ];
+
+    const adapter = new ResponsesAdapter({
+      apiKey: "test-key",
+      fetch: mockFetch(sseResponse(...sse)),
+    });
+
+    const result = await collectStream(adapter.stream(makeRequest({ include: { billing: "off" } })));
+    expect(result.warnings?.some((w) => w.includes("Billing information"))).toBeFalsy();
+  });
+
+  it("should emit warning for malformed SSE data", async () => {
+    const sse = [
+      'event: response.output_item.added\ndata: {bad json}\n\n',
+      'event: response.output_item.added\ndata: {"item":{"id":"m1","type":"message"}}\n\n',
+      'event: response.output_text.done\ndata: {"item_id":"m1","text":"Hi"}\n\n',
+      `event: response.completed\ndata: ${JSON.stringify({
+        response: { id: "resp-malformed", model: "gpt-4o", output: [] },
+      })}\n\n`,
+    ];
+
+    const adapter = new ResponsesAdapter({
+      apiKey: "test-key",
+      fetch: mockFetch(sseResponse(...sse)),
+    });
+
+    const result = await collectStream(adapter.stream(makeRequest({ include: { billing: "off" } })));
+    expect(result.warnings?.some((w) => w.includes("malformed Responses SSE"))).toBe(true);
+    expect(result.text).toBe("Hi");
   });
 });
 

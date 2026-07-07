@@ -407,6 +407,14 @@ describe("MessagesAdapter - request building", () => {
     ).rejects.toBeInstanceOf(AIRequestError);
   });
 
+  it("should warn when request metadata is provided", async () => {
+    const { fetch } = captureRequest();
+    const adapter = new MessagesAdapter({ apiKey: "test-key", fetch });
+
+    const result = await collectStream(adapter.stream(makeRequest({ metadata: { traceId: "trace-1" } })));
+    expect(result.warnings?.some((w) => w.includes("Request metadata is not supported"))).toBe(true);
+  });
+
   it("should merge system/developer role messages into system prompt", async () => {
     const { captured, fetch } = captureRequest();
     const adapter = new MessagesAdapter({ apiKey: "test-key", fetch });
@@ -534,6 +542,27 @@ describe("MessagesAdapter - error handling", () => {
     const result = await collectStream(adapter.stream(makeRequest()));
     expect(result.warnings).toBeDefined();
     expect(result.warnings!.some((w) => w.includes("Overloaded"))).toBe(true);
+  });
+
+  it("should emit warning for malformed SSE data", async () => {
+    const sse = [
+      `event: message_start\ndata: {bad json}\n\n`,
+      `event: message_start\ndata: ${JSON.stringify({ type: "message_start", message: { id: "msg_bad", type: "message", role: "assistant", content: [], stop_reason: null, usage: { input_tokens: 1, output_tokens: 0 } } })}\n\n`,
+      `event: content_block_start\ndata: ${JSON.stringify({ type: "content_block_start", index: 0, content_block: { type: "text", text: "" } })}\n\n`,
+      `event: content_block_delta\ndata: ${JSON.stringify({ type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "Hi" } })}\n\n`,
+      `event: content_block_stop\ndata: ${JSON.stringify({ type: "content_block_stop", index: 0 })}\n\n`,
+      `event: message_delta\ndata: ${JSON.stringify({ type: "message_delta", delta: { stop_reason: "end_turn", stop_sequence: null }, usage: { input_tokens: 1, output_tokens: 1 } })}\n\n`,
+      messageStopSSE(),
+    ];
+
+    const adapter = new MessagesAdapter({
+      apiKey: "test-key",
+      fetch: mockFetch(sseResponse(...sse)),
+    });
+
+    const result = await collectStream(adapter.stream(makeRequest({ include: { billing: "off" } })));
+    expect(result.warnings?.some((w) => w.includes("malformed Messages SSE"))).toBe(true);
+    expect(result.text).toBe("Hi");
   });
 });
 
