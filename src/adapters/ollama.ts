@@ -16,7 +16,7 @@
  */
 
 import { AdapterBase } from "../helpers/adapter-base.js";
-import { AIRequestError, WarningCode } from "../core/errors.js";
+import { AIRequestError } from "../core/errors.js";
 import {
   textBlock,
   messageItem,
@@ -26,8 +26,9 @@ import {
   mapStopReason,
   contentBlocksToText,
 } from "../helpers/mapping.js";
+import { emitMalformedStreamWarning } from "../helpers/adapter-auxiliary.js";
 
-import type { AdapterCapabilities, NormalizedRequest, AIStreamEvent, EventFactory, OutputItem, Usage, FetchFn } from "../index.js";
+import type { AdapterCapabilities, NormalizedRequest, AIStreamEvent, EventFactory, OutputItem, FetchFn } from "../index.js";
 
 // ── 选项类型 ──────────────────────────────────────────────────
 
@@ -361,6 +362,7 @@ export class OllamaAdapter extends AdapterBase {
     factory: EventFactory,
     request: NormalizedRequest,
   ): AsyncIterable<AIStreamEvent> {
+    const auxiliary = this.createAuxiliaryState(request);
     if (request.metadata) {
       yield factory.responseWarning("Request metadata is not supported by the Ollama adapter", "UNSUPPORTED_METADATA");
     }
@@ -397,7 +399,6 @@ export class OllamaAdapter extends AdapterBase {
     let accumulatedContent = "";
     let currentMessageId = "";
     let hasMessageStarted = false;
-    let usage: Usage | undefined;
 
     // tool_calls 累积（于 final chunk 到达）
     let pendingToolCalls: Array<{ id: string; name: string; argumentsText: string; argumentsJson?: unknown }> = [];
@@ -412,8 +413,13 @@ export class OllamaAdapter extends AdapterBase {
         const { chunks, rest, malformedLines } = parseOllamaNDJSON(buffer);
         buffer = rest;
 
-        if (malformedLines > 0) {
-          yield factory.responseWarning(`Skipped ${malformedLines} malformed Ollama NDJSON line(s)`, "STREAM_ERROR");
+        const malformedWarning = emitMalformedStreamWarning(factory, {
+          count: malformedLines,
+          providerLabel: "Ollama",
+          transportLabel: "NDJSON line(s)",
+        });
+        if (malformedWarning) {
+          yield malformedWarning;
         }
 
         for (const chunk of chunks) {
@@ -478,13 +484,20 @@ export class OllamaAdapter extends AdapterBase {
               request.include?.usage !== "off" &&
               (chunk.prompt_eval_count !== undefined || chunk.eval_count !== undefined)
             ) {
-              usage = {
-                inputTokens: chunk.prompt_eval_count,
-                outputTokens: chunk.eval_count,
-                totalTokens: chunk.prompt_eval_count !== undefined && chunk.eval_count !== undefined
-                  ? chunk.prompt_eval_count + chunk.eval_count
-                  : undefined,
-              };
+              auxiliary.recordUsage(
+                {
+                  inputTokens: chunk.prompt_eval_count,
+                  outputTokens: chunk.eval_count,
+                  totalTokens: chunk.prompt_eval_count !== undefined && chunk.eval_count !== undefined
+                    ? chunk.prompt_eval_count + chunk.eval_count
+                    : undefined,
+                },
+                "final",
+                {
+                  prompt_eval_count: chunk.prompt_eval_count,
+                  eval_count: chunk.eval_count,
+                },
+              );
             }
 
             // 构建 stop reason
@@ -506,12 +519,27 @@ export class OllamaAdapter extends AdapterBase {
               );
             }
 
-            if (request.include?.billing !== "off") {
-              yield factory.responseWarning("Billing information is not available for the Ollama adapter", WarningCode.BILLING_MISSING);
+            const auxiliaryResult = await auxiliary.finalize(factory);
+            for (const event of auxiliaryResult.events) {
+              yield event;
             }
 
             yield factory.responseCompleted(
-              this.buildResponse(request, { output, replay, stopReason, usage, rawResponseId: chunk.created_at }, factory),
+              this.buildResponse(
+                request,
+                {
+                  output,
+                  replay,
+                  stopReason,
+                  usage: auxiliaryResult.usage,
+                  billing: auxiliaryResult.billing,
+                  auxiliary: auxiliaryResult.auxiliary,
+                  warnings: auxiliaryResult.warnings,
+                  metadataSources: auxiliaryResult.metadataSources,
+                  rawResponseId: chunk.created_at,
+                },
+                factory,
+              ),
             );
 
             // 重置累积状态
@@ -551,11 +579,25 @@ export class OllamaAdapter extends AdapterBase {
       }
 
       const replay = replayFromOutput(output);
-      if (request.include?.billing !== "off") {
-        yield factory.responseWarning("Billing information is not available for the Ollama adapter", WarningCode.BILLING_MISSING);
+      const auxiliaryResult = await auxiliary.finalize(factory);
+      for (const event of auxiliaryResult.events) {
+        yield event;
       }
       yield factory.responseCompleted(
-        this.buildResponse(request, { output, replay, rawResponseId: responseId }, factory),
+        this.buildResponse(
+          request,
+          {
+            output,
+            replay,
+            usage: auxiliaryResult.usage,
+            billing: auxiliaryResult.billing,
+            auxiliary: auxiliaryResult.auxiliary,
+            warnings: auxiliaryResult.warnings,
+            metadataSources: auxiliaryResult.metadataSources,
+            rawResponseId: responseId,
+          },
+          factory,
+        ),
       );
     }
   }

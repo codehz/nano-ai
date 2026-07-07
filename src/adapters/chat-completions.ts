@@ -9,7 +9,7 @@
  */
 
 import { AdapterBase } from "../helpers/adapter-base.js";
-import { AIRequestError, WarningCode } from "../core/errors.js";
+import { AIRequestError } from "../core/errors.js";
 import {
   textBlock,
   messageItem,
@@ -20,8 +20,9 @@ import {
   mapStopReason,
   contentBlocksToText,
 } from "../helpers/mapping.js";
+import { emitMalformedStreamWarning } from "../helpers/adapter-auxiliary.js";
 
-import type { AdapterCapabilities, NormalizedRequest, AIStreamEvent, EventFactory, OutputItem, Usage, FetchFn } from "../index.js";
+import type { AdapterCapabilities, NormalizedRequest, AIStreamEvent, EventFactory, OutputItem, FetchFn } from "../index.js";
 
 // ── 类型 ──────────────────────────────────────────────────────
 
@@ -405,6 +406,7 @@ export class ChatCompletionsAdapter extends AdapterBase {
     factory: EventFactory,
     request: NormalizedRequest,
   ): AsyncIterable<AIStreamEvent> {
+    const auxiliary = this.createAuxiliaryState(request);
     const response = await this.fetchFn(`${this.baseUrl}/chat/completions`, {
       method: "POST",
       headers: {
@@ -441,9 +443,6 @@ export class ChatCompletionsAdapter extends AdapterBase {
     // tool_calls 累积: tool call index → { id, name, args }
     const pendingToolCalls = new Map<number, PendingToolCall>();
     const reasoningByField = new Map<ReasoningFieldName, string>();
-
-    // usage
-    let usage: Usage | undefined;
 
     const finalizePendingTurn = (): { events: AIStreamEvent[]; assistantReplayMessage: ChatMessage | null } => {
       const events: AIStreamEvent[] = [];
@@ -495,11 +494,13 @@ export class ChatCompletionsAdapter extends AdapterBase {
         const { chunks, rest, malformedEvents } = parseChatSSE(buffer);
         buffer = rest;
 
-        if (malformedEvents > 0) {
-          yield factory.responseWarning(
-            `Skipped ${malformedEvents} malformed Chat Completions SSE event(s)`,
-            "STREAM_ERROR",
-          );
+        const malformedWarning = emitMalformedStreamWarning(factory, {
+          count: malformedEvents,
+          providerLabel: "Chat Completions",
+          transportLabel: "SSE event(s)",
+        });
+        if (malformedWarning) {
+          yield malformedWarning;
         }
 
         for (const chunk of chunks) {
@@ -507,11 +508,15 @@ export class ChatCompletionsAdapter extends AdapterBase {
 
           // usage 可能在最终 chunk 中
           if (chunk.usage) {
-            usage = {
-              inputTokens: chunk.usage.prompt_tokens,
-              outputTokens: chunk.usage.completion_tokens,
-              totalTokens: chunk.usage.total_tokens,
-            };
+            auxiliary.recordUsage(
+              {
+                inputTokens: chunk.usage.prompt_tokens,
+                outputTokens: chunk.usage.completion_tokens,
+                totalTokens: chunk.usage.total_tokens,
+              },
+              "final",
+              chunk.usage,
+            );
           }
 
           for (const choice of chunk.choices) {
@@ -621,12 +626,27 @@ export class ChatCompletionsAdapter extends AdapterBase {
                 );
               }
 
-              if (request.include?.billing !== "off") {
-                yield factory.responseWarning("Billing information was not provided by the provider", WarningCode.BILLING_MISSING);
+              const auxiliaryResult = await auxiliary.finalize(factory);
+              for (const event of auxiliaryResult.events) {
+                yield event;
               }
 
               yield factory.responseCompleted(
-                this.buildResponse(request, { output, replay, stopReason, usage, rawResponseId: chunk.id }, factory),
+                this.buildResponse(
+                  request,
+                  {
+                    output,
+                    replay,
+                    stopReason,
+                    usage: auxiliaryResult.usage,
+                    billing: auxiliaryResult.billing,
+                    auxiliary: auxiliaryResult.auxiliary,
+                    warnings: auxiliaryResult.warnings,
+                    metadataSources: auxiliaryResult.metadataSources,
+                    rawResponseId: chunk.id,
+                  },
+                  factory,
+                ),
               );
             }
           }
@@ -661,12 +681,26 @@ export class ChatCompletionsAdapter extends AdapterBase {
         );
       }
 
-      if (request.include?.billing !== "off") {
-        yield factory.responseWarning("Billing information was not provided by the provider", WarningCode.BILLING_MISSING);
+      const auxiliaryResult = await auxiliary.finalize(factory);
+      for (const event of auxiliaryResult.events) {
+        yield event;
       }
 
       yield factory.responseCompleted(
-        this.buildResponse(request, { output, replay, rawResponseId: responseId }, factory),
+        this.buildResponse(
+          request,
+          {
+            output,
+            replay,
+            usage: auxiliaryResult.usage,
+            billing: auxiliaryResult.billing,
+            auxiliary: auxiliaryResult.auxiliary,
+            warnings: auxiliaryResult.warnings,
+            metadataSources: auxiliaryResult.metadataSources,
+            rawResponseId: responseId,
+          },
+          factory,
+        ),
       );
     }
   }

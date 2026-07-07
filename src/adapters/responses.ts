@@ -10,7 +10,7 @@
  */
 
 import { AdapterBase } from "../helpers/adapter-base.js";
-import { AIRequestError, WarningCode } from "../core/errors.js";
+import { AIRequestError } from "../core/errors.js";
 import {
   textBlock,
   messageItem,
@@ -21,11 +21,12 @@ import {
   blockToText,
   contentBlocksToText,
 } from "../helpers/mapping.js";
+import { emitMalformedStreamWarning } from "../helpers/adapter-auxiliary.js";
 
 import { parseSSEEvents } from "../helpers/sse-parser.js";
 
 import { CAPABILITY_MATRIX } from "../index.js";
-import type { NormalizedRequest, AIStreamEvent, EventFactory, OutputItem, Usage, FetchFn } from "../index.js";
+import type { NormalizedRequest, AIStreamEvent, EventFactory, OutputItem, FetchFn } from "../index.js";
 
 // ── 类型 ──────────────────────────────────────────────────────
 
@@ -321,6 +322,7 @@ export class ResponsesAdapter extends AdapterBase {
     factory: EventFactory,
     request: NormalizedRequest,
   ): AsyncIterable<AIStreamEvent> {
+    const auxiliary = this.createAuxiliaryState(request);
     const response = await this.fetchFn(`${this.baseUrl}/responses`, {
       method: "POST",
       headers: {
@@ -355,8 +357,13 @@ export class ResponsesAdapter extends AdapterBase {
         const { events, rest, malformedEvents } = parseSSE(buffer);
         buffer = rest;
 
-        if (malformedEvents > 0) {
-          yield factory.responseWarning(`Skipped ${malformedEvents} malformed Responses SSE event(s)`, "STREAM_ERROR");
+        const malformedWarning = emitMalformedStreamWarning(factory, {
+          count: malformedEvents,
+          providerLabel: "Responses",
+          transportLabel: "SSE event(s)",
+        });
+        if (malformedWarning) {
+          yield malformedWarning;
         }
 
         for (const sseEvent of events) {
@@ -438,17 +445,20 @@ export class ResponsesAdapter extends AdapterBase {
     }
 
     // 解析完成响应中的 usage 和 replay
-    let usage: Usage | undefined;
     let rawResponseId: string | undefined;
 
     if (completedResponse) {
       rawResponseId = completedResponse.id;
-      if (completedResponse.usage && request.include?.usage !== "off") {
-        usage = {
+      if (completedResponse.usage) {
+        auxiliary.recordUsage(
+          {
           inputTokens: completedResponse.usage.input_tokens,
           outputTokens: completedResponse.usage.output_tokens,
           totalTokens: completedResponse.usage.total_tokens,
-        };
+          },
+          "final",
+          completedResponse.usage,
+        );
       }
     }
 
@@ -463,12 +473,27 @@ export class ResponsesAdapter extends AdapterBase {
     // 从 completedResponse 推断 stop reason
     const stopReason = completedResponse ? this.inferStopReason(completedResponse) : undefined;
 
-    if (request.include?.billing !== "off") {
-      yield factory.responseWarning("Billing information was not provided by the provider", WarningCode.BILLING_MISSING);
+    const auxiliaryResult = await auxiliary.finalize(factory);
+    for (const event of auxiliaryResult.events) {
+      yield event;
     }
 
     yield factory.responseCompleted(
-      this.buildResponse(request, { output, replay, stopReason, usage, rawResponseId }, factory),
+      this.buildResponse(
+        request,
+        {
+          output,
+          replay,
+          stopReason,
+          usage: auxiliaryResult.usage,
+          billing: auxiliaryResult.billing,
+          auxiliary: auxiliaryResult.auxiliary,
+          warnings: auxiliaryResult.warnings,
+          metadataSources: auxiliaryResult.metadataSources,
+          rawResponseId,
+        },
+        factory,
+      ),
     );
   }
 
