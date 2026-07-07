@@ -363,7 +363,7 @@ export class ResponsesAdapter extends AdapterBase {
 
     if (completedResponse) {
       rawResponseId = completedResponse.id;
-      if (completedResponse.usage) {
+      if (completedResponse.usage && request.include?.usage !== "off") {
         usage = {
           inputTokens: completedResponse.usage.input_tokens,
           outputTokens: completedResponse.usage.output_tokens,
