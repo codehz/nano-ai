@@ -254,6 +254,22 @@ describe("ResponsesAdapter - request building", () => {
     expect(body?.max_output_tokens).toBe(100);
   });
 
+  it("should include tool_choice when provided", async () => {
+    const { captured, fetch } = captureRequest();
+    const adapter = new ResponsesAdapter({ apiKey: "test-key", fetch });
+
+    await collectStream(
+      adapter.stream(
+        makeRequest({
+          tools: [{ name: "get_weather", inputSchema: {} }],
+          toolChoice: { type: "tool" as const, name: "get_weather" },
+        }),
+      ),
+    );
+    const body = captured.current as Record<string, unknown> | null;
+    expect(body?.tool_choice).toEqual({ type: "function", name: "get_weather" });
+  });
+
   it("should round-trip replay without duplicating canonical items when opaque continuation is present", async () => {
     const round1SSE = [
       'event: response.output_item.added\ndata: {"item":{"id":"m1","type":"message"}}\n\n',
