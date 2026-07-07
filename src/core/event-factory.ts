@@ -45,6 +45,7 @@ function timestamp(): string {
 
 export function createEventFactory(state: EventFactoryState) {
   let seq = 0;
+  const warnings: string[] = [];
 
   function next(): number {
     return seq++;
@@ -67,6 +68,7 @@ export function createEventFactory(state: EventFactoryState) {
     },
 
     responseWarning(message: string, code?: string): ResponseWarningEvent {
+      warnings.push(message);
       return { ...base(), type: "response.warning", message, code };
     },
 
@@ -127,6 +129,11 @@ export function createEventFactory(state: EventFactoryState) {
     /** 返回当前已发出的 sequence 计数（用于断言） */
     get sequence(): number {
       return seq;
+    },
+
+    /** 返回当前已记录的 warning 副本。 */
+    get warnings(): string[] {
+      return [...warnings];
     },
   };
 }
