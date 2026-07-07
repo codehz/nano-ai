@@ -350,6 +350,48 @@ v1 实现目标如下：
 - 三个 adapter 可以共享公共骨架
 - replay 责任明确归属于 adapter，而非聚合器
 
+#### Phase 4 实施结果 ✅
+
+**完成状态：** 已完成 (2026-07-07)
+
+**关键修改文件：**
+
+| 操作 | 文件 |
+|------|------|
+| 新建 | `src/helpers/mapping.ts` — 共享映射 helper（stop reason、content block、item 构造、replay 构造） |
+| 新建 | `src/helpers/adapter-base.ts` — `AdapterBase` 抽象基类（build/invoke/parse/emit 四层约定） |
+| 修改 | `src/helpers/index.ts` — 导出新模块 |
+| 新建 | `tests/adapter-base.test.ts` — 28 个映射和基类测试 |
+
+**验证结果：**
+
+- `bun run typecheck` — 通过（无错误）
+- `bun run test` — 通过（110 tests, 110 pass, 198 expect calls）
+
+**验收标准对照：**
+
+1. ✅ 三个 adapter 可以共享公共骨架 — `AdapterBase` 提供模板方法 `stream()`，子类只需实现 `buildRequest()` 和 `runStream()`
+2. ✅ replay 责任明确归属于 adapter，而非聚合器 — `StreamResult.replay` 由子类在 `runStream()` 中填充，`replayFromOutput()` 提供默认实现；聚合器（`aggregateEvents`）只从 `response.completed` 读取 replay
+
+**AdapterBase 内部职责分层：**
+
+| 层 | 方法 | 职责 |
+|---|---|---|
+| build | `buildRequest(request)` | 将 `NormalizedRequest` 转换为 provider 请求格式 |
+| invoke | `runStream(providerRequest, factory)` | 调用 provider 并驱动事件发射 |
+| parse |（子类在 runStream 内自行处理）| 解析 provider chunk/response 为 canonical 中间态 |
+| emit |（通过 factory 参数）| 使用 `EventFactory` 发射规范的 `AIStreamEvent` |
+
+**共享映射 helper 清单：**
+
+| 函数 | 用途 |
+|---|---|
+| `mapStopReason(providerReason)` | provider stop_reason → `StopReason` |
+| `mapReasoningVisibility(hasThinking, hasRedacted)` | → `"full"\|"summary"\|"redacted"\|"opaque"` |
+| `textBlock` / `jsonBlock` / `imageBlock` / `opaqueBlock` | `ContentBlock` 构造 |
+| `messageItem` / `reasoningItem` / `toolCallItem` / `toolResultItem` / `opaqueItem` | Item 构造 |
+| `replayFromOutput(output)` | output → replay 默认映射 |
+
 ### Phase 5: `responses` Adapter
 
 目标：优先打通能力最强的后端，作为 canonical 模型的基准实现。
