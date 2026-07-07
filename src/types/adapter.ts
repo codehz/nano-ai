@@ -8,6 +8,11 @@
 import type { AIRequest } from "./request.js";
 import type { AIStreamEvent } from "./events.js";
 
+// ── 公共工具类型 ──────────────────────────────────────────────
+
+/** HTTP fetch 函数签名，用于注入自定义请求实现（测试／代理） */
+export type FetchFn = (url: string, init: RequestInit) => Promise<Response>;
+
 // ── 归一化请求 ────────────────────────────────────────────────
 
 export type NormalizedRequest = AIRequest & {
