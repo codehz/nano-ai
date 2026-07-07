@@ -147,6 +147,40 @@ v1 实现目标如下：
 - 无需接入真实 provider 即可编译通过
 - 能力矩阵已进入代码，而非仅存在于文档
 
+#### Phase 1 实施结果 ✅
+
+**完成状态：** 已完成 (2026-07-07)
+
+**关键修改文件：**
+
+| 操作 | 文件 |
+|------|------|
+| 新建 | `src/types/content.ts` — `ContentBlock` 联合类型 |
+| 新建 | `src/types/items.ts` — `MessageItem`、`ReasoningItem`、`ToolCallItem`、`ToolResultItem`、`OpaqueItem`、`InputItem`、`OutputItem`、`ReplayItem` |
+| 新建 | `src/types/request.ts` — `AIRequest`、`ToolDefinition`、`ToolChoice`、`IncludeSettings` |
+| 新建 | `src/types/response.ts` — `AIResponse`、`StopReason`、`Usage`、`BillingInfo`、`AuxiliaryInfo`、`BackendTrace` |
+| 新建 | `src/types/events.ts` — 全部 13 类流事件类型 + `AIStreamEvent` 联合 |
+| 新建 | `src/types/adapter.ts` — `BackendAdapter`、`AdapterCapabilities`、`NormalizedRequest`、`CreateAIClientOptions`、`AIClient`、`CAPABILITY_MATRIX` 常量 |
+| 修改 | `src/types/index.ts` — 所有类型统一导出入口 |
+| 修改 | `src/core/client.ts` — 更新为使用正式类型导入 |
+| 修改 | `tests/index.test.ts` — 新增 31 个类型构造测试 |
+
+**验证结果：**
+
+- `bun run typecheck` — 通过（无错误）
+- `bun run test` — 通过（31 tests, 31 pass, 45 expect calls）
+
+**已覆盖的公开概念清单：**
+
+`ContentBlock` · `MessageItem` · `ReasoningItem` · `ToolCallItem` · `ToolResultItem` · `OpaqueItem` · `InputItem` · `OutputItem` · `ReplayItem` · `AIRequest` · `ToolDefinition` · `ToolChoice` · `IncludeSettings` · `StopReason` · `Usage` · `BillingInfo` · `AuxiliaryInfo` · `BackendTrace` · `AIResponse` · `StreamEventBase` · `ResponseStartedEvent` · `ResponseWarningEvent` · `ResponseAuxiliaryEvent` · `ResponseCompletedEvent` · `MessageStartedEvent` · `MessageDeltaEvent` · `MessageCompletedEvent` · `ReasoningStartedEvent` · `ReasoningDeltaEvent` · `ReasoningCompletedEvent` · `ToolCallStartedEvent` · `ToolCallDeltaEvent` · `ToolCallCompletedEvent` · `AIStreamEvent` · `BackendAdapter` · `AdapterCapabilities` · `NormalizedRequest` · `CreateAIClientOptions` · `AIClient` · `CAPABILITY_MATRIX`
+
+**备注：**
+
+- 能力矩阵 `CAPABILITY_MATRIX` 已落代码，三类后端的差异通过 `AdapterCapabilities` 类型和常量值显式建模
+- `createAIClient()` 仍为桩，待 Phase 2 实现
+- 测试侧重于类型构造，确保所有公开类型可被用户正确实例化
+- 聚合器、事件工厂等运行时实现留待 Phase 3
+
 ### Phase 2: 客户端入口与请求归一化
 
 目标：打通 `createAIClient()` 到 adapter 调用之间的公共入口。
