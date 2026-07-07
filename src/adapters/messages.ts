@@ -216,7 +216,20 @@ export class MessagesAdapter extends AdapterBase {
           if (item.purpose === "replay" && typeof item.payload === "object" && item.payload !== null) {
             const payload = item.payload as Record<string, unknown>;
             if (payload.role === "assistant" && Array.isArray(payload.content)) {
-              messages.push(payload as unknown as MessagesAPIMessage);
+              // 验证 content 是合法的 MessagesAPIContentBlock[]
+              const isValidContent = payload.content.every(
+                (b): b is MessagesAPIContentBlock =>
+                  typeof b === "object" &&
+                  b !== null &&
+                  "type" in b &&
+                  (b.type === "text" || b.type === "thinking" || b.type === "redacted_thinking" || b.type === "tool_use" || b.type === "tool_result"),
+              );
+              if (isValidContent) {
+                messages.push({
+                  role: "assistant",
+                  content: payload.content as MessagesAPIContentBlock[],
+                });
+              }
             }
           }
           break;
@@ -469,17 +482,14 @@ export class MessagesAdapter extends AdapterBase {
     const replay = [...replayFromOutput(output)];
 
     // 附加 opaque replay item 用于续接
-    if (rawResponseId || messageResponse) {
-      // 如果 output 中有 assistant message，将原始 content 存到 opaque
-      const assistantBlocks = output
-        .filter((item): item is import("../index.js").MessageItem & { type: "message" } => item.type === "message")
-        .map((m) => m.content);
-
+    // 保存 provider 原始 block 以实现高保真 replay
+    if (messageResponse) {
       replay.push(
         opaqueItem("messages", "replay", {
-          role: "assistant",
-          content: assistantBlocks,
-          messageId: rawResponseId,
+          role: messageResponse.role,
+          content: messageResponse.content,
+          messageId: messageResponse.id,
+          stopReason: messageResponse.stop_reason,
         }),
       );
     }
