@@ -1,0 +1,539 @@
+/**
+ * Messages Adapter
+ *
+ * 接入 Anthropic Messages API (messages 端点)。
+ * 支持：
+ * - 文本消息流 (text content block)
+ * - 思维链流 (thinking content block)
+ * - 工具调用流 (tool_use content block)
+ * - 高保真 replay（含 opaque continuation）
+ * - 能力降级 warning
+ */
+
+import { AdapterBase } from "../helpers/adapter-base.js";
+import { textBlock, messageItem, reasoningItem, toolCallItem, opaqueItem, replayFromOutput, mapStopReason, mapReasoningVisibility } from "../helpers/mapping.js";
+
+import type {
+  NormalizedRequest,
+  AIStreamEvent,
+  EventFactory,
+  OutputItem,
+  StreamResult,
+  Usage,
+} from "../index.js";
+
+// ── 类型 ──────────────────────────────────────────────────────
+
+export type FetchFn = (url: string, init: RequestInit) => Promise<Response>;
+
+export type MessagesAdapterOptions = {
+  apiKey: string;
+  apiVersion?: string;
+  baseUrl?: string;
+  /** 可注入自定义 fetch 实现（用于测试／代理） */
+  fetch?: FetchFn;
+};
+
+// ── Messages API 请求类型 ────────────────────────────────────
+
+type MessagesAPIRequest = {
+  model: string;
+  max_tokens: number;
+  messages: MessagesAPIMessage[];
+  system?: string;
+  tools?: MessagesAPITool[];
+  temperature?: number;
+  thinking?: { type: "enabled"; budget_tokens: number };
+  stream: true;
+};
+
+type MessagesAPIMessage = {
+  role: "user" | "assistant";
+  content: string | MessagesAPIContentBlock[];
+};
+
+type MessagesAPIContentBlock =
+  | { type: "text"; text: string }
+  | { type: "thinking"; thinking: string; signature?: string }
+  | { type: "redacted_thinking"; data: string }
+  | { type: "tool_use"; id: string; name: string; input: Record<string, unknown> }
+  | { type: "tool_result"; tool_use_id: string; content: string | MessagesAPIContentBlock[]; is_error?: boolean };
+
+type MessagesAPITool = {
+  name: string;
+  description?: string;
+  input_schema: Record<string, unknown>;
+};
+
+// ── SSE 事件类型 ──────────────────────────────────────────────
+
+type MessagesSSEEvent =
+  | { type: "message_start"; data: { message: MessagesAPIMessageResponse } }
+  | { type: "content_block_start"; data: { index: number; content_block: { type: string; [key: string]: unknown } } }
+  | { type: "content_block_delta"; data: { index: number; delta: { type: string; [key: string]: unknown } } }
+  | { type: "content_block_stop"; data: { index: number } }
+  | { type: "message_delta"; data: { delta: { stop_reason?: string; stop_sequence?: string | null }; usage: { input_tokens: number; output_tokens: number } } }
+  | { type: "message_stop"; data: Record<string, never> }
+  | { type: "ping"; data: Record<string, never> }
+  | { type: "error"; data: { error: { type: string; message: string } } };
+
+type MessagesAPIMessageResponse = {
+  id: string;
+  type: string;
+  role: "assistant";
+  model: string;
+  content: MessagesAPIContentBlock[];
+  stop_reason?: "end_turn" | "max_tokens" | "tool_use" | string;
+  stop_sequence?: string | null;
+  usage: { input_tokens: number; output_tokens: number };
+};
+
+// ── SSE 解析 ──────────────────────────────────────────────────
+
+function parseMessagesSSE(chunk: string): MessagesSSEEvent[] {
+  const events: MessagesSSEEvent[] = [];
+  let eventType = "";
+  let dataLines: string[] = [];
+
+  for (const line of chunk.split("\n")) {
+    if (line.startsWith("event: ")) {
+      eventType = line.slice(7).trim();
+    } else if (line.startsWith("data: ")) {
+      dataLines.push(line.slice(6));
+    } else if (line === "" && eventType && dataLines.length > 0) {
+      const dataStr = dataLines.join("\n");
+      if (dataStr === "[DONE]") {
+        eventType = "";
+        dataLines = [];
+        continue;
+      }
+      try {
+        const data = JSON.parse(dataStr);
+        events.push({ type: eventType as MessagesSSEEvent["type"], data });
+      } catch {
+        // skip malformed JSON
+      }
+      eventType = "";
+      dataLines = [];
+    }
+  }
+  return events;
+}
+
+// ── Content block 映射 ─────────────────────────────────────────
+
+function canonicalToMessagesBlock(b: import("../index.js").ContentBlock): MessagesAPIContentBlock {
+  if (b.type === "text") return { type: "text", text: b.text };
+  if (b.type === "image") return { type: "text", text: `[Image: ${b.imageUrl}]` };
+  if (b.type === "json") return { type: "text", text: JSON.stringify(b.json) };
+  return { type: "text", text: "" };
+}
+
+function blockToText(b: import("../index.js").ContentBlock): string {
+  if (b.type === "text") return b.text;
+  if (b.type === "json") return JSON.stringify(b.json);
+  return "";
+}
+
+// ── Adapter ───────────────────────────────────────────────────
+
+export class MessagesAdapter extends AdapterBase {
+  readonly kind = "messages" as const;
+  readonly capabilities = {
+    nativeStreaming: true,
+    messageStreaming: true,
+    reasoningStreaming: false, // 条件支持，由 adapter 在运行时判断
+    toolCallStreaming: true,
+    hiddenReasoningReplay: "partial" as const,
+    replayFidelity: "medium" as const,
+    tools: true,
+    usage: "full" as const,
+    billing: "lookup" as const,
+    providerMetadata: true,
+  };
+
+  private apiKey: string;
+  private apiVersion: string;
+  private baseUrl: string;
+  private fetchFn: FetchFn;
+  private warningAccumulator: string[];
+
+  constructor(options: MessagesAdapterOptions) {
+    super();
+    this.apiKey = options.apiKey;
+    this.apiVersion = options.apiVersion ?? "2023-06-01";
+    this.baseUrl = options.baseUrl ?? "https://api.anthropic.com/v1";
+    this.fetchFn = options.fetch ?? globalThis.fetch;
+    this.warningAccumulator = [];
+  }
+
+  protected warn(message: string, _code?: string): void {
+    this.warningAccumulator.push(message);
+  }
+
+  // ── buildRequest ──────────────────────────────────────────
+
+  protected buildRequest(request: NormalizedRequest): MessagesAPIRequest {
+    const messages: MessagesAPIMessage[] = [];
+    let systemPrompt: string | undefined;
+
+    // 处理 instructions → system prompt
+    if (request.instructions) {
+      systemPrompt = typeof request.instructions === "string"
+        ? request.instructions
+        : request.instructions.map((b) => (b.type === "text" ? b.text : "")).join("\n");
+    }
+
+    // 处理 input items
+    for (const item of request.input) {
+      switch (item.type) {
+        case "message": {
+          if (item.role === "system" || item.role === "developer") {
+            // Anthropic 不支持 system/developer role 在 messages 中
+            // 合并到 system prompt
+            const text = item.content.map((b) => (b.type === "text" ? b.text : "")).join("\n");
+            systemPrompt = systemPrompt ? `${systemPrompt}\n${text}` : text;
+            break;
+          }
+
+          const role = item.role === "user" ? "user" : "assistant";
+          if (item.content.length === 1 && item.content[0]?.type === "text") {
+            messages.push({ role, content: item.content[0].text });
+          } else {
+            messages.push({ role, content: item.content.map(canonicalToMessagesBlock) });
+          }
+          break;
+        }
+        case "tool_call": {
+          // Anthropic 使用 tool_use block 在 assistant message 中
+          const lastMsg = messages[messages.length - 1];
+          const toolBlock: MessagesAPIContentBlock = {
+            type: "tool_use",
+            id: item.id,
+            name: item.name,
+            input: item.argumentsJson as Record<string, unknown> ?? JSON.parse(item.argumentsText),
+          };
+
+          if (lastMsg && lastMsg.role === "assistant" && typeof lastMsg.content !== "string") {
+            lastMsg.content.push(toolBlock);
+          } else {
+            messages.push({ role: "assistant", content: [toolBlock] });
+          }
+          break;
+        }
+        case "tool_result": {
+          const content = item.content
+            .map(blockToText)
+            .join("\n");
+          const block: MessagesAPIContentBlock = {
+            type: "tool_result",
+            tool_use_id: item.callId,
+            content,
+            is_error: item.outcome === "error",
+          };
+          messages.push({ role: "user", content: [block] });
+          break;
+        }
+        case "reasoning": {
+          // 将 reasoning item 转为 thinking block 在 assistant message 中
+          const text = item.content.map((b) => (b.type === "text" ? b.text : "")).join("\n");
+          const block: MessagesAPIContentBlock = { type: "thinking", thinking: text };
+          const lastMsg = messages[messages.length - 1];
+          if (lastMsg && lastMsg.role === "assistant" && typeof lastMsg.content !== "string") {
+            lastMsg.content.push(block);
+          } else {
+            messages.push({ role: "assistant", content: [block] });
+          }
+          break;
+        }
+        case "opaque": {
+          // 尝试从 opaque replay item 中提取 assistant message
+          if (item.purpose === "replay" && typeof item.payload === "object" && item.payload !== null) {
+            const payload = item.payload as Record<string, unknown>;
+            if (payload.role === "assistant" && Array.isArray(payload.content)) {
+              messages.push(payload as unknown as MessagesAPIMessage);
+            }
+          }
+          break;
+        }
+      }
+    }
+
+    const body: MessagesAPIRequest = {
+      model: request.model,
+      max_tokens: request.maxOutputTokens ?? 4096,
+      messages,
+      stream: true,
+    };
+
+    if (systemPrompt) body.system = systemPrompt;
+
+    if (request.tools && request.tools.length > 0) {
+      body.tools = request.tools.map((t): MessagesAPITool => ({
+        name: t.name,
+        description: t.description,
+        input_schema: t.inputSchema,
+      }));
+    }
+
+    if (request.temperature !== undefined) body.temperature = request.temperature;
+
+    return body;
+  }
+
+  // ── runStream ─────────────────────────────────────────────
+
+  protected async *runStream(
+    providerRequest: MessagesAPIRequest,
+    factory: EventFactory,
+    request: NormalizedRequest,
+  ): AsyncIterable<AIStreamEvent> {
+    this.warningAccumulator = [];
+
+    const response = await this.fetchFn(`${this.baseUrl}/messages`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": this.apiKey,
+        "anthropic-version": this.apiVersion,
+      },
+      body: JSON.stringify(providerRequest),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => "unknown error");
+      throw new Error(`Messages API error ${response.status}: ${errorText}`);
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) {
+      throw new Error("Response body is not readable");
+    }
+
+    // 流累积状态
+    const output: OutputItem[] = [];
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let messageResponse: MessagesAPIMessageResponse | undefined;
+    let currentContentBlockIndex = -1;
+    let currentItemType: "message" | "reasoning" | "tool_call" | null = null;
+    let currentItemId = "";
+    let currentToolName = "";
+    let currentArgsText = "";
+    let currentThinkingVisibility: "full" | "redacted" = "full";
+    let hasStreamedReasoning = false;
+
+    // 内容块累积缓冲
+    let textBuffer = "";
+    let thinkingBuffer = "";
+    let argsBuffer = "";
+
+    // 完成响应数据
+    let stopReason: string | undefined;
+    let usage: Usage | undefined;
+    let rawResponseId: string | undefined;
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const events = parseMessagesSSE(buffer);
+        buffer = "";
+
+        for (const sseEvent of events) {
+          switch (sseEvent.type) {
+            case "ping":
+              continue;
+
+            case "error": {
+              const err = sseEvent.data.error;
+              yield factory.responseWarning(err.message, err.type);
+              this.warn(err.message, err.type);
+              continue;
+            }
+
+            case "message_start": {
+              messageResponse = sseEvent.data.message;
+              rawResponseId = messageResponse.id;
+              // 检查是否有 thinking 能力
+              if (messageResponse.content.some((b) => b.type === "thinking" || b.type === "redacted_thinking")) {
+                hasStreamedReasoning = true;
+              }
+              continue;
+            }
+
+            case "content_block_start": {
+              const block = sseEvent.data.content_block;
+              currentContentBlockIndex = sseEvent.data.index;
+
+              switch (block.type) {
+                case "text": {
+                  currentItemType = "message";
+                  currentItemId = `msg-${block.type}-${currentContentBlockIndex}`;
+                  textBuffer = "";
+                  yield factory.messageStarted(currentItemId);
+                  break;
+                }
+                case "thinking": {
+                  hasStreamedReasoning = true;
+                  currentItemType = "reasoning";
+                  currentItemId = `reason-${currentContentBlockIndex}`;
+                  currentThinkingVisibility = "full";
+                  thinkingBuffer = "";
+                  yield factory.reasoningStarted(currentItemId, "full");
+                  break;
+                }
+                case "redacted_thinking": {
+                  hasStreamedReasoning = true;
+                  currentItemType = "reasoning";
+                  currentItemId = `reason-redacted-${currentContentBlockIndex}`;
+                  currentThinkingVisibility = "redacted";
+                  const data = (block as unknown as { data: string }).data;
+                  yield factory.reasoningStarted(currentItemId, "redacted");
+                  yield factory.reasoningDelta(currentItemId, textBlock(data));
+                  const redactedItem = reasoningItem([textBlock(data)], "redacted", currentItemId);
+                  yield factory.reasoningCompleted(redactedItem);
+                  output.push(redactedItem);
+                  currentItemType = null;
+                  break;
+                }
+                case "tool_use": {
+                  const tuBlock = block as unknown as { id: string; name: string };
+                  currentItemType = "tool_call";
+                  currentItemId = tuBlock.id;
+                  currentToolName = tuBlock.name;
+                  currentArgsText = "";
+                  argsBuffer = "";
+                  yield factory.toolCallStarted(currentItemId, currentToolName);
+                  break;
+                }
+              }
+              continue;
+            }
+
+            case "content_block_delta": {
+              const delta = sseEvent.data.delta;
+
+              switch (delta.type) {
+                case "text_delta": {
+                  if (currentItemType === "message" && currentItemId) {
+                    const txt = (delta as unknown as { text: string }).text;
+                    textBuffer += txt;
+                    yield factory.messageDelta(currentItemId, txt);
+                  }
+                  break;
+                }
+                case "thinking_delta": {
+                  if (currentItemType === "reasoning" && currentItemId) {
+                    const txt = (delta as unknown as { thinking: string }).thinking;
+                    thinkingBuffer += txt;
+                    yield factory.reasoningDelta(currentItemId, textBlock(txt));
+                  }
+                  break;
+                }
+                case "input_json_delta": {
+                  if (currentItemType === "tool_call" && currentItemId) {
+                    const partial = (delta as unknown as { partial_json: string }).partial_json;
+                    argsBuffer += partial;
+                    yield factory.toolCallDelta(currentItemId, { argumentsText: partial });
+                  }
+                  break;
+                }
+              }
+              continue;
+            }
+
+            case "content_block_stop": {
+              if (currentItemType === "message" && currentItemId) {
+                yield factory.messageCompleted(
+                  messageItem([textBlock(textBuffer)], { id: currentItemId }),
+                );
+                output.push(messageItem([textBlock(textBuffer)], { id: currentItemId }));
+              } else if (currentItemType === "reasoning" && currentItemId && currentThinkingVisibility !== "redacted") {
+                yield factory.reasoningCompleted(
+                  reasoningItem([textBlock(thinkingBuffer)], currentThinkingVisibility, currentItemId),
+                );
+                output.push(reasoningItem([textBlock(thinkingBuffer)], currentThinkingVisibility, currentItemId));
+              } else if (currentItemType === "tool_call" && currentItemId) {
+                const tcItem = toolCallItem(currentItemId, currentToolName, currentArgsText || argsBuffer);
+                yield factory.toolCallCompleted(tcItem);
+                output.push(tcItem);
+              }
+
+              currentItemType = null;
+              currentItemId = "";
+              continue;
+            }
+
+            case "message_delta": {
+              stopReason = sseEvent.data.delta.stop_reason;
+              const u = sseEvent.data.usage;
+              if (u) {
+                usage = {
+                  inputTokens: u.input_tokens,
+                  outputTokens: u.output_tokens,
+                  totalTokens: u.input_tokens + u.output_tokens,
+                };
+              }
+              continue;
+            }
+
+            case "message_stop": {
+              // 流结束，构造 final response
+              break;
+            }
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+
+    // 标注 reasoning 能力
+    if (hasStreamedReasoning) {
+      // reasoningStreaming 动态置为 true
+      (this.capabilities as { reasoningStreaming: boolean }).reasoningStreaming = true;
+    } else {
+      // 兼容模式 warning
+      // 无 reasoning 非致命，仅记录
+    }
+
+    // 构造 replay
+    const replay = [
+      ...replayFromOutput(output),
+    ];
+
+    // 附加 opaque replay item 用于续接
+    if (rawResponseId || messageResponse) {
+      // 如果 output 中有 assistant message，将原始 content 存到 opaque
+      const assistantBlocks = output
+        .filter((item): item is import("../index.js").MessageItem & { type: "message" } => item.type === "message")
+        .map((m) => m.content);
+
+      replay.push(
+        opaqueItem("messages", "replay", {
+          role: "assistant",
+          content: assistantBlocks,
+          messageId: rawResponseId,
+        }),
+      );
+    }
+
+    // 警告低 replay fidelity
+    if (!hasStreamedReasoning) {
+      // 没有 reasoning，replay fidelity 较低
+    }
+
+    yield factory.responseCompleted(
+      this.buildResponse(request, {
+        output,
+        replay,
+        stopReason: stopReason ? mapStopReason(stopReason) : undefined,
+        usage,
+        rawResponseId,
+      }, factory),
+    );
+  }
+}
