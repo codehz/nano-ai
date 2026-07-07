@@ -98,7 +98,7 @@ function handleResponseStarted(state: AggregatorState, event: AIStreamEvent & { 
 }
 
 function handleResponseWarning(state: AggregatorState, event: AIStreamEvent & { type: "response.warning" }): void {
-  state.warnings.push(event.message);
+  pushWarnings(state, [event.message]);
 }
 
 function handleResponseAuxiliary(state: AggregatorState, event: AIStreamEvent & { type: "response.auxiliary" }): void {
@@ -109,7 +109,7 @@ function handleResponseAuxiliary(state: AggregatorState, event: AIStreamEvent & 
     state.billing = { ...state.billing, ...event.billing };
   }
   if (event.auxiliary) {
-    state.auxiliary = { ...state.auxiliary, ...event.auxiliary };
+    state.auxiliary = mergeAuxiliary(state.auxiliary, event.auxiliary);
   }
 }
 
@@ -193,6 +193,12 @@ function handleResponseCompleted(state: AggregatorState, event: AIStreamEvent & 
   }
   if (event.response.billing) {
     state.billing = { ...state.billing, ...event.response.billing };
+  }
+  if (event.response.auxiliary) {
+    state.auxiliary = mergeAuxiliary(state.auxiliary, event.response.auxiliary);
+  }
+  if (event.response.warnings) {
+    pushWarnings(state, event.response.warnings);
   }
 }
 
@@ -316,4 +322,28 @@ export function aggregateEvents(events: AIStreamEvent[]): AIResponse {
   }
 
   return buildResponse(state);
+}
+
+function mergeAuxiliary(base: AuxiliaryInfo, patch: Partial<AuxiliaryInfo>): AuxiliaryInfo {
+  const merged: AuxiliaryInfo = {
+    ...base,
+    ...patch,
+  };
+
+  if (base.providerMetadata || patch.providerMetadata) {
+    merged.providerMetadata = {
+      ...(base.providerMetadata ?? {}),
+      ...(patch.providerMetadata ?? {}),
+    };
+  }
+
+  return merged;
+}
+
+function pushWarnings(state: AggregatorState, warnings: readonly string[]): void {
+  for (const warning of warnings) {
+    if (!state.warnings.includes(warning)) {
+      state.warnings.push(warning);
+    }
+  }
 }

@@ -17,6 +17,7 @@ import type {
   AdapterCapabilities,
   AIStreamEvent,
   AIResponse,
+  AuxiliaryInfo,
   OutputItem,
   ReplayItem,
   StopReason,
@@ -43,6 +44,9 @@ export type StreamResult = {
   usage?: Usage;
   billing?: BillingInfo;
   providerMetadata?: Record<string, unknown>;
+  auxiliary?: Partial<AuxiliaryInfo>;
+  warnings?: string[];
+  metadataSources?: string[];
   rawResponseId?: string;
 };
 
@@ -103,6 +107,7 @@ export abstract class AdapterBase implements BackendAdapter {
    */
   protected buildResponse(request: NormalizedRequest, result: StreamResult, _factory: EventFactory): AIResponse {
     const text = this.extractText(result.output);
+    const auxiliary = mergeAuxiliary(result.auxiliary, result.providerMetadata ? { providerMetadata: result.providerMetadata } : undefined);
 
     return {
       id: request.requestId,
@@ -113,12 +118,15 @@ export abstract class AdapterBase implements BackendAdapter {
       stopReason: result.stopReason,
       usage: result.usage,
       billing: result.billing,
-      auxiliary: result.providerMetadata ? { providerMetadata: result.providerMetadata } : undefined,
+      auxiliary,
+      warnings: result.warnings,
       backend: {
         requestId: request.requestId,
         rawResponseId: result.rawResponseId,
         adapter: this.kind,
         isSyntheticStream: !this.capabilities.nativeStreaming,
+        metadataSources: result.metadataSources,
+        warnings: result.warnings,
       },
     };
   }
@@ -127,4 +135,25 @@ export abstract class AdapterBase implements BackendAdapter {
   protected extractText(output: OutputItem[]): string {
     return extractText(output);
   }
+}
+
+function mergeAuxiliary(
+  base?: Partial<AuxiliaryInfo>,
+  patch?: Partial<AuxiliaryInfo>,
+): AuxiliaryInfo | undefined {
+  if (!base && !patch) return undefined;
+
+  const merged: AuxiliaryInfo = {
+    ...(base ?? {}),
+    ...(patch ?? {}),
+  };
+
+  if (base?.providerMetadata || patch?.providerMetadata) {
+    merged.providerMetadata = {
+      ...(base?.providerMetadata ?? {}),
+      ...(patch?.providerMetadata ?? {}),
+    };
+  }
+
+  return merged;
 }

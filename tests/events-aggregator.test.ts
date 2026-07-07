@@ -213,8 +213,14 @@ describe("aggregateEvents", () => {
     const f = makeFactory();
     const events: AIStreamEvent[] = [
       f.responseStarted("gpt-4"),
-      f.responseAuxiliary({ usage: { inputTokens: 10 } }),
-      f.responseAuxiliary({ usage: { outputTokens: 20 } }),
+      f.responseAuxiliary({
+        usage: { inputTokens: 10 },
+        auxiliary: { providerMetadata: { requestId: "req-123" } },
+      }),
+      f.responseAuxiliary({
+        usage: { outputTokens: 20 },
+        auxiliary: { providerMetadata: { serviceTier: "default" } },
+      }),
       f.responseCompleted(
         makeCompletedResponse({
           usage: { inputTokens: 10, outputTokens: 20 },
@@ -225,6 +231,10 @@ describe("aggregateEvents", () => {
     const result = aggregateEvents(events);
     expect(result.usage?.inputTokens).toBe(10);
     expect(result.usage?.outputTokens).toBe(20);
+    expect(result.auxiliary?.providerMetadata).toEqual({
+      requestId: "req-123",
+      serviceTier: "default",
+    });
   });
 
   it("should collect warnings from response.warning events", () => {
@@ -242,6 +252,37 @@ describe("aggregateEvents", () => {
 
     const result = aggregateEvents(events);
     expect(result.warnings).toEqual(["usage missing", "replay degraded"]);
+  });
+
+  it("should preserve auxiliary and warnings from response.completed", () => {
+    const f = makeFactory();
+    const events: AIStreamEvent[] = [
+      f.responseStarted("gpt-4"),
+      f.responseAuxiliary({
+        auxiliary: {
+          providerMetadata: { requestId: "req-123" },
+        },
+      }),
+      f.responseCompleted(
+        makeCompletedResponse({
+          auxiliary: {
+            usageSource: "stream",
+            providerUsage: { input_tokens: 10, output_tokens: 5 },
+            providerMetadata: { serviceTier: "default" },
+          },
+          warnings: ["synthetic warning"],
+        }),
+      ),
+    ];
+
+    const result = aggregateEvents(events);
+    expect(result.auxiliary?.usageSource).toBe("stream");
+    expect(result.auxiliary?.providerUsage).toEqual({ input_tokens: 10, output_tokens: 5 });
+    expect(result.auxiliary?.providerMetadata).toEqual({
+      requestId: "req-123",
+      serviceTier: "default",
+    });
+    expect(result.warnings).toEqual(["synthetic warning"]);
   });
 
   it("should produce correct text from multi-message output", () => {

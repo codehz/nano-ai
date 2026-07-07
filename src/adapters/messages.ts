@@ -11,6 +11,7 @@
  */
 
 import { AdapterBase } from "../helpers/adapter-base.js";
+import { AuxiliaryCollector } from "../helpers/auxiliary-collector.js";
 import {
   textBlock,
   messageItem,
@@ -113,6 +114,56 @@ function canonicalToMessagesBlock(b: import("../index.js").ContentBlock): Messag
   if (b.type === "image") return { type: "text", text: `[Image: ${b.imageUrl}]` };
   if (b.type === "json") return { type: "text", text: JSON.stringify(b.json) };
   return { type: "text", text: "" };
+}
+
+function pickProviderHeaders(headers: Headers): Record<string, string> {
+  const metadata: Record<string, string> = {};
+
+  headers.forEach((value, key) => {
+    const normalizedKey = key.toLowerCase();
+    if (
+      normalizedKey === "request-id" ||
+      normalizedKey === "x-request-id" ||
+      normalizedKey === "anthropic-organization-id" ||
+      normalizedKey === "anthropic-beta" ||
+      normalizedKey === "retry-after" ||
+      normalizedKey.startsWith("anthropic-ratelimit-")
+    ) {
+      metadata[normalizedKey] = value;
+    }
+  });
+
+  return metadata;
+}
+
+function buildStreamMetadata(options: {
+  apiVersion: string;
+  message?: MessagesAPIMessageResponse;
+  stopReason?: string;
+  stopSequence?: string | null;
+}): Record<string, unknown> {
+  const { apiVersion, message, stopReason, stopSequence } = options;
+  const metadata: Record<string, unknown> = {
+    apiVersion,
+  };
+
+  if (message) {
+    metadata.message = {
+      id: message.id,
+      type: message.type,
+      role: message.role,
+      model: message.model,
+    };
+  }
+
+  if (stopReason !== undefined || stopSequence !== undefined) {
+    metadata.stop = {
+      reason: stopReason,
+      sequence: stopSequence,
+    };
+  }
+
+  return metadata;
 }
 
 // ── Adapter ───────────────────────────────────────────────────
@@ -302,6 +353,8 @@ export class MessagesAdapter extends AdapterBase {
     let currentArgsText = "";
     let currentThinkingVisibility: "full" | "redacted" = "full";
     let hasStreamedReasoning = false;
+    const auxiliary = new AuxiliaryCollector();
+    const metadataSources = new Set<string>();
 
     // 内容块累积缓冲
     let textBuffer = "";
@@ -310,8 +363,17 @@ export class MessagesAdapter extends AdapterBase {
 
     // 完成响应数据
     let stopReason: string | undefined;
+    let stopSequence: string | null | undefined;
     let usage: Usage | undefined;
     let rawResponseId: string | undefined;
+
+    if (request.include?.providerMetadata !== "off") {
+      const headerMetadata = pickProviderHeaders(response.headers);
+      if (Object.keys(headerMetadata).length > 0) {
+        auxiliary.recordMetadata({ headers: headerMetadata });
+        metadataSources.add("header");
+      }
+    }
 
     try {
       while (true) {
@@ -447,13 +509,15 @@ export class MessagesAdapter extends AdapterBase {
 
             case "message_delta": {
               stopReason = sseEvent.data.delta.stop_reason;
+              stopSequence = sseEvent.data.delta.stop_sequence;
               const u = sseEvent.data.usage;
-              if (u) {
+              if (u && request.include?.usage !== "off") {
                 usage = {
                   inputTokens: u.input_tokens,
                   outputTokens: u.output_tokens,
                   totalTokens: u.input_tokens + u.output_tokens,
                 };
+                auxiliary.recordUsage(usage, "stream", u);
               }
               continue;
             }
@@ -485,10 +549,24 @@ export class MessagesAdapter extends AdapterBase {
       );
     }
 
+    if (request.include?.providerMetadata !== "off") {
+      auxiliary.recordMetadata(
+        buildStreamMetadata({
+          apiVersion: this.apiVersion,
+          message: messageResponse,
+          stopReason,
+          stopSequence,
+        }),
+      );
+      metadataSources.add("stream");
+    }
+
     // 警告低 replay fidelity
     if (!hasStreamedReasoning) {
       // 没有 reasoning，replay fidelity 较低
     }
+
+    const auxiliaryResult = auxiliary.build();
 
     yield factory.responseCompleted(
       this.buildResponse(
@@ -497,7 +575,9 @@ export class MessagesAdapter extends AdapterBase {
           output,
           replay,
           stopReason: stopReason ? mapStopReason(stopReason) : undefined,
-          usage,
+          usage: auxiliaryResult.usage ?? usage,
+          auxiliary: auxiliaryResult.auxiliary,
+          metadataSources: metadataSources.size > 0 ? [...metadataSources] : undefined,
           rawResponseId,
         },
         factory,
