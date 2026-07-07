@@ -762,6 +762,50 @@ v1 实现目标如下：
 - 调用方能明确区分正常完成和异常终止
 - 非致命差异不会被误判为请求失败
 
+#### Phase 10 实施结果 ✅
+
+**完成状态：** 已完成 (2026-07-07)
+
+**关键修改文件：**
+
+| 操作 | 文件 |
+|------|------|
+| 修改 | `src/core/errors.ts` — 扩展为完整错误模型：`AIError`、`AIRequestError`、`AIProviderError`、`AIStreamError`、`AIMappingError`、`WarningCode` |
+| 修改 | `src/core/index.ts` — 导出新错误类型 |
+| 新建 | `tests/error-model.test.ts` — 21 个错误/中断语义测试 |
+
+**验证结果：**
+
+- `bun run typecheck` — 通过（无错误）
+- `bun run test` — 通过（209 tests, 209 pass, 490 expect calls）
+
+**验收标准对照：**
+
+1. ✅ 调用方能明确区分正常完成和异常终止 — `aggregateEvents` 在无 `response.completed` 时抛错，有 completed 时正常返回；`collectStream` 在断流时 reject
+2. ✅ 非致命差异不会被误判为请求失败 — warning 事件不影响 completed 生成，warning-only 流正常聚合
+
+**错误模型层次：**
+
+| 错误类型 | 致命? | 处理方式 | 示例场景 |
+|---------|-------|---------|---------|
+| `AIRequestError` | ✅ 致命 | 同步抛错 | input 为空、temperature 越界、toolChoice 不一致 |
+| `AIProviderError` | ⚠️ 非致命 | AdapterBase 捕获 → warning + 空 completed | HTTP 401、网络断开 |
+| `AIStreamError` | ⚠️ 非致命 | adapter 内部处理 → warning | chunk JSON 解析失败、事件类型不匹配 |
+| `AIMappingError` | ⚠️ 非致命 | adapter 内部处理 → warning | 无法将 provider 响应映射为 canonical 类型 |
+
+**中断语义验证：**
+
+| 场景 | 行为 | 测试 |
+|------|------|------|
+| 流正常结束（含 response.completed） | 正常聚合 | ✅ `aggregateEvents` 正常返回 |
+| 流提前中断（无 response.completed） | 抛错 | ✅ `aggregateEvents` throw, `collectStream` reject |
+| Provider 抛错 | warning + 空 completed | ✅ AdapterBase 捕获 |
+| Warning-only 事件流 | 正常聚合 | ✅ warning 出现在 `AIResponse.warnings` 中 |
+
+**Warning 代码清单：**
+
+`REPLAY_FIDELITY_LOW` · `USAGE_MISSING` · `BILLING_MISSING` · `BILLING_ESTIMATED` · `LOOKUP_FAILED` · `LOOKUP_TIMEOUT` · `STREAM_INCOMPLETE` · `CAPABILITY_DOWNGRADE` · `SYNTHETIC_STREAM`
+
 ### Phase 11: 测试矩阵
 
 目标：建立覆盖统一抽象边界的测试体系，而不是只测各 provider happy path。
