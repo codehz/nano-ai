@@ -266,8 +266,10 @@ export class ChatCompletionsAdapter extends AdapterBase {
           break;
         }
         case "tool_call": {
-          // Find last assistant message and add tool_call, or create new one
-          const lastAssistant = messages.findLast((m) => m.role === "assistant");
+          // 只允许附着到尾部 assistant turn，否则新建一个
+          const lastAssistant = messages.length > 0 && messages[messages.length - 1]?.role === "assistant"
+            ? messages[messages.length - 1]
+            : null;
           const tc: ChatToolCall = {
             id: item.id,
             type: "function",
