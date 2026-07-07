@@ -42,7 +42,7 @@ export type AuxiliaryInfo = {
 export type BackendTrace = {
   requestId?: string;
   rawResponseId?: string;
-  adapter: "chat-completions" | "messages" | "responses";
+  adapter: "chat-completions" | "messages" | "responses" | "ollama";
   isSyntheticStream: boolean;
   metadataSources?: string[];
   warnings?: string[];

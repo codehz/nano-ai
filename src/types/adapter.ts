@@ -74,12 +74,24 @@ export const CAPABILITY_MATRIX = {
     billing: "derived" as const,
     providerMetadata: false,
   },
+  ollama: {
+    nativeStreaming: true,
+    messageStreaming: true,
+    reasoningStreaming: false,
+    toolCallStreaming: false,
+    hiddenReasoningReplay: "none" as const,
+    replayFidelity: "low" as const,
+    tools: true,
+    usage: "partial" as const,
+    billing: "none" as const,
+    providerMetadata: false,
+  },
 } as const satisfies Record<string, AdapterCapabilities>;
 
 // ── Adapter 接口 ──────────────────────────────────────────────
 
 export interface BackendAdapter {
-  readonly kind: "chat-completions" | "messages" | "responses";
+  readonly kind: "chat-completions" | "messages" | "responses" | "ollama";
   readonly capabilities: AdapterCapabilities;
   stream(request: NormalizedRequest): AsyncIterable<AIStreamEvent>;
 }
