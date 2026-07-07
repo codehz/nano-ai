@@ -16,7 +16,6 @@ import type {
   AIStreamEvent,
   EventFactory,
   OutputItem,
-  StreamResult,
   Usage,
 } from "../index.js";
 
@@ -293,7 +292,6 @@ export class ChatCompletionsAdapter extends AdapterBase {
 
     // tool_calls 累积: tool call index → { id, name, args }
     const pendingToolCalls = new Map<number, { id: string; name: string; args: string }>();
-    let hasToolCallStarted = false;
 
     // usage
     let usage: Usage | undefined;
@@ -348,8 +346,6 @@ export class ChatCompletionsAdapter extends AdapterBase {
                 const idx = tc.index;
 
                 if (tc.id) {
-                  // 新工具调用开始
-                  hasToolCallStarted = true;
                   pendingToolCalls.set(idx, { id: tc.id, name: tc.function?.name ?? "", args: "" });
                   yield factory.toolCallStarted(tc.id, tc.function?.name ?? "");
                 }
@@ -368,7 +364,6 @@ export class ChatCompletionsAdapter extends AdapterBase {
             if (delta.function_call) {
               if (delta.function_call.name) {
                 const fcId = `fc-${chunk.id}-0`;
-                hasToolCallStarted = true;
                 pendingToolCalls.set(0, { id: fcId, name: delta.function_call.name, args: "" });
                 yield factory.toolCallStarted(fcId, delta.function_call.name);
               }
@@ -420,8 +415,6 @@ export class ChatCompletionsAdapter extends AdapterBase {
                 this.buildResponse(request, { output, replay, stopReason, usage, rawResponseId: chunk.id }, factory),
               );
 
-              // 已完成，清空状态 (注意: output 已被 buildResponse 消费，不要清空)
-              hasToolCallStarted = false;
               hasMessageStarted = false;
             }
           }
