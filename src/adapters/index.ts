@@ -11,3 +11,5 @@
 
 export { ResponsesAdapter } from "./responses.js";
 export type { ResponsesAdapterOptions, FetchFn } from "./responses.js";
+export { MessagesAdapter } from "./messages.js";
+export type { MessagesAdapterOptions } from "./messages.js";

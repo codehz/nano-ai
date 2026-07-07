@@ -492,6 +492,46 @@ v1 实现目标如下：
 - reasoning 可见性标注正确
 - replay fidelity 降级有显式 warning
 
+#### Phase 6 实施结果 ✅
+
+**完成状态：** 已完成 (2026-07-07)
+
+**关键修改文件：**
+
+| 操作 | 文件 |
+|------|------|
+| 新建 | `src/adapters/messages.ts` — `MessagesAdapter` 完整实现（SSE 解析、thinking/tool_use 映射、system prompt 合并） |
+| 修改 | `src/helpers/mapping.ts` — `STOP_REASON_MAP` 增加 `tool_use` → `tool_call` 映射 |
+| 修改 | `src/adapters/index.ts` — 导出 `MessagesAdapter` |
+| 新建 | `tests/messages-adapter.test.ts` — 15 个端到端测试 |
+
+**验证结果：**
+
+- `bun run typecheck` — 通过（无错误）
+- `bun run test` — 通过（138 tests, 138 pass, 301 expect calls）
+
+**验收标准对照：**
+
+1. ✅ `messages` 后端输出可被统一消费 — 文本消息流测试通过，`collectStream` + 聚合器正确产出 `AIResponse`
+2. ✅ reasoning 可见性标注正确 — `thinking` → `"full"`，`redacted_thinking` → `"redacted"` 映射正确
+3. ✅ replay 构造含 opaque continuation — `opaque` replay item 携带 assistant content 和 message ID
+
+**MessagesAdapter 能力全景：**
+
+| 能力 | 状态 |
+|------|------|
+| SSE 协议解析 | ✅ `parseMessagesSSE` 处理 8 类事件 |
+| 文本消息流 | ✅ `content_block_start(text)` → `message.*` |
+| 思维链流 (thinking) | ✅ `content_block_start(thinking)` → `reasoning.*`，visibility 为 `"full"` |
+| 隐藏思维链 (redacted_thinking) | ✅ 一次性发射完整块，visibility 为 `"redacted"` |
+| 工具调用流 (tool_use) | ✅ `input_json_delta` → `tool_call.delta` |
+| 请求构建 (buildRequest) | ✅ message/tool_call/tool_result/reasoning → Messages API 格式 |
+| System prompt 合并 | ✅ instructions + system/developer role → `system` 字段 |
+| Stop reason 映射 | ✅ `end_turn` / `max_tokens` / `tool_use` → canonical |
+| Replay 构造 | ✅ `replayFromOutput()` + `opaque` continuation（含 content blocks） |
+| Usage 采集 | ✅ 从 `message_delta` 提取 |
+| 错误处理 | ✅ HTTP 错误 → warning；SSE error 事件 → warning |
+
 ### Phase 7: `chat.completions` Adapter
 
 目标：补齐弱能力兼容层。

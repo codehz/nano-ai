@@ -37,6 +37,7 @@ const STOP_REASON_MAP: Record<string, StopReason> = {
   // Anthropic
   end_turn: "end_turn",
   max_tokens: "max_output_tokens",
+  tool_use: "tool_call",
   // Generic
   error: "error",
 };
