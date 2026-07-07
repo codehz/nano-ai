@@ -387,7 +387,10 @@ export class OllamaAdapter extends AdapterBase {
             }
 
             // 提取 usage
-            if (chunk.prompt_eval_count !== undefined || chunk.eval_count !== undefined) {
+            if (
+              request.include?.usage !== "off" &&
+              (chunk.prompt_eval_count !== undefined || chunk.eval_count !== undefined)
+            ) {
               usage = {
                 inputTokens: chunk.prompt_eval_count,
                 outputTokens: chunk.eval_count,
