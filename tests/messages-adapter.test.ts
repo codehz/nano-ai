@@ -12,6 +12,10 @@ import type { NormalizedRequest, FetchFn } from "../src/index.js";
 // ── Helpers ───────────────────────────────────────────────────
 
 function sseResponse(...chunks: string[]): Response {
+  return sseResponseWithHeaders({}, ...chunks);
+}
+
+function sseResponseWithHeaders(headers: Record<string, string>, ...chunks: string[]): Response {
   const encoder = new TextEncoder();
   const body = new ReadableStream({
     start(controller) {
@@ -23,7 +27,7 @@ function sseResponse(...chunks: string[]): Response {
   });
   return new Response(body, {
     status: 200,
-    headers: { "Content-Type": "text/event-stream" },
+    headers: { "Content-Type": "text/event-stream", ...headers },
   });
 }
 
@@ -176,6 +180,46 @@ describe("MessagesAdapter - text streaming", () => {
       expect(opaqueReplay.source).toBe("messages");
       expect(opaqueReplay.purpose).toBe("replay");
     }
+  });
+
+  it("should collect usage source and provider metadata", async () => {
+    const sse = [
+      `event: message_start\ndata: ${JSON.stringify({ type: "message_start", message: { id: "msg_meta", type: "message", role: "assistant", model: "claude-3-opus", content: [], stop_reason: null, usage: { input_tokens: 10, output_tokens: 0 } } })}\n\n`,
+      `event: content_block_start\ndata: ${JSON.stringify({ type: "content_block_start", index: 0, content_block: { type: "text", text: "" } })}\n\n`,
+      `event: content_block_delta\ndata: ${JSON.stringify({ type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "Hello" } })}\n\n`,
+      `event: content_block_stop\ndata: ${JSON.stringify({ type: "content_block_stop", index: 0 })}\n\n`,
+      `event: message_delta\ndata: ${JSON.stringify({ type: "message_delta", delta: { stop_reason: "end_turn", stop_sequence: null }, usage: { input_tokens: 10, output_tokens: 2 } })}\n\n`,
+      messageStopSSE(),
+    ];
+
+    const adapter = new MessagesAdapter({
+      apiKey: "test-key",
+      fetch: mockFetch(
+        sseResponseWithHeaders(
+          {
+            "request-id": "req_hdr_123",
+            "anthropic-ratelimit-requests-limit": "1000",
+          },
+          ...sse,
+        ),
+      ),
+    });
+
+    const result = await collectStream(adapter.stream(makeRequest()));
+    expect(result.auxiliary?.usageSource).toBe("stream");
+    expect(result.auxiliary?.providerUsage).toEqual({ input_tokens: 10, output_tokens: 2 });
+    expect(result.backend.metadataSources).toEqual(["header", "stream"]);
+
+    const providerMetadata = result.auxiliary?.providerMetadata as Record<string, unknown> | undefined;
+    expect(providerMetadata?.apiVersion).toBe("2023-06-01");
+
+    const headers = providerMetadata?.headers as Record<string, unknown> | undefined;
+    expect(headers?.["request-id"]).toBe("req_hdr_123");
+    expect(headers?.["anthropic-ratelimit-requests-limit"]).toBe("1000");
+
+    const message = providerMetadata?.message as Record<string, unknown> | undefined;
+    expect(message?.id).toBe("msg_meta");
+    expect(message?.model).toBe("claude-3-opus");
   });
 });
 
