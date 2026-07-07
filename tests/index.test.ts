@@ -12,7 +12,6 @@ import {
   type ToolResultItem,
   type OpaqueItem,
   type InputItem,
-  type OutputItem,
   type ReplayItem,
   // Request
   type AIRequest,
@@ -23,27 +22,8 @@ import {
   type StopReason,
   type Usage,
   type BillingInfo,
-  type AuxiliaryInfo,
-  type BackendTrace,
   // Events
   type AIStreamEvent,
-  type ResponseStartedEvent,
-  type ResponseCompletedEvent,
-  type MessageStartedEvent,
-  type MessageDeltaEvent,
-  type MessageCompletedEvent,
-  type ReasoningStartedEvent,
-  type ReasoningDeltaEvent,
-  type ReasoningCompletedEvent,
-  type ToolCallStartedEvent,
-  type ToolCallDeltaEvent,
-  type ToolCallCompletedEvent,
-  // Adapter
-  type BackendAdapter,
-  type AdapterCapabilities,
-  type NormalizedRequest,
-  type CreateAIClientOptions,
-  type AIClient,
   // Constants
   CAPABILITY_MATRIX,
   // Client

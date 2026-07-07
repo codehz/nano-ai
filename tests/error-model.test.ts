@@ -20,10 +20,11 @@ import {
   aggregateEvents,
   collectStream,
   AdapterBase,
+  textBlock,
+  messageItem,
 } from "../src/index.js";
-import { textBlock, messageItem } from "../src/index.js";
 
-import type { NormalizedRequest, AIStreamEvent, EventFactory, AdapterCapabilities } from "../src/index.js";
+import type { AIStreamEvent, AdapterCapabilities } from "../src/index.js";
 
 // ── 错误类型 ──────────────────────────────────────────────────
 

@@ -13,19 +13,11 @@ import {
   createEventFactory,
   textBlock,
   messageItem,
-  toolCallItem,
   toolResultItem,
   replayFromOutput,
 } from "../src/index.js";
 
-import type {
-  AIStreamEvent,
-  AIResponse,
-  BackendAdapter,
-  NormalizedRequest,
-  EventFactory,
-  AdapterCapabilities,
-} from "../src/index.js";
+import type { AIStreamEvent, BackendAdapter, NormalizedRequest } from "../src/index.js";
 
 import {
   goldenMessageReasoningToolCallSequence,
@@ -195,7 +187,7 @@ describe("Scenario: manual tool loop", () => {
         billing: "none",
         providerMetadata: false,
       },
-      stream(request: NormalizedRequest): AsyncIterable<AIStreamEvent> {
+      stream(_request: NormalizedRequest): AsyncIterable<AIStreamEvent> {
         const f = responsesFactory();
         round++;
         if (round === 1) {
