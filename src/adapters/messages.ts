@@ -119,7 +119,7 @@ function canonicalToMessagesBlock(b: import("../index.js").ContentBlock): Messag
 
 export class MessagesAdapter extends AdapterBase {
   readonly kind = "messages" as const;
-  readonly capabilities = CAPABILITY_MATRIX.messages;
+  readonly capabilities: AdapterCapabilities = { ...CAPABILITY_MATRIX.messages };
 
   private apiKey: string;
   private apiVersion: string;
@@ -467,15 +467,6 @@ export class MessagesAdapter extends AdapterBase {
       }
     } finally {
       reader.releaseLock();
-    }
-
-    // 标注 reasoning 能力
-    if (hasStreamedReasoning) {
-      // reasoningStreaming 动态置为 true
-      (this.capabilities as { reasoningStreaming: boolean }).reasoningStreaming = true;
-    } else {
-      // 兼容模式 warning
-      // 无 reasoning 非致命，仅记录
     }
 
     // 构造 replay
