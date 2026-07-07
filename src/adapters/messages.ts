@@ -11,8 +11,7 @@
  */
 
 import { AdapterBase } from "../helpers/adapter-base.js";
-import { AuxiliaryCollector } from "../helpers/auxiliary-collector.js";
-import { AIRequestError, WarningCode } from "../core/errors.js";
+import { AIRequestError } from "../core/errors.js";
 import {
   textBlock,
   messageItem,
@@ -24,11 +23,12 @@ import {
   blockToText,
   contentBlocksToText,
 } from "../helpers/mapping.js";
+import { emitMalformedStreamWarning } from "../helpers/adapter-auxiliary.js";
 
 import { parseSSEEvents } from "../helpers/sse-parser.js";
 
 import { CAPABILITY_MATRIX } from "../index.js";
-import type { NormalizedRequest, AIStreamEvent, EventFactory, OutputItem, Usage, FetchFn } from "../index.js";
+import type { NormalizedRequest, AIStreamEvent, EventFactory, OutputItem, FetchFn } from "../index.js";
 
 // ── 类型 ──────────────────────────────────────────────────────
 
@@ -401,6 +401,7 @@ export class MessagesAdapter extends AdapterBase {
     request: NormalizedRequest,
   ): AsyncIterable<AIStreamEvent> {
     this.warningAccumulator = [];
+    const auxiliary = this.createAuxiliaryState(request);
 
     if (request.metadata) {
       yield factory.responseWarning("Request metadata is not supported by the Messages adapter", "UNSUPPORTED_METADATA");
@@ -438,8 +439,6 @@ export class MessagesAdapter extends AdapterBase {
     let currentArgsText = "";
     let currentThinkingVisibility: "full" | "redacted" = "full";
     let hasStreamedReasoning = false;
-    const auxiliary = new AuxiliaryCollector();
-    const metadataSources = new Set<string>();
     const rawReplayContent: MessagesAPIContentBlock[] = [];
 
     // 内容块累积缓冲
@@ -450,15 +449,11 @@ export class MessagesAdapter extends AdapterBase {
     // 完成响应数据
     let stopReason: string | undefined;
     let stopSequence: string | null | undefined;
-    let usage: Usage | undefined;
     let rawResponseId: string | undefined;
 
     if (request.include?.providerMetadata !== "off") {
       const headerMetadata = pickProviderHeaders(response.headers);
-      if (Object.keys(headerMetadata).length > 0) {
-        auxiliary.recordMetadata({ headers: headerMetadata });
-        metadataSources.add("header");
-      }
+      auxiliary.recordProviderMetadata("header", Object.keys(headerMetadata).length > 0 ? { headers: headerMetadata } : undefined);
     }
 
     try {
@@ -470,8 +465,13 @@ export class MessagesAdapter extends AdapterBase {
         const { events, rest, malformedEvents } = parseMessagesSSE(buffer);
         buffer = rest;
 
-        if (malformedEvents > 0) {
-          yield factory.responseWarning(`Skipped ${malformedEvents} malformed Messages SSE event(s)`, "STREAM_ERROR");
+        const malformedWarning = emitMalformedStreamWarning(factory, {
+          count: malformedEvents,
+          providerLabel: "Messages",
+          transportLabel: "SSE event(s)",
+        });
+        if (malformedWarning) {
+          yield malformedWarning;
         }
 
         for (const sseEvent of events) {
@@ -610,13 +610,16 @@ export class MessagesAdapter extends AdapterBase {
               stopReason = sseEvent.data.delta.stop_reason;
               stopSequence = sseEvent.data.delta.stop_sequence;
               const u = sseEvent.data.usage;
-              if (u && request.include?.usage !== "off") {
-                usage = {
+              if (u) {
+                auxiliary.recordUsage(
+                  {
                   inputTokens: u.input_tokens,
                   outputTokens: u.output_tokens,
                   totalTokens: u.input_tokens + u.output_tokens,
-                };
-                auxiliary.recordUsage(usage, "stream", u);
+                  },
+                  "stream",
+                  u,
+                );
               }
               continue;
             }
@@ -655,7 +658,8 @@ export class MessagesAdapter extends AdapterBase {
     }
 
     if (request.include?.providerMetadata !== "off") {
-      auxiliary.recordMetadata(
+      auxiliary.recordProviderMetadata(
+        "stream",
         buildStreamMetadata({
           apiVersion: this.apiVersion,
           message: messageResponse,
@@ -663,7 +667,6 @@ export class MessagesAdapter extends AdapterBase {
           stopSequence,
         }),
       );
-      metadataSources.add("stream");
     }
 
     // 警告低 replay fidelity
@@ -671,10 +674,9 @@ export class MessagesAdapter extends AdapterBase {
       // 没有 reasoning，replay fidelity 较低
     }
 
-    const auxiliaryResult = auxiliary.build();
-
-    if (request.include?.billing !== "off") {
-      yield factory.responseWarning("Billing information was not provided by the provider", WarningCode.BILLING_MISSING);
+    const auxiliaryResult = await auxiliary.finalize(factory);
+    for (const event of auxiliaryResult.events) {
+      yield event;
     }
 
     yield factory.responseCompleted(
@@ -684,9 +686,11 @@ export class MessagesAdapter extends AdapterBase {
           output,
           replay,
           stopReason: stopReason ? mapStopReason(stopReason) : undefined,
-          usage: auxiliaryResult.usage ?? usage,
+          usage: auxiliaryResult.usage,
+          billing: auxiliaryResult.billing,
           auxiliary: auxiliaryResult.auxiliary,
-          metadataSources: metadataSources.size > 0 ? [...metadataSources] : undefined,
+          warnings: auxiliaryResult.warnings,
+          metadataSources: auxiliaryResult.metadataSources,
           rawResponseId,
         },
         factory,
