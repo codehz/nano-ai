@@ -272,6 +272,61 @@ describe("OllamaAdapter - request building", () => {
     expect(capturedUrl).toBe("http://custom:8080/api/chat");
     expect(capturedAuth).toBe("Bearer secret-key");
   });
+
+  it("should round-trip replay into a single assistant message with tool_calls", async () => {
+    const round1Chunks = [
+      `{"model":"llama3.2","created_at":"2024-01-01T00:00:00Z","message":{"role":"assistant","content":"I'll check"},"done":false}\n`,
+      `{"model":"llama3.2","created_at":"2024-01-01T00:00:01Z","message":{"role":"assistant","content":"","tool_calls":[{"function":{"name":"search","arguments":{"q":"weather"}}}]},"done":true,"done_reason":"stop"}\n`,
+    ];
+
+    const round1Adapter = new OllamaAdapter({ fetch: mockFetch(ndjsonResponse(...round1Chunks)) });
+    const round1 = await collectStream(
+      round1Adapter.stream(
+        makeRequest({
+          input: [{ type: "message" as const, role: "user" as const, content: [{ type: "text" as const, text: "weather?" }] }],
+        }),
+      ),
+    );
+
+    let capturedBody: string | undefined;
+    const round2Adapter = new OllamaAdapter({
+      fetch: async (_url, init) => {
+        capturedBody = init.body as string;
+        return ndjsonResponse(
+          `{"model":"llama3.2","created_at":"2024-01-01T00:00:02Z","message":{"role":"assistant","content":"OK"},"done":true,"done_reason":"stop"}\n`,
+        );
+      },
+    });
+
+    await collectStream(
+      round2Adapter.stream(
+        makeRequest({
+          input: [
+            { type: "message" as const, role: "user" as const, content: [{ type: "text" as const, text: "weather?" }] },
+            ...round1.replay,
+            {
+              type: "tool_result" as const,
+              callId: round1.toolCalls[0]!.id,
+              toolName: round1.toolCalls[0]!.name,
+              outcome: "success" as const,
+              content: [{ type: "text" as const, text: "sunny" }],
+            },
+          ],
+        }),
+      ),
+    );
+
+    const body = JSON.parse(capturedBody!);
+    expect(body.messages).toEqual([
+      { role: "user", content: "weather?" },
+      {
+        role: "assistant",
+        content: "I'll check",
+        tool_calls: [{ function: { name: "search", arguments: { q: "weather" } } }],
+      },
+      { role: "tool", content: "sunny" },
+    ]);
+  });
 });
 
 // ── 错误处理 ──────────────────────────────────────────────────
@@ -302,6 +357,17 @@ describe("OllamaAdapter - error handling", () => {
     expect(result.text).toBe("Partial");
     // Incomplete stream should still produce output
     expect(result.output).toHaveLength(1);
+  });
+
+  it("should omit usage when include.usage is off", async () => {
+    const chunks = [
+      `{"model":"llama3.2","created_at":"2024-01-01T00:00:00Z","message":{"role":"assistant","content":"Hello"},"done":true,"done_reason":"stop","prompt_eval_count":15,"eval_count":5}\n`,
+    ];
+
+    const adapter = new OllamaAdapter({ fetch: mockFetch(ndjsonResponse(...chunks)) });
+
+    const result = await collectStream(adapter.stream(makeRequest({ include: { usage: "off" } })));
+    expect(result.usage).toBeUndefined();
   });
 });
 
