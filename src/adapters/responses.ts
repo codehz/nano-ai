@@ -10,6 +10,7 @@
  */
 
 import { AdapterBase } from "../helpers/adapter-base.js";
+import { AIRequestError } from "../core/errors.js";
 import {
   textBlock,
   messageItem,
@@ -18,7 +19,6 @@ import {
   opaqueItem,
   replayFromOutput,
   blockToText,
-  instructionsToText,
   contentBlocksToText,
 } from "../helpers/mapping.js";
 
@@ -68,6 +68,54 @@ type ResponsesTool = {
   description?: string;
   input_schema: Record<string, unknown>;
 };
+
+function ensureResponsesTextBlocks(
+  blocks: import("../index.js").ContentBlock[],
+  field: string,
+): import("../index.js").ContentBlock[] {
+  for (let i = 0; i < blocks.length; i++) {
+    const block = blocks[i];
+    if (block.type !== "text" && block.type !== "json") {
+      throw new AIRequestError(
+        `responses does not support ${field}[${i}] of type "${block.type}"; only text/json blocks are supported`,
+        "UNSUPPORTED_CONTENT_BLOCK",
+      );
+    }
+  }
+
+  return blocks;
+}
+
+function ensureResponsesReasoningBlocks(
+  blocks: import("../index.js").ContentBlock[],
+  field: string,
+): Array<Extract<import("../index.js").ContentBlock, { type: "text" }>> {
+  return blocks.map((block, index) => {
+    if (block.type !== "text") {
+      throw new AIRequestError(
+        `responses does not support ${field}[${index}] of type "${block.type}"; reasoning only supports text blocks`,
+        "UNSUPPORTED_CONTENT_BLOCK",
+      );
+    }
+
+    return block;
+  });
+}
+
+function instructionsToResponsesText(instructions: string | import("../index.js").ContentBlock[]): string {
+  return typeof instructions === "string"
+    ? instructions
+    : contentBlocksToText(ensureResponsesTextBlocks(instructions, "instructions"));
+}
+
+function assertResponsesToolResultOutcome(outcome: import("../index.js").ToolResultItem["outcome"]): void {
+  if (outcome !== "success") {
+    throw new AIRequestError(
+      `responses does not preserve tool_result outcome "${outcome}"; only "success" is supported`,
+      "UNSUPPORTED_TOOL_RESULT_OUTCOME",
+    );
+  }
+}
 
 // ── SSE 事件类型 ──────────────────────────────────────────────
 
@@ -133,7 +181,10 @@ function rollbackTrailingReplayCanonicalItems(input: ResponsesInputItem[]): void
 function canonicalToResponsesBlock(b: import("../index.js").ContentBlock): ResponsesContentBlock {
   if (b.type === "text") return { type: "text", text: b.text };
   if (b.type === "json") return { type: "text", text: JSON.stringify(b.json) };
-  return { type: "text", text: "" };
+  throw new AIRequestError(
+    `responses does not support content block type "${b.type}" in canonical mapping`,
+    "UNSUPPORTED_CONTENT_BLOCK",
+  );
 }
 
 // ── Adapter ───────────────────────────────────────────────────
@@ -163,18 +214,25 @@ export class ResponsesAdapter extends AdapterBase {
         case "message": {
           // Responses API 中只有 assistant 角色支持 content blocks
           if (item.role === "assistant") {
-            const blocks = item.content.map(canonicalToResponsesBlock);
+            const blocks = ensureResponsesTextBlocks(item.content, `assistant message (${item.role}) content`).map(
+              canonicalToResponsesBlock,
+            );
             input.push({ type: "message", role: item.role, content: blocks });
           } else {
-            input.push({ type: "message", role: item.role, content: contentBlocksToText(item.content) });
+            input.push({
+              type: "message",
+              role: item.role,
+              content: contentBlocksToText(
+                ensureResponsesTextBlocks(item.content, `input message (${item.role}) content`),
+              ),
+            });
           }
           break;
         }
         case "reasoning": {
-          const blocks = item.content.map((b): ResponsesContentBlock => {
-            if (b.type === "text") return { type: "reasoning", text: b.text };
-            return { type: "reasoning", text: "" };
-          });
+          const blocks = ensureResponsesReasoningBlocks(item.content, "reasoning content").map(
+            (b): ResponsesContentBlock => ({ type: "reasoning", text: b.text }),
+          );
           input.push({ type: "reasoning", content: blocks });
           break;
         }
@@ -188,7 +246,10 @@ export class ResponsesAdapter extends AdapterBase {
           break;
         }
         case "tool_result": {
-          const output = item.content.map(blockToText).join("\n");
+          assertResponsesToolResultOutcome(item.outcome);
+          const output = ensureResponsesTextBlocks(item.content, `tool_result ${item.callId} content`)
+            .map(blockToText)
+            .join("\n");
           input.push({
             type: "function_call_output",
             call_id: item.callId,
@@ -223,7 +284,7 @@ export class ResponsesAdapter extends AdapterBase {
     };
 
     if (request.instructions) {
-      body.instructions = instructionsToText(request.instructions);
+      body.instructions = instructionsToResponsesText(request.instructions);
     }
 
     if (request.tools && request.tools.length > 0) {

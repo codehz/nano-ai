@@ -12,6 +12,7 @@
 
 import { AdapterBase } from "../helpers/adapter-base.js";
 import { AuxiliaryCollector } from "../helpers/auxiliary-collector.js";
+import { AIRequestError } from "../core/errors.js";
 import {
   textBlock,
   messageItem,
@@ -21,7 +22,6 @@ import {
   replayFromOutput,
   mapStopReason,
   blockToText,
-  instructionsToText,
   contentBlocksToText,
 } from "../helpers/mapping.js";
 
@@ -48,6 +48,7 @@ type MessagesAPIRequest = {
   messages: MessagesAPIMessage[];
   system?: string;
   tools?: MessagesAPITool[];
+  tool_choice?: { type: "auto" | "none" } | { type: "tool"; name: string };
   temperature?: number;
   thinking?: { type: "enabled"; budget_tokens: number };
   stream: true;
@@ -70,6 +71,54 @@ type MessagesAPITool = {
   description?: string;
   input_schema: Record<string, unknown>;
 };
+
+function ensureMessagesTextBlocks(
+  blocks: import("../index.js").ContentBlock[],
+  field: string,
+): import("../index.js").ContentBlock[] {
+  for (let i = 0; i < blocks.length; i++) {
+    const block = blocks[i];
+    if (block.type !== "text" && block.type !== "json") {
+      throw new AIRequestError(
+        `messages does not support ${field}[${i}] of type "${block.type}"; only text/json blocks are supported`,
+        "UNSUPPORTED_CONTENT_BLOCK",
+      );
+    }
+  }
+
+  return blocks;
+}
+
+function ensureMessagesReasoningBlocks(
+  blocks: import("../index.js").ContentBlock[],
+  field: string,
+): Array<Extract<import("../index.js").ContentBlock, { type: "text" }>> {
+  return blocks.map((block, index) => {
+    if (block.type !== "text") {
+      throw new AIRequestError(
+        `messages does not support ${field}[${index}] of type "${block.type}"; reasoning only supports text blocks`,
+        "UNSUPPORTED_CONTENT_BLOCK",
+      );
+    }
+
+    return block;
+  });
+}
+
+function instructionsToMessagesText(instructions: string | import("../index.js").ContentBlock[]): string {
+  return typeof instructions === "string"
+    ? instructions
+    : contentBlocksToText(ensureMessagesTextBlocks(instructions, "instructions"));
+}
+
+function assertMessagesToolResultOutcome(outcome: import("../index.js").ToolResultItem["outcome"]): void {
+  if (outcome === "rejected") {
+    throw new AIRequestError(
+      'messages does not preserve tool_result outcome "rejected"; only "success" and "error" are supported',
+      "UNSUPPORTED_TOOL_RESULT_OUTCOME",
+    );
+  }
+}
 
 // ── SSE 事件类型 ──────────────────────────────────────────────
 
@@ -126,9 +175,11 @@ function parseToolUseInput(input: string): Record<string, unknown> {
 
 function canonicalToMessagesBlock(b: import("../index.js").ContentBlock): MessagesAPIContentBlock {
   if (b.type === "text") return { type: "text", text: b.text };
-  if (b.type === "image") return { type: "text", text: `[Image: ${b.imageUrl}]` };
   if (b.type === "json") return { type: "text", text: JSON.stringify(b.json) };
-  return { type: "text", text: "" };
+  throw new AIRequestError(
+    `messages does not support content block type "${b.type}" in canonical mapping`,
+    "UNSUPPORTED_CONTENT_BLOCK",
+  );
 }
 
 function pickProviderHeaders(headers: Headers): Record<string, string> {
@@ -214,7 +265,7 @@ export class MessagesAdapter extends AdapterBase {
 
     // 处理 instructions → system prompt
     if (request.instructions) {
-      systemPrompt = instructionsToText(request.instructions);
+      systemPrompt = instructionsToMessagesText(request.instructions);
     }
 
     // 处理 input items
@@ -224,16 +275,17 @@ export class MessagesAdapter extends AdapterBase {
           if (item.role === "system" || item.role === "developer") {
             // Anthropic 不支持 system/developer role 在 messages 中
             // 合并到 system prompt
-            const text = contentBlocksToText(item.content);
+            const text = contentBlocksToText(ensureMessagesTextBlocks(item.content, `input message (${item.role}) content`));
             systemPrompt = systemPrompt ? `${systemPrompt}\n${text}` : text;
             break;
           }
 
           const role = item.role === "user" ? "user" : "assistant";
-          if (item.content.length === 1 && item.content[0]?.type === "text") {
-            messages.push({ role, content: item.content[0].text });
+          const supportedContent = ensureMessagesTextBlocks(item.content, `input message (${item.role}) content`);
+          if (supportedContent.length === 1 && supportedContent[0]?.type === "text") {
+            messages.push({ role, content: supportedContent[0].text });
           } else {
-            messages.push({ role, content: item.content.map(canonicalToMessagesBlock) });
+            messages.push({ role, content: supportedContent.map(canonicalToMessagesBlock) });
           }
           break;
         }
@@ -257,7 +309,10 @@ export class MessagesAdapter extends AdapterBase {
           break;
         }
         case "tool_result": {
-          const content = item.content.map(blockToText).join("\n");
+          assertMessagesToolResultOutcome(item.outcome);
+          const content = ensureMessagesTextBlocks(item.content, `tool_result ${item.callId} content`)
+            .map(blockToText)
+            .join("\n");
           const block: MessagesAPIContentBlock = {
             type: "tool_result",
             tool_use_id: item.callId,
@@ -269,7 +324,7 @@ export class MessagesAdapter extends AdapterBase {
         }
         case "reasoning": {
           // 将 reasoning item 转为 thinking block 在 assistant message 中
-          const text = contentBlocksToText(item.content);
+          const text = contentBlocksToText(ensureMessagesReasoningBlocks(item.content, "reasoning content"));
           const block: MessagesAPIContentBlock = { type: "thinking", thinking: text };
           const lastMsg = messages[messages.length - 1];
           if (lastMsg && lastMsg.role === "assistant" && typeof lastMsg.content !== "string") {
@@ -323,6 +378,14 @@ export class MessagesAdapter extends AdapterBase {
           input_schema: t.inputSchema,
         }),
       );
+    }
+
+    if (request.toolChoice) {
+      if (request.toolChoice === "auto") body.tool_choice = { type: "auto" };
+      else if (request.toolChoice === "none") body.tool_choice = { type: "none" };
+      else if (request.toolChoice.type === "tool") {
+        body.tool_choice = { type: "tool", name: request.toolChoice.name };
+      }
     }
 
     if (request.temperature !== undefined) body.temperature = request.temperature;

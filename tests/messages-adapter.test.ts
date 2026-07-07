@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect } from "bun:test";
-import { MessagesAdapter, collectStream } from "../src/index.js";
+import { AIRequestError, MessagesAdapter, collectStream } from "../src/index.js";
 
 import type { NormalizedRequest, FetchFn } from "../src/index.js";
 
@@ -367,6 +367,44 @@ describe("MessagesAdapter - request building", () => {
     const content = (lastMsg?.content as Array<Record<string, unknown>> | undefined) ?? [];
     expect(lastMsg?.role).toBe("user");
     expect(content[0]?.type).toBe("tool_result");
+  });
+
+  it("should include tool_choice when provided", async () => {
+    const { captured, fetch } = captureRequest();
+    const adapter = new MessagesAdapter({ apiKey: "test-key", fetch });
+
+    await collectStream(
+      adapter.stream(
+        makeRequest({
+          tools: [{ name: "get_weather", inputSchema: {} }],
+          toolChoice: { type: "tool" as const, name: "get_weather" },
+        }),
+      ),
+    );
+
+    const body = captured.current as Record<string, unknown> | null;
+    expect(body?.tool_choice).toEqual({ type: "tool", name: "get_weather" });
+  });
+
+  it("should reject unsupported image content instead of coercing it to text", async () => {
+    const { fetch } = captureRequest();
+    const adapter = new MessagesAdapter({ apiKey: "test-key", fetch });
+
+    await expect(
+      collectStream(
+        adapter.stream(
+          makeRequest({
+            input: [
+              {
+                type: "message" as const,
+                role: "user" as const,
+                content: [{ type: "image" as const, imageUrl: "https://example.com/cat.png" }],
+              },
+            ],
+          }),
+        ),
+      ),
+    ).rejects.toBeInstanceOf(AIRequestError);
   });
 
   it("should merge system/developer role messages into system prompt", async () => {

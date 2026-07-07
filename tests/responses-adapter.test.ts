@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect } from "bun:test";
-import { ResponsesAdapter, collectStream } from "../src/index.js";
+import { AIRequestError, ResponsesAdapter, collectStream } from "../src/index.js";
 
 import type { NormalizedRequest, FetchFn } from "../src/index.js";
 
@@ -268,6 +268,27 @@ describe("ResponsesAdapter - request building", () => {
     );
     const body = captured.current as Record<string, unknown> | null;
     expect(body?.tool_choice).toEqual({ type: "function", name: "get_weather" });
+  });
+
+  it("should reject unsupported image content instead of sending empty text", async () => {
+    const { fetch } = captureRequest();
+    const adapter = new ResponsesAdapter({ apiKey: "test-key", fetch });
+
+    await expect(
+      collectStream(
+        adapter.stream(
+          makeRequest({
+            input: [
+              {
+                type: "message" as const,
+                role: "user" as const,
+                content: [{ type: "image" as const, imageUrl: "https://example.com/cat.png" }],
+              },
+            ],
+          }),
+        ),
+      ),
+    ).rejects.toBeInstanceOf(AIRequestError);
   });
 
   it("should round-trip replay without duplicating canonical items when opaque continuation is present", async () => {

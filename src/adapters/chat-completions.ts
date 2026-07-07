@@ -18,7 +18,6 @@ import {
   opaqueItem,
   replayFromOutput,
   mapStopReason,
-  instructionsToText,
   contentBlocksToText,
 } from "../helpers/mapping.js";
 
@@ -105,6 +104,15 @@ type PendingToolCall = {
 type ReasoningFieldName = "reasoning" | "reasoning_content";
 
 const REASONING_FIELDS: readonly ReasoningFieldName[] = ["reasoning_content", "reasoning"];
+
+function assertChatToolResultOutcome(outcome: import("../index.js").ToolResultItem["outcome"]): void {
+  if (outcome !== "success") {
+    throw new AIRequestError(
+      `chat-completions does not preserve tool_result outcome "${outcome}"; only "success" is supported`,
+      "UNSUPPORTED_TOOL_RESULT_OUTCOME",
+    );
+  }
+}
 
 // ── SSE 解析 ──────────────────────────────────────────────────
 
@@ -315,6 +323,7 @@ export class ChatCompletionsAdapter extends AdapterBase {
           break;
         }
         case "tool_result": {
+          assertChatToolResultOutcome(item.outcome);
           messages.push({
             role: "tool",
             tool_call_id: item.callId,
