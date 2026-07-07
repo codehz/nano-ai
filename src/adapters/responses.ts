@@ -106,8 +106,9 @@ type ResponsesAPIOutputItem = {
 
 // ── SSE 解析 ──────────────────────────────────────────────────
 
-function parseSSE(chunk: string): ResponsesSSEEvent[] {
-  return parseSSEEvents(chunk) as ResponsesSSEEvent[];
+function parseSSE(chunk: string): { events: ResponsesSSEEvent[]; rest: string } {
+  const result = parseSSEEvents(chunk);
+  return { events: result.events as ResponsesSSEEvent[], rest: result.rest };
 }
 
 // ── Content block 映射 ─────────────────────────────────────────
@@ -261,8 +262,8 @@ export class ResponsesAdapter extends AdapterBase {
         if (done) break;
 
         buffer += decoder.decode(value, { stream: true });
-        const events = parseSSE(buffer);
-        buffer = ""; // parseSSE consumed the full buffer
+        const { events, rest } = parseSSE(buffer);
+        buffer = rest;
 
         for (const sseEvent of events) {
           if (sseEvent.type === "error") {

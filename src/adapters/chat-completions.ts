@@ -110,13 +110,18 @@ const REASONING_FIELDS: readonly ReasoningFieldName[] = ["reasoning_content", "r
 function parseChatSSE(buffer: string): { chunks: ChatChunk[]; rest: string } {
   const chunks: ChatChunk[] = [];
   let rest = buffer;
+  let lastProcessedIndex = 0;
 
   while (true) {
     const lineEnd = rest.indexOf("\n");
-    if (lineEnd === -1) break;
+    if (lineEnd === -1) {
+      // 没有更多完整行，剩余部分保留到下次
+      break;
+    }
 
     const line = rest.slice(0, lineEnd).trim();
     rest = rest.slice(lineEnd + 1);
+    lastProcessedIndex += lineEnd + 1;
 
     if (!line.startsWith("data: ")) continue;
 
