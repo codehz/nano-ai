@@ -107,6 +107,7 @@ export abstract class AdapterBase implements BackendAdapter {
    */
   protected buildResponse(request: NormalizedRequest, result: StreamResult, _factory: EventFactory): AIResponse {
     const text = this.extractText(result.output);
+    const warnings = mergeWarnings(result.warnings, _factory.warnings);
     const auxiliary = mergeAuxiliary(result.auxiliary, result.providerMetadata ? { providerMetadata: result.providerMetadata } : undefined);
 
     return {
@@ -119,14 +120,14 @@ export abstract class AdapterBase implements BackendAdapter {
       usage: result.usage,
       billing: result.billing,
       auxiliary,
-      warnings: result.warnings,
+      warnings,
       backend: {
         requestId: request.requestId,
         rawResponseId: result.rawResponseId,
         adapter: this.kind,
         isSyntheticStream: !this.capabilities.nativeStreaming,
         metadataSources: result.metadataSources,
-        warnings: result.warnings,
+        warnings,
       },
     };
   }
@@ -156,4 +157,19 @@ function mergeAuxiliary(
   }
 
   return merged;
+}
+
+function mergeWarnings(...groups: Array<string[] | undefined>): string[] | undefined {
+  const merged: string[] = [];
+
+  for (const group of groups) {
+    if (!group) continue;
+    for (const warning of group) {
+      if (!merged.includes(warning)) {
+        merged.push(warning);
+      }
+    }
+  }
+
+  return merged.length > 0 ? merged : undefined;
 }
