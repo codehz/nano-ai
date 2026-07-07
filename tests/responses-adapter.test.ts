@@ -253,6 +253,54 @@ describe("ResponsesAdapter - request building", () => {
     expect(body?.temperature).toBe(0.5);
     expect(body?.max_output_tokens).toBe(100);
   });
+
+  it("should round-trip replay without duplicating canonical items when opaque continuation is present", async () => {
+    const round1SSE = [
+      'event: response.output_item.added\ndata: {"item":{"id":"m1","type":"message"}}\n\n',
+      'event: response.output_text.delta\ndata: {"item_id":"m1","delta":"Hi"}\n\n',
+      'event: response.output_text.done\ndata: {"item_id":"m1","text":"Hi"}\n\n',
+      `event: response.completed\ndata: ${JSON.stringify({
+        response: {
+          id: "resp-round-1",
+          model: "gpt-4o",
+          output: [{ id: "m1", type: "message", content: [{ type: "text", text: "Hi" }] }],
+        },
+      })}\n\n`,
+    ];
+
+    const round1Adapter = new ResponsesAdapter({
+      apiKey: "test-key",
+      fetch: mockFetch(sseResponse(...round1SSE)),
+    });
+
+    const round1 = await collectStream(
+      round1Adapter.stream(
+        makeRequest({
+          input: [{ type: "message" as const, role: "user" as const, content: [{ type: "text" as const, text: "Hello" }] }],
+        }),
+      ),
+    );
+
+    const { captured, fetch } = captureRequest();
+    const round2Adapter = new ResponsesAdapter({ apiKey: "test-key", fetch });
+
+    await collectStream(
+      round2Adapter.stream(
+        makeRequest({
+          input: [
+            { type: "message" as const, role: "user" as const, content: [{ type: "text" as const, text: "Hello" }] },
+            ...round1.replay,
+          ],
+        }),
+      ),
+    );
+
+    const body = captured.current as Record<string, unknown> | null;
+    expect(body?.input).toEqual([
+      { type: "message", role: "user", content: "Hello" },
+      { type: "item_reference", id: "resp-round-1" },
+    ]);
+  });
 });
 
 // ── Error handling ────────────────────────────────────────────
@@ -291,6 +339,29 @@ describe("ResponsesAdapter - error handling", () => {
     const result = await collectStream(adapter.stream(makeRequest()));
     expect(result.warnings).toBeDefined();
     expect(result.warnings).toContain("Rate limit exceeded");
+  });
+
+  it("should omit usage when include.usage is off", async () => {
+    const sse = [
+      'event: response.output_item.added\ndata: {"item":{"id":"m1","type":"message"}}\n\n',
+      'event: response.output_text.done\ndata: {"item_id":"m1","text":"Hi"}\n\n',
+      `event: response.completed\ndata: ${JSON.stringify({
+        response: {
+          id: "resp-usage-off",
+          model: "gpt-4o",
+          output: [{ id: "m1", type: "message" }],
+          usage: { input_tokens: 10, output_tokens: 2, total_tokens: 12 },
+        },
+      })}\n\n`,
+    ];
+
+    const adapter = new ResponsesAdapter({
+      apiKey: "test-key",
+      fetch: mockFetch(sseResponse(...sse)),
+    });
+
+    const result = await collectStream(adapter.stream(makeRequest({ include: { usage: "off" } })));
+    expect(result.usage).toBeUndefined();
   });
 });
 

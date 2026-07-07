@@ -296,6 +296,45 @@ describe("AdapterBase", () => {
     expect(completed).toBeDefined();
   });
 
+  it("should carry emitted warnings into the final completed response", async () => {
+    class WarningAdapter extends AdapterBase {
+      readonly kind = "responses" as const;
+      readonly capabilities: AdapterCapabilities = {
+        nativeStreaming: false,
+        messageStreaming: true,
+        reasoningStreaming: false,
+        toolCallStreaming: false,
+        hiddenReasoningReplay: "none",
+        replayFidelity: "low",
+        tools: false,
+        usage: "none",
+        billing: "none",
+        providerMetadata: false,
+      };
+
+      protected buildRequest(): never {
+        throw new Error("provider exploded");
+      }
+
+      protected async *runStream(): AsyncIterable<AIStreamEvent> {
+        // unreachable since buildRequest throws
+      }
+    }
+
+    const adapter = new WarningAdapter();
+    const events: AIStreamEvent[] = [];
+    for await (const event of adapter.stream({ model: "gpt-4", requestId: "warn-r", input: [] })) {
+      events.push(event);
+    }
+
+    const completed = events.find((e) => e.type === "response.completed");
+    expect(completed).toBeDefined();
+    if (completed?.type === "response.completed") {
+      expect(completed.response.warnings).toBeDefined();
+      expect(completed.response.warnings![0]).toContain("provider exploded");
+    }
+  });
+
   it("should preserve requestId from NormalizedRequest", async () => {
     const adapter = new TestAdapter();
     const events: AIStreamEvent[] = [];
