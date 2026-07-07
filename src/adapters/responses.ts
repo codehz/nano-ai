@@ -111,6 +111,22 @@ function parseSSE(chunk: string): { events: ResponsesSSEEvent[]; rest: string } 
   return { events: result.events as ResponsesSSEEvent[], rest: result.rest };
 }
 
+function isReplayCanonicalInput(item: ResponsesInputItem): boolean {
+  return (
+    (item.type === "message" && item.role === "assistant") ||
+    item.type === "reasoning" ||
+    item.type === "function_call"
+  );
+}
+
+function rollbackTrailingReplayCanonicalItems(input: ResponsesInputItem[]): void {
+  while (input.length > 0) {
+    const last = input[input.length - 1];
+    if (!last || !isReplayCanonicalInput(last)) break;
+    input.pop();
+  }
+}
+
 // ── Content block 映射 ─────────────────────────────────────────
 
 function canonicalToResponsesBlock(b: import("../index.js").ContentBlock): ResponsesContentBlock {
@@ -182,6 +198,7 @@ export class ResponsesAdapter extends AdapterBase {
         case "opaque": {
           // opaque items with item_reference purpose can be passed through
           if (
+            item.source === "responses" &&
             item.purpose === "replay" &&
             typeof item.payload === "object" &&
             item.payload !== null &&
@@ -189,6 +206,7 @@ export class ResponsesAdapter extends AdapterBase {
           ) {
             const { id } = item.payload as Record<string, unknown>;
             if (typeof id === "string") {
+              rollbackTrailingReplayCanonicalItems(input);
               input.push({ type: "item_reference", id });
             }
           }
