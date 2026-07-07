@@ -127,6 +127,28 @@ function parseOllamaNDJSON(buffer: string): { chunks: OllamaChatChunk[]; rest: s
   return { chunks, rest };
 }
 
+function rollbackTrailingAssistantMessages(messages: OllamaMessage[]): void {
+  while (messages.length > 0 && messages[messages.length - 1]?.role === "assistant") {
+    messages.pop();
+  }
+}
+
+function isOllamaToolCalls(value: unknown): value is OllamaToolCall[] {
+  return Array.isArray(value) && value.every((entry) => {
+    if (!entry || typeof entry !== "object" || !("function" in entry)) return false;
+    const fn = (entry as { function?: unknown }).function;
+    return (
+      !!fn &&
+      typeof fn === "object" &&
+      "name" in fn &&
+      typeof (fn as { name?: unknown }).name === "string" &&
+      "arguments" in fn &&
+      typeof (fn as { arguments?: unknown }).arguments === "object" &&
+      (fn as { arguments?: unknown }).arguments !== null
+    );
+  });
+}
+
 // ── Adapter ───────────────────────────────────────────────────
 
 export class OllamaAdapter extends AdapterBase {
@@ -209,10 +231,15 @@ export class OllamaAdapter extends AdapterBase {
         }
         case "opaque": {
           // Best-effort restore from opaque replay
-          if (item.purpose === "replay" && typeof item.payload === "object" && item.payload !== null) {
+          if (item.source === "ollama" && item.purpose === "replay" && typeof item.payload === "object" && item.payload !== null) {
             const payload = item.payload as Record<string, unknown>;
             if (payload.role === "assistant" && typeof payload.content === "string") {
-              messages.push({ role: "assistant", content: payload.content as string });
+              rollbackTrailingAssistantMessages(messages);
+              messages.push({
+                role: "assistant",
+                content: payload.content,
+                tool_calls: isOllamaToolCalls(payload.tool_calls) ? payload.tool_calls : undefined,
+              });
             }
           }
           break;
