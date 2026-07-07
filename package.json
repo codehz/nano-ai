@@ -8,7 +8,9 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "bun test",
-    "example:basic": "bun run examples/basic.ts"
+    "example:basic": "bun run examples/basic.ts",
+    "example:multi-turn": "bun run examples/multi-turn.ts",
+    "example:tool-loop": "bun run examples/tool-loop.ts"
   },
   "devDependencies": {
     "@types/bun": "latest",
