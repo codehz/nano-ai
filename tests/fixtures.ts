@@ -4,7 +4,7 @@
  * 共享的构造器和样本数据，用于场景测试和 golden sequence 验证。
  */
 
-import { createEventFactory, textBlock, messageItem, reasoningItem, toolCallItem, opaqueItem } from "../src/index.js";
+import { createEventFactory, textBlock, messageItem, reasoningItem, toolCallItem } from "../src/index.js";
 
 import type { AIStreamEvent, AIResponse, MessageItem, ReasoningItem, ToolCallItem } from "../src/index.js";
 

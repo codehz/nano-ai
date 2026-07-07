@@ -238,10 +238,11 @@ describe("MessagesAdapter - request building", () => {
     );
     const body = captured.current as Record<string, unknown> | null;
     // 最后一条消息应该是 assistant 消息包含 tool_use block
-    const messages = body?.messages as Array<Record<string, unknown>>;
+    const messages = (body?.messages as Array<Record<string, unknown>> | undefined) ?? [];
     const lastMsg = messages[messages.length - 1];
+    const content = (lastMsg?.content as Array<Record<string, unknown>> | undefined) ?? [];
     expect(lastMsg?.role).toBe("assistant");
-    expect((lastMsg?.content as Array<Record<string, unknown>>)[0]?.type).toBe("tool_use");
+    expect(content[0]?.type).toBe("tool_use");
   });
 
   it("should map tool_result to user message with tool_result block", async () => {
@@ -264,10 +265,11 @@ describe("MessagesAdapter - request building", () => {
       ),
     );
     const body = captured.current as Record<string, unknown> | null;
-    const messages = body?.messages as Array<Record<string, unknown>>;
+    const messages = (body?.messages as Array<Record<string, unknown>> | undefined) ?? [];
     const lastMsg = messages[messages.length - 1];
+    const content = (lastMsg?.content as Array<Record<string, unknown>> | undefined) ?? [];
     expect(lastMsg?.role).toBe("user");
-    expect((lastMsg?.content as Array<Record<string, unknown>>)[0]?.type).toBe("tool_result");
+    expect(content[0]?.type).toBe("tool_result");
   });
 
   it("should merge system/developer role messages into system prompt", async () => {
