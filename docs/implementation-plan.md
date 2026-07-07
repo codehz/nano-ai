@@ -555,6 +555,44 @@ v1 实现目标如下：
 - 文本和工具调用路径可稳定工作
 - 能力缺口通过 capability 和 warning 明确暴露
 
+#### Phase 7 实施结果 ✅
+
+**完成状态：** 已完成 (2026-07-07)
+
+**关键修改文件：**
+
+| 操作 | 文件 |
+|------|------|
+| 新建 | `src/adapters/chat-completions.ts` — `ChatCompletionsAdapter` 完整实现（SSE 解析、tool_calls/function_call 映射） |
+| 修改 | `src/adapters/index.ts` — 导出 `ChatCompletionsAdapter` |
+| 新建 | `tests/chat-completions-adapter.test.ts` — 16 个弱能力场景测试 |
+
+**验证结果：**
+
+- `bun run typecheck` — 通过（无错误）
+- `bun run test` — 通过（154 tests, 154 pass, 352 expect calls）
+
+**验收标准对照：**
+
+1. ✅ 旧式 chat completion 风格响应可被统一消费 — 文本 delta 流测试通过，单块/多块均正确聚合
+2. ✅ 文本和工具调用路径可稳定工作 — `tool_calls` 和 `function_call`（legacy）两种格式均支持
+3. ✅ 能力缺口通过 capability 和 warning 明确暴露 — `capabilities.reasoningStreaming=false`、`toolCallStreaming=false`；HTTP 错误、断流等场景发出 warning
+
+**ChatCompletionsAdapter 能力全景：**
+
+| 能力 | 状态 |
+|------|------|
+| SSE 解析 | ✅ `parseChatSSE` 处理 `data: {...}` 行 + `[DONE]` 终止符 |
+| 文本消息流 | ✅ `delta.content` → `message.*` 事件 |
+| 工具调用流 (tool_calls) | ✅ `delta.tool_calls` 数组 → `tool_call.*`，支持多工具并行累积 |
+| 旧格式工具调用 (function_call) | ✅ `delta.function_call` → `tool_call.*` 事件 |
+| 消息首块标识 | ✅ `delta.role="assistant"` 识别；无 role 时从首个 `delta.content` 自动创建 |
+| 请求构建 | ✅ message/tool_call/tool_result/reasoning → Chat Completions 格式 |
+| tool_choice 映射 | ✅ `"auto"` / `"none"` / `{ type: "tool", name }` |
+| 断流保护 | ✅ 流未正常结束（无 finish_reason）时仍 emit warning + 部分 output |
+| 能力声明 | `reasoningStreaming: false`, `toolCallStreaming: false`, `replayFidelity: "low"` |
+| 错误处理 | ✅ HTTP 错误 → warning；不完整流 → warning + partial output |
+
 ### Phase 8: 模拟流式层
 
 目标：让非原生流式后端也满足统一事件流语义。
