@@ -30,7 +30,7 @@ import type {
 } from "../types/index.js";
 
 export type EventFactoryBackend = {
-  kind: "chat-completions" | "messages" | "responses";
+  kind: "chat-completions" | "messages" | "responses" | "ollama";
   isSynthetic: boolean;
 };
 

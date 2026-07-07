@@ -5,6 +5,7 @@
  * - responses
  * - messages
  * - chat.completions
+ * - ollama
  *
  * 每个 adapter 实现 BackendAdapter 内部协议。
  */
@@ -15,3 +16,5 @@ export { MessagesAdapter } from "./messages.js";
 export type { MessagesAdapterOptions } from "./messages.js";
 export { ChatCompletionsAdapter } from "./chat-completions.js";
 export type { ChatCompletionsAdapterOptions } from "./chat-completions.js";
+export { OllamaAdapter } from "./ollama.js";
+export type { OllamaAdapterOptions } from "./ollama.js";
