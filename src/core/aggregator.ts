@@ -222,6 +222,14 @@ function handleResponseCompleted(
   state.responseIdFromAdapter = event.response.id;
   state.stopReasonFromAdapter = event.response.stopReason;
   state.backendFromAdapter = event.response.backend;
+
+  // 从 response.completed 中提取 usage/billing（适配器可能未发 auxiliary 事件）
+  if (event.response.usage) {
+    state.usage = { ...state.usage, ...event.response.usage };
+  }
+  if (event.response.billing) {
+    state.billing = { ...state.billing, ...event.response.billing };
+  }
 }
 
 // ── 从聚合状态构建最终 AIResponse ─────────────────────────────

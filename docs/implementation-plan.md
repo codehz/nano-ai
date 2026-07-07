@@ -420,6 +420,54 @@ v1 实现目标如下：
 - reasoning 与 tool call 事件可被正确聚合
 - `response.replay` 能表达续接所需材料
 
+#### Phase 5 实施结果 ✅
+
+**完成状态：** 已完成 (2026-07-07)
+
+**关键修改文件：**
+
+| 操作 | 文件 |
+|------|------|
+| 新建 | `src/adapters/responses.ts` — `ResponsesAdapter` 完整实现（SSE 解析、请求构造、事件映射） |
+| 修改 | `src/helpers/adapter-base.ts` — 重构 `runStream` 返回 `AsyncIterable<AIStreamEvent>` 支持实时事件发射 |
+| 修改 | `src/core/aggregator.ts` — `handleResponseCompleted` 增加 usage/billing 提取 |
+| 修改 | `src/adapters/index.ts` — 导出 `ResponsesAdapter` |
+| 新建 | `tests/responses-adapter.test.ts` — 15 个端到端测试（文本流、reasoning 流、tool_call 流、replay、请求构建、错误处理、集成） |
+
+**验证结果：**
+
+- `bun run typecheck` — 通过（无错误）
+- `bun run test` — 通过（124 tests, 124 pass, 245 expect calls）
+
+**验收标准对照：**
+
+1. ✅ 单轮文本输出可稳定消费 — 多消息文本流测试通过，`collectStream` + 聚合器正确产出 `AIResponse`
+2. ✅ reasoning 与 tool call 事件可被正确聚合 — reasoning 流、tool_call 流测试验证 item 顺序和内容正确
+3. ✅ `response.replay` 能表达续接所需材料 — output → replay 映射 + `opaque` continuation item（含 provider response id）共同构成高保真 replay
+
+**ResponsesAdapter 能力全景：**
+
+| 能力 | 状态 |
+|------|------|
+| SSE 协议解析 | ✅ `parseSSE` 处理 event/data 行 |
+| 消息流 (message.*) | ✅ started → delta → completed |
+| 思维链流 (reasoning.*) | ✅ started → delta → completed |
+| 工具调用流 (tool_call.*) | ✅ started → delta (arguments) → completed |
+| 请求构建 (buildRequest) | ✅ message/reasoning/tool_call/tool_result/opaque → Responses API 格式 |
+| Stop reason 推断 | ✅ 基于 output items 判断 end_turn / tool_call / max_output_tokens |
+| Replay 构造 | ✅ `replayFromOutput()` + `opaque` continuation |
+| Usage 采集 | ✅ 从 `response.completed` 提取 |
+| 错误处理 | ✅ HTTP 错误 → warning + 空 completed；SSE error 事件 → warning |
+| 可测试性 | ✅ 注入 `FetchFn` mock，无需真实 API key |
+
+任务：
+
+- 映射消息块到 canonical message
+- 映射 thinking / summary / redacted thinking 到 canonical reasoning
+- 映射 tool use 到 canonical tool call
+- 把不能稳定 canonical 化但应保留的续接材料落到 `opaque`
+- 在能力降级场景发出 warning
+
 ### Phase 6: `messages` Adapter
 
 目标：补齐 Anthropic 风格 `messages` / `thinking` / `tool use` 映射。
