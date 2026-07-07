@@ -10,16 +10,13 @@
  */
 
 import { AdapterBase } from "../helpers/adapter-base.js";
-import { createEventFactory } from "../core/event-factory.js";
-import { textBlock, messageItem, reasoningItem, toolCallItem, opaqueItem, replayFromOutput, mapStopReason } from "../helpers/mapping.js";
+import { textBlock, messageItem, reasoningItem, toolCallItem, opaqueItem, replayFromOutput } from "../helpers/mapping.js";
 
 import type {
   NormalizedRequest,
   AIStreamEvent,
-  AIResponse,
   EventFactory,
   OutputItem,
-  StreamResult,
   Usage,
 } from "../index.js";
 

@@ -11,14 +11,13 @@
  */
 
 import { AdapterBase } from "../helpers/adapter-base.js";
-import { textBlock, messageItem, reasoningItem, toolCallItem, opaqueItem, replayFromOutput, mapStopReason, mapReasoningVisibility } from "../helpers/mapping.js";
+import { textBlock, messageItem, reasoningItem, toolCallItem, opaqueItem, replayFromOutput, mapStopReason } from "../helpers/mapping.js";
 
 import type {
   NormalizedRequest,
   AIStreamEvent,
   EventFactory,
   OutputItem,
-  StreamResult,
   Usage,
 } from "../index.js";
 
