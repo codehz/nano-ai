@@ -40,13 +40,19 @@ export function parseSSEEvents(chunk: string): SSEParseResult {
   const events: SSEEvent[] = [];
   let eventType = "";
   let dataLines: string[] = [];
-  let lastEventEnd = 0;
+  let consumedUntil = 0;
+  let cursor = 0;
 
-  const lines = chunk.split("\n");
+  while (cursor < chunk.length) {
+    const lineEnd = chunk.indexOf("\n", cursor);
+    if (lineEnd === -1) break;
 
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    if (line === undefined) continue;
+    let line = chunk.slice(cursor, lineEnd);
+    cursor = lineEnd + 1;
+
+    if (line.endsWith("\r")) {
+      line = line.slice(0, -1);
+    }
 
     if (line.startsWith("event: ")) {
       eventType = line.slice(7).trim();
@@ -58,7 +64,7 @@ export function parseSSEEvents(chunk: string): SSEParseResult {
       if (dataStr === "[DONE]") {
         eventType = "";
         dataLines = [];
-        lastEventEnd = i + 1;
+        consumedUntil = cursor;
         continue;
       }
       try {
@@ -69,23 +75,11 @@ export function parseSSEEvents(chunk: string): SSEParseResult {
       }
       eventType = "";
       dataLines = [];
-      lastEventEnd = i + 1;
+      consumedUntil = cursor;
+    } else if (line === "" && !eventType && dataLines.length === 0) {
+      consumedUntil = cursor;
     }
   }
 
-  // 计算剩余 buffer：从最后一个完整 event 结束位置开始
-  const rest = lines.slice(lastEventEnd).join("\n");
-
-  // 如果有未完成的 event（有 eventType 或 dataLines 但没遇到空行），
-  // 把这些也保留在 rest 中
-  if (eventType || dataLines.length > 0) {
-    let pending = "";
-    if (eventType) pending += `event: ${eventType}\n`;
-    for (const dl of dataLines) {
-      pending += `data: ${dl}\n`;
-    }
-    return { events, rest: pending + rest };
-  }
-
-  return { events, rest };
+  return { events, rest: chunk.slice(consumedUntil) };
 }

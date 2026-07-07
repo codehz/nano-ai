@@ -81,6 +81,29 @@ describe("ChatCompletionsAdapter - text streaming", () => {
     expect(result.text).toBe("Hi there");
   });
 
+  it("should handle SSE lines split across transport chunks", async () => {
+    const chunks = [
+      'data: {"id":"chatcmpl-split","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}',
+      "\n",
+      'data: {"id":"chatcmpl-split","choices":[{"index":0,"delta":{"content":"Hello"},"finish_reason":null}]}'.slice(0, 50),
+      'data: {"id":"chatcmpl-split","choices":[{"index":0,"delta":{"content":"Hello"},"finish_reason":null}]}'.slice(50) + "\n",
+      'data: {"id":"chatcmpl-split","choices":[{"index":0,"delta":{"content":" chunked"},"finish_reason":null}]}\n',
+      'data: {"id":"chatcmpl-split","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n',
+      "data: [DO",
+      "NE]\n",
+    ];
+
+    const adapter = new ChatCompletionsAdapter({
+      apiKey: "test-key",
+      fetch: mockFetch(sseResponse(...chunks)),
+    });
+
+    const result = await collectStream(adapter.stream(makeRequest()));
+    expect(result.text).toBe("Hello chunked");
+    expect(result.output).toHaveLength(1);
+    expect(result.stopReason).toBe("end_turn");
+  });
+
   it("should handle finish_reason length", async () => {
     const chunks = [
       'data: {"id":"chatcmpl-125","choices":[{"index":0,"delta":{"content":"Long text"},"finish_reason":null}]}\n',
@@ -367,6 +390,58 @@ describe("ChatCompletionsAdapter - request building", () => {
     const body = captured.current as Record<string, unknown> | null;
     const messages = body?.messages as Array<Record<string, unknown>>;
     expect(messages).toEqual([{ role: "assistant", content: "答案", reasoning_content: "先思考" }]);
+  });
+
+  it("should round-trip tool_call replay into the next chat request", async () => {
+    const round1Chunks = [
+      'data: {"id":"chatcmpl-tool-loop","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}\n',
+      'data: {"id":"chatcmpl-tool-loop","choices":[{"index":0,"delta":{"content":"I\'ll check"},"finish_reason":null}]}\n',
+      'data: {"id":"chatcmpl-tool-loop","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"search","arguments":"{\\"q\\":\\"weather\\"}"}}]},"finish_reason":null}]}\n',
+      'data: {"id":"chatcmpl-tool-loop","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}\n',
+      "data: [DONE]\n",
+    ];
+    const round1Adapter = new ChatCompletionsAdapter({
+      apiKey: "test-key",
+      fetch: mockFetch(sseResponse(...round1Chunks)),
+    });
+    const round1 = await collectStream(
+      round1Adapter.stream(
+        makeRequest({
+          input: [{ type: "message" as const, role: "user" as const, content: [{ type: "text" as const, text: "weather?" }] }],
+        }),
+      ),
+    );
+
+    const { captured, fetch } = captureRequest();
+    const round2Adapter = new ChatCompletionsAdapter({ apiKey: "test-key", fetch });
+    await collectStream(
+      round2Adapter.stream(
+        makeRequest({
+          input: [
+            { type: "message" as const, role: "user" as const, content: [{ type: "text" as const, text: "weather?" }] },
+            ...round1.replay,
+            {
+              type: "tool_result" as const,
+              callId: "call_1",
+              toolName: "search",
+              outcome: "success" as const,
+              content: [{ type: "text" as const, text: "sunny" }],
+            },
+          ],
+        }),
+      ),
+    );
+
+    const body = captured.current as Record<string, unknown> | null;
+    expect(body?.messages).toEqual([
+      { role: "user", content: "weather?" },
+      {
+        role: "assistant",
+        content: "I'll check",
+        tool_calls: [{ id: "call_1", type: "function", function: { name: "search", arguments: '{"q":"weather"}' } }],
+      },
+      { role: "tool", tool_call_id: "call_1", name: "search", content: "sunny" },
+    ]);
   });
 });
 

@@ -107,6 +107,21 @@ function parseMessagesSSE(chunk: string): { events: MessagesSSEEvent[]; rest: st
   return { events: result.events as MessagesSSEEvent[], rest: result.rest };
 }
 
+function rollbackTrailingAssistantMessages(messages: MessagesAPIMessage[]): void {
+  while (messages.length > 0 && messages[messages.length - 1]?.role === "assistant") {
+    messages.pop();
+  }
+}
+
+function parseToolUseInput(input: string): Record<string, unknown> {
+  try {
+    const parsed = JSON.parse(input);
+    return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
+}
+
 // ── Content block 映射 ─────────────────────────────────────────
 
 function canonicalToMessagesBlock(b: import("../index.js").ContentBlock): MessagesAPIContentBlock {
@@ -276,6 +291,7 @@ export class MessagesAdapter extends AdapterBase {
                   (b.type === "text" || b.type === "thinking" || b.type === "redacted_thinking" || b.type === "tool_use" || b.type === "tool_result"),
               );
               if (isValidContent) {
+                rollbackTrailingAssistantMessages(messages);
                 messages.push({
                   role: "assistant",
                   content: payload.content as MessagesAPIContentBlock[],
@@ -355,6 +371,7 @@ export class MessagesAdapter extends AdapterBase {
     let hasStreamedReasoning = false;
     const auxiliary = new AuxiliaryCollector();
     const metadataSources = new Set<string>();
+    const rawReplayContent: MessagesAPIContentBlock[] = [];
 
     // 内容块累积缓冲
     let textBuffer = "";
@@ -438,6 +455,7 @@ export class MessagesAdapter extends AdapterBase {
                   const redactedItem = reasoningItem([textBlock(data)], "redacted", currentItemId);
                   yield factory.reasoningCompleted(redactedItem);
                   output.push(redactedItem);
+                  rawReplayContent.push({ type: "redacted_thinking", data });
                   currentItemType = null;
                   break;
                 }
@@ -491,15 +509,23 @@ export class MessagesAdapter extends AdapterBase {
               if (currentItemType === "message" && currentItemId) {
                 yield factory.messageCompleted(messageItem([textBlock(textBuffer)], { id: currentItemId }));
                 output.push(messageItem([textBlock(textBuffer)], { id: currentItemId }));
+                rawReplayContent.push({ type: "text", text: textBuffer });
               } else if (currentItemType === "reasoning" && currentItemId && currentThinkingVisibility !== "redacted") {
                 yield factory.reasoningCompleted(
                   reasoningItem([textBlock(thinkingBuffer)], currentThinkingVisibility, currentItemId),
                 );
                 output.push(reasoningItem([textBlock(thinkingBuffer)], currentThinkingVisibility, currentItemId));
+                rawReplayContent.push({ type: "thinking", thinking: thinkingBuffer });
               } else if (currentItemType === "tool_call" && currentItemId) {
                 const tcItem = toolCallItem(currentItemId, currentToolName, currentArgsText || argsBuffer);
                 yield factory.toolCallCompleted(tcItem);
                 output.push(tcItem);
+                rawReplayContent.push({
+                  type: "tool_use",
+                  id: currentItemId,
+                  name: currentToolName,
+                  input: parseToolUseInput(currentArgsText || argsBuffer),
+                });
               }
 
               currentItemType = null;
@@ -539,12 +565,14 @@ export class MessagesAdapter extends AdapterBase {
     // 附加 opaque replay item 用于续接
     // 保存 provider 原始 block 以实现高保真 replay
     if (messageResponse) {
+      const replayContent = rawReplayContent.length > 0 ? rawReplayContent : messageResponse.content;
       replay.push(
         opaqueItem("messages", "replay", {
+          replaceCanonical: true,
           role: messageResponse.role,
-          content: messageResponse.content,
+          content: replayContent,
           messageId: messageResponse.id,
-          stopReason: messageResponse.stop_reason,
+          stopReason: stopReason ?? messageResponse.stop_reason,
         }),
       );
     }
