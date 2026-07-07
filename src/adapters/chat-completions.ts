@@ -179,7 +179,7 @@ export class ChatCompletionsAdapter extends AdapterBase {
         }
         case "tool_call": {
           // Find last assistant message and add tool_call, or create new one
-          const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant");
+          const lastAssistant = messages.findLast((m) => m.role === "assistant");
           const tc: ChatToolCall = {
             id: item.id,
             type: "function",

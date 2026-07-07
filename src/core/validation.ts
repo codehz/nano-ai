@@ -110,8 +110,8 @@ export function validateRequest(request: AIRequest): ValidationIssue[] {
  */
 export function assertValidRequest(request: AIRequest): void {
   const issues = validateRequest(request);
-  if (issues.length > 0) {
-    const first = issues[0]!;
+  const first = issues[0];
+  if (first) {
     throw new AIRequestError(first.message, first.code);
   }
 }

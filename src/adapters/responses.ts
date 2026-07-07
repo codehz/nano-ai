@@ -226,7 +226,10 @@ export class ResponsesAdapter extends AdapterBase {
             item.payload !== null &&
             "id" in (item.payload as Record<string, unknown>)
           ) {
-            input.push({ type: "item_reference", id: (item.payload as Record<string, string>).id! });
+            const { id } = item.payload as Record<string, unknown>;
+            if (typeof id === "string") {
+              input.push({ type: "item_reference", id });
+            }
           }
           break;
         }

@@ -39,15 +39,15 @@ export type EventFactoryState = {
   backend: EventFactoryBackend;
 };
 
+function timestamp(): string {
+  return new Date().toISOString();
+}
+
 export function createEventFactory(state: EventFactoryState) {
   let seq = 0;
 
   function next(): number {
     return seq++;
-  }
-
-  function timestamp(): string {
-    return new Date().toISOString();
   }
 
   function base(): Pick<ResponseStartedEvent, "responseId" | "sequence" | "timestamp" | "backend"> {
