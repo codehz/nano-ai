@@ -907,6 +907,53 @@ v1 实现目标如下：
 - 新用户只看 README 和示例即可完成首次接入
 - 示例代码与真实公开 API 一致
 
+#### Phase 12 实施结果 ✅
+
+**完成状态：** 已完成 (2026-07-07)
+
+**关键修改文件：**
+
+| 操作 | 文件 |
+|------|------|
+| 修改 | `README.md` — 完整文档（核心概念、API 参考、adapter 对比、三类示例说明、开发命令） |
+| 修改 | `examples/basic.ts` — 单轮流式输出示例（逐事件消费 + collectStream） |
+| 新建 | `examples/multi-turn.ts` — 多轮 replay 示例（transcript 维护 + 三轮对话） |
+| 新建 | `examples/tool-loop.ts` — 手动工具循环示例（tool_call → execute → tool_result → next） |
+| 修改 | `package.json` — 新增 `example:multi-turn`、`example:tool-loop` 脚本 |
+
+**验证结果：**
+
+- `bun run typecheck` — 通过（无错误）
+- `bun run test` — 通过（228 tests, 228 pass, 549 expect calls）
+
+**验收标准对照：**
+
+1. ✅ 新用户只看 README 和示例即可完成首次接入 — README 覆盖安装、快速开始、核心概念、API 参考、adapter 对比、三类示例说明
+2. ✅ 示例代码与真实公开 API 一致 — 三个示例均使用 `createAIClient`、`client.stream`、`collectStream` 公开 API
+
+**文档覆盖内容：**
+
+| 章节 | 内容 |
+|------|------|
+| 快速开始 | `createAIClient` + `ResponsesAdapter` + `for await` 流式消费 |
+| 核心概念 | AIRequest / AIStreamEvent / AIResponse 模型说明 |
+| 统一请求模型 | InputItem 类型表 |
+| 统一事件流 | 事件时序图 + 类型表 |
+| 统一终结结果 | AIResponse 字段表 |
+| 后端 Adapter | 三类 adapter 类名 + 能力评级 + `capabilities` 字段说明 |
+| 多轮对话 | replay 保留 + transcript 维护 + 代码片段 |
+| 手动工具循环 | tool_call → execute → tool_result 流程 + 代码片段 |
+| 模拟流式 | syntheticStream 用法 |
+| 辅助信息采集 | AuxiliaryCollector 用法 |
+
+**三组示例：**
+
+| 示例 | 文件 | 演示场景 |
+|------|------|---------|
+| 单轮流式输出 | `examples/basic.ts` | 逐事件 for-await + collectStream 聚合 |
+| 多轮 replay | `examples/multi-turn.ts` | transcript 维护、replay 追加、三轮对话 |
+| 手动工具循环 | `examples/tool-loop.ts` | tool_call 接收、工具执行、tool_result构造、轮次控制 |
+
 ## 建议里程碑
 
 ### M1: 内核落地
