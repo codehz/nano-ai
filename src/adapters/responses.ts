@@ -19,11 +19,9 @@ import {
   replayFromOutput,
 } from "../helpers/mapping.js";
 
-import type { NormalizedRequest, AIStreamEvent, EventFactory, OutputItem, Usage } from "../index.js";
+import type { NormalizedRequest, AIStreamEvent, EventFactory, OutputItem, Usage, FetchFn } from "../index.js";
 
 // ── 类型 ──────────────────────────────────────────────────────
-
-export type FetchFn = (url: string, init: RequestInit) => Promise<Response>;
 
 export type ResponsesAdapterOptions = {
   apiKey: string;

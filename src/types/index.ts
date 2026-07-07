@@ -49,6 +49,7 @@ export type {
 export type {
   BackendAdapter,
   AdapterCapabilities,
+  FetchFn,
   NormalizedRequest,
   CreateAIClientOptions,
   AIClient,
