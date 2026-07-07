@@ -19,8 +19,6 @@ import {
 import type {
   NormalizedRequest,
   AIStreamEvent,
-  AIResponse,
-  StreamResult,
   EventFactory,
   AdapterCapabilities,
 } from "../src/index.js";
@@ -188,36 +186,29 @@ describe("AdapterBase", () => {
       return JSON.stringify(request);
     }
 
-    protected async runStream(
+    protected async *runStream(
       _providerRequest: string,
       factory: EventFactory,
-    ): Promise<StreamResult> {
-      const output = [
-        messageItem([textBlock("Hello world")], { id: "m1" }),
-      ];
+      request: NormalizedRequest,
+    ): AsyncIterable<AIStreamEvent> {
+      yield factory.messageStarted("m1");
+      yield factory.messageDelta("m1", "Hello world");
+      yield factory.messageCompleted({
+        type: "message",
+        role: "assistant",
+        id: "m1",
+        content: [textBlock("Hello world")],
+      });
 
-      // 通过 factory 发射 item 事件
-      const msgEvents = [
-        factory.messageStarted("m1"),
-        factory.messageDelta("m1", "Hello world"),
-        factory.messageCompleted({
-          type: "message",
-          role: "assistant",
-          id: "m1",
-          content: [textBlock("Hello world")],
-        }),
-      ];
-
-      // 实际上我们只是收集在 StreamResult 里，事件由外部消费
-      // 这里简化：子类在 runStream 中不必须使用 factory，但可以
-      void msgEvents;
-
-      return {
-        output,
-        replay: output,
-        stopReason: "end_turn",
-        usage: { inputTokens: 5, outputTokens: 2 },
-      };
+      const output = [messageItem([textBlock("Hello world")], { id: "m1" })];
+      yield factory.responseCompleted(
+        this.buildResponse(request, {
+          output,
+          replay: output,
+          stopReason: "end_turn",
+          usage: { inputTokens: 5, outputTokens: 2 },
+        }, factory),
+      );
     }
   }
 
@@ -234,7 +225,6 @@ describe("AdapterBase", () => {
       events.push(event);
     }
 
-    // 应该至少有 response.started 和 response.completed
     expect(events.length).toBeGreaterThanOrEqual(2);
     expect(events[0]!.type).toBe("response.started");
     expect(events[events.length - 1]!.type).toBe("response.completed");
@@ -280,8 +270,8 @@ describe("AdapterBase", () => {
       protected buildRequest(): never {
         throw new Error("API connection failed");
       }
-      protected async runStream(): Promise<StreamResult> {
-        return { output: [], replay: [] };
+      protected async *runStream(): AsyncIterable<AIStreamEvent> {
+        // unreachable since buildRequest throws
       }
     }
 
@@ -315,7 +305,7 @@ describe("AdapterBase", () => {
     }
   });
 
-  it("should set isSyntheticStream to true for non-native-streaming adapters", async () => {
+  it("should set isSyntheticStream correctly", async () => {
     const adapter = new TestAdapter(); // nativeStreaming: false
     const events: AIStreamEvent[] = [];
     for await (const event of adapter.stream({
@@ -328,7 +318,6 @@ describe("AdapterBase", () => {
       expect(completed.response.backend.isSyntheticStream).toBe(true);
     }
 
-    // 响应级事件也应携带 isSynthetic
     const started = events.find((e) => e.type === "response.started");
     if (started) {
       expect(started.backend.isSynthetic).toBe(true);
@@ -345,8 +334,14 @@ describe("AdapterBase", () => {
         tools: false, usage: "none", billing: "none", providerMetadata: false,
       };
       protected buildRequest(r: NormalizedRequest) { return r; }
-      protected async runStream(): Promise<StreamResult> {
-        return { output: [], replay: [] };
+      protected async *runStream(
+        _pr: unknown,
+        factory: EventFactory,
+        request: NormalizedRequest,
+      ): AsyncIterable<AIStreamEvent> {
+        yield factory.responseCompleted(
+          this.buildResponse(request, { output: [], replay: [] }, factory),
+        );
       }
     }
     const adapter = new EmptyAdapter();

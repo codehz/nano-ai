@@ -7,8 +7,8 @@
  * 3. parseResponse   — 解析 provider 响应为 canonical 中间态
  * 4. emitEvents      — 产出 canonical 事件流
  *
- * 子类只需实现 buildRequest() 和 runStream()，
- * 共享的事件创建、warnings 跟踪、final response 构建由基类完成。
+ * 子类实现 buildRequest() 和 runStream()，
+ * runStream 返回 AsyncIterable，事件实时发射给消费者。
  */
 
 import type {
@@ -22,18 +22,20 @@ import type {
   StopReason,
   Usage,
   BillingInfo,
+  MessageItem,
+  ContentBlock,
+  ToolCallItem,
 } from "../types/index.js";
 import { createEventFactory } from "../core/event-factory.js";
 import type { EventFactory } from "../core/event-factory.js";
 
 // ── Adapter 解析中间结果 ──────────────────────────────────────
 
-export type ProviderStreamChunk = unknown;
 export type ProviderResponse = unknown;
 
 /**
- * adapter 完成一轮流式处理后返回的结果。
- * 子类在 runStream 中填充此对象。
+ * adapter 完成一轮处理后返回的最终结果。
+ * 用于 buildResponse() 构建 AIResponse。
  */
 export type StreamResult = {
   output: OutputItem[];
@@ -53,11 +55,9 @@ export abstract class AdapterBase implements BackendAdapter {
 
   /**
    * stream 模板方法：
-   * 1. 创建事件工厂
-   * 2. 发射 response.started
-   * 3. 构建 provider 请求并运行流
-   * 4. 发射 response.auxiliary（如有）
-   * 5. 构建 final response 并发射 response.completed
+   * 1. 创建事件工厂，发射 response.started
+   * 2. 构建 provider 请求
+   * 3. 委托 runStream 发射全部流事件（含 response.completed）
    */
   async *stream(request: NormalizedRequest): AsyncIterable<AIStreamEvent> {
     const factory = createEventFactory({
@@ -67,55 +67,41 @@ export abstract class AdapterBase implements BackendAdapter {
 
     yield factory.responseStarted(request.model);
 
-    let result: StreamResult;
-
     try {
       const providerRequest = await this.buildRequest(request);
-      result = await this.runStream(providerRequest, factory);
+      yield* this.runStream(providerRequest, factory, request);
     } catch (err) {
       yield factory.responseWarning(
         err instanceof Error ? err.message : String(err),
         "PROVIDER_ERROR",
       );
-      // 仍然尝试给出一个空的 completed，避免调用方无端挂起
-      result = {
-        output: [],
-        replay: [],
-      };
+      yield factory.responseCompleted(
+        this.buildResponse(request, { output: [], replay: [] }, factory),
+      );
     }
-
-    // 如果有辅助信息且在 runStream 中已收集，发射 auxiliary 事件
-    if (result.usage || result.billing) {
-      yield factory.responseAuxiliary({
-        usage: result.usage,
-        billing: result.billing,
-      });
-    }
-
-    // 构建并发射最终 response
-    const response = this.buildResponse(request, result, factory);
-    yield factory.responseCompleted(response);
   }
 
   // ── 子类必须实现 ──────────────────────────────────────────
 
-  /**
-   * 将 NormalizedRequest 转换为 provider 请求格式。
-   */
-  protected abstract buildRequest(request: NormalizedRequest): ProviderResponse | Promise<ProviderResponse>;
+  /** 将 NormalizedRequest 转换为 provider 请求格式。 */
+  protected abstract buildRequest(
+    request: NormalizedRequest,
+  ): ProviderResponse | Promise<ProviderResponse>;
 
   /**
-   * 执行流式请求，使用事件工厂发射事件，填充 StreamResult。
-   * 子类在此方法内：
+   * 执行流式请求，发射全部事件（含 response.completed）。
+   * 子类负责：
    * - 调用 provider
    * - 解析每个 chunk
-   * - 通过 factory 发射事件
-   * - 收集 output / replay / usage 等
+   * - 通过 factory 发射 item 事件
+   * - 构建 StreamResult
+   * - 发射 factory.responseCompleted(buildResponse(…))
    */
   protected abstract runStream(
     providerRequest: ProviderResponse,
     factory: EventFactory,
-  ): StreamResult | Promise<StreamResult>;
+    request: NormalizedRequest,
+  ): AsyncIterable<AIStreamEvent>;
 
   // ── 共享构造方法 ──────────────────────────────────────────
 
@@ -136,7 +122,7 @@ export abstract class AdapterBase implements BackendAdapter {
       replay: result.replay,
       text,
       toolCalls: result.output.filter(
-        (item): item is import("../types/index.js").ToolCallItem => item.type === "tool_call",
+        (item): item is ToolCallItem => item.type === "tool_call",
       ),
       stopReason: result.stopReason,
       usage: result.usage,
@@ -153,16 +139,12 @@ export abstract class AdapterBase implements BackendAdapter {
     };
   }
 
-  /**
-   * 从 output items 中提取文本内容。
-   */
+  /** 从 output items 中提取文本内容。 */
   protected extractText(output: OutputItem[]): string {
     return output
-      .filter((item): item is import("../types/index.js").MessageItem => item.type === "message")
+      .filter((item): item is MessageItem => item.type === "message")
       .flatMap((m) => m.content)
-      .filter(
-        (b): b is import("../types/index.js").ContentBlock & { type: "text" } => b.type === "text",
-      )
+      .filter((b): b is ContentBlock & { type: "text" } => b.type === "text")
       .map((b) => b.text)
       .join("");
   }

@@ -9,4 +9,5 @@
  * 每个 adapter 实现 BackendAdapter 内部协议。
  */
 
-export {};
+export { ResponsesAdapter } from "./responses.js";
+export type { ResponsesAdapterOptions, FetchFn } from "./responses.js";
