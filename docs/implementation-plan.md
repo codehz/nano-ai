@@ -617,6 +617,45 @@ v1 实现目标如下：
 - 非流式响应可以被包装成规范事件流
 - 调用方只需面向同一 `AsyncIterable<AIStreamEvent>` 编程
 
+#### Phase 8 实施结果 ✅
+
+**完成状态：** 已完成 (2026-07-07)
+
+**关键修改文件：**
+
+| 操作 | 文件 |
+|------|------|
+| 新建 | `src/helpers/synthetic-stream.ts` — `syntheticStream()` 通用模拟流式实现 |
+| 修改 | `src/helpers/index.ts` — 导出 `syntheticStream` |
+| 新建 | `tests/synthetic-stream.test.ts` — 16 个测试 |
+
+**验证结果：**
+
+- `bun run typecheck` — 通过（无错误）
+- `bun run test` — 通过（170 tests, 170 pass, 399 expect calls）
+
+**验收标准对照：**
+
+1. ✅ 非流式响应可以被包装成规范事件流 — `syntheticStream()` 接受 `OutputItem[]` + metadata，产出完整 `AsyncIterable<AIStreamEvent>`
+2. ✅ 调用方只需面向同一 `AsyncIterable<AIStreamEvent>` 编程 — 输出可直接 `for await` 消费，也可通过 `collectStream` / `aggregateEvents` 聚合
+
+**约束遵守情况：**
+
+| 约束 | 状态 |
+|------|------|
+| 每个 item 只发一块完整 delta | ✅ `message.delta` 一次性发射全部 text |
+| 保持 item 边界 | ✅ `started` → `delta` → `completed` 严格遵守 |
+| 保持后端原始顺序 | ✅ `output` 数组顺序决定事件发射顺序 |
+| 不发明 reasoning | ✅ 只发射 output 中已存在的 `ReasoningItem` |
+| 不改写工具参数 | ✅ 透传 `ToolCallItem.argumentsText` |
+| Opaque items 无事件 | ✅ `opaque` 类型跳过事件发射，保留在最终 `AIResponse.output` 中 |
+
+**使用场景：**
+
+- adapter 的 `runStream` 中调用 `yield* syntheticStream({...})` 替代逐事件组装
+- 集成测试中快速构造已知事件序列
+- 非流式后端兼容层
+
 ### Phase 9: 辅助信息采集层
 
 目标：为 `usage`、`billing`、`providerMetadata` 提供统一的 best-effort 采集策略。

@@ -21,3 +21,5 @@ export {
 
 export { AdapterBase } from "./adapter-base.js";
 export type { StreamResult } from "./adapter-base.js";
+export { syntheticStream } from "./synthetic-stream.js";
+export type { SyntheticStreamOptions } from "./synthetic-stream.js";
