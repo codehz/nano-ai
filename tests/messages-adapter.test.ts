@@ -77,6 +77,35 @@ describe("MessagesAdapter - text streaming", () => {
     expect(result.stopReason).toBe("end_turn");
   });
 
+  it("should handle SSE events split across transport chunks", async () => {
+    const chunks = [
+      `event: message_start\ndata: ${JSON.stringify({ type: "message_start", message: { id: "msg_split", type: "message", role: "assistant", model: "claude-3-opus", content: [], stop_reason: null, usage: { input_tokens: 8, output_tokens: 0 } } }).slice(0, 90)}`,
+      `${JSON.stringify({ type: "message_start", message: { id: "msg_split", type: "message", role: "assistant", model: "claude-3-opus", content: [], stop_reason: null, usage: { input_tokens: 8, output_tokens: 0 } } }).slice(90)}\n\n`,
+      `event: content_block_start\ndata: ${JSON.stringify({ type: "content_block_start", index: 0, content_block: { type: "text", text: "" } }).slice(0, 40)}`,
+      `${JSON.stringify({ type: "content_block_start", index: 0, content_block: { type: "text", text: "" } }).slice(40)}\n\n`,
+      `event: content_block_delta\ndata: ${JSON.stringify({ type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "Hello" } }).slice(0, 45)}`,
+      `${JSON.stringify({ type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "Hello" } }).slice(45)}\n\n`,
+      `event: content_block_delta\ndata: ${JSON.stringify({ type: "content_block_delta", index: 0, delta: { type: "text_delta", text: " split" } })}\n\n`,
+      `event: content_block_stop\ndata: ${JSON.stringify({ type: "content_block_stop", index: 0 })}\n\n`,
+      `event: message_delta\ndata: ${JSON.stringify({ type: "message_delta", delta: { stop_reason: "end_turn", stop_sequence: null }, usage: { input_tokens: 8, output_tokens: 2 } }).slice(0, 55)}`,
+      `${JSON.stringify({ type: "message_delta", delta: { stop_reason: "end_turn", stop_sequence: null }, usage: { input_tokens: 8, output_tokens: 2 } }).slice(55)}\n\n`,
+      "event: message_stop\nda",
+      'ta: {"type":"message_stop"}\n\n',
+    ];
+
+    const adapter = new MessagesAdapter({
+      apiKey: "test-key",
+      fetch: mockFetch(sseResponse(...chunks)),
+    });
+
+    const result = await collectStream(adapter.stream(makeRequest()));
+    expect(result.text).toBe("Hello split");
+    expect(result.output).toHaveLength(1);
+    expect(result.stopReason).toBe("end_turn");
+    expect(result.usage?.inputTokens).toBe(8);
+    expect(result.usage?.outputTokens).toBe(2);
+  });
+
   it("should handle reasoning (thinking) blocks", async () => {
     const sse = [
       `event: message_start\ndata: ${JSON.stringify({ type: "message_start", message: { id: "msg_2", type: "message", role: "assistant", model: "claude-3-opus", content: [], stop_reason: null, usage: { input_tokens: 10, output_tokens: 0 } } })}\n\n`,
@@ -345,6 +374,67 @@ describe("MessagesAdapter - request building", () => {
     const messages = body?.messages as Array<Record<string, unknown>>;
     const hasSystem = messages.some((m) => m.role === "system");
     expect(hasSystem).toBe(false);
+  });
+
+  it("should round-trip replay into a single assistant message with raw content blocks", async () => {
+    const round1SSE = [
+      `event: message_start\ndata: ${JSON.stringify({ type: "message_start", message: { id: "msg_rt_1", type: "message", role: "assistant", model: "claude-3-opus", content: [], stop_reason: null, usage: { input_tokens: 10, output_tokens: 0 } } })}\n\n`,
+      `event: content_block_start\ndata: ${JSON.stringify({ type: "content_block_start", index: 0, content_block: { type: "text", text: "" } })}\n\n`,
+      `event: content_block_delta\ndata: ${JSON.stringify({ type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "I'll check." } })}\n\n`,
+      `event: content_block_stop\ndata: ${JSON.stringify({ type: "content_block_stop", index: 0 })}\n\n`,
+      `event: content_block_start\ndata: ${JSON.stringify({ type: "content_block_start", index: 1, content_block: { type: "tool_use", id: "tu_1", name: "get_weather", input: {} } })}\n\n`,
+      `event: content_block_delta\ndata: ${JSON.stringify({ type: "content_block_delta", index: 1, delta: { type: "input_json_delta", partial_json: '{"city":"Hangzhou"}' } })}\n\n`,
+      `event: content_block_stop\ndata: ${JSON.stringify({ type: "content_block_stop", index: 1 })}\n\n`,
+      `event: message_delta\ndata: ${JSON.stringify({ type: "message_delta", delta: { stop_reason: "tool_use", stop_sequence: null }, usage: { input_tokens: 10, output_tokens: 4 } })}\n\n`,
+      messageStopSSE(),
+    ];
+    const round1Adapter = new MessagesAdapter({
+      apiKey: "test-key",
+      fetch: mockFetch(sseResponse(...round1SSE)),
+    });
+    const round1 = await collectStream(
+      round1Adapter.stream(
+        makeRequest({
+          input: [{ type: "message" as const, role: "user" as const, content: [{ type: "text" as const, text: "weather?" }] }],
+        }),
+      ),
+    );
+
+    const { captured, fetch } = captureRequest();
+    const round2Adapter = new MessagesAdapter({ apiKey: "test-key", fetch });
+    await collectStream(
+      round2Adapter.stream(
+        makeRequest({
+          input: [
+            { type: "message" as const, role: "user" as const, content: [{ type: "text" as const, text: "weather?" }] },
+            ...round1.replay,
+            {
+              type: "tool_result" as const,
+              callId: "tu_1",
+              toolName: "get_weather",
+              outcome: "success" as const,
+              content: [{ type: "text" as const, text: "Sunny" }],
+            },
+          ],
+        }),
+      ),
+    );
+
+    const body = captured.current as Record<string, unknown> | null;
+    expect(body?.messages).toEqual([
+      { role: "user", content: "weather?" },
+      {
+        role: "assistant",
+        content: [
+          { type: "text", text: "I'll check." },
+          { type: "tool_use", id: "tu_1", name: "get_weather", input: { city: "Hangzhou" } },
+        ],
+      },
+      {
+        role: "user",
+        content: [{ type: "tool_result", tool_use_id: "tu_1", content: "Sunny", is_error: false }],
+      },
+    ]);
   });
 });
 
