@@ -845,6 +845,43 @@ v1 实现目标如下：
 - replay 行为有明确回归保护
 - 事件序列和最终响应都可 snapshot 或 golden 对比
 
+#### Phase 11 实施结果 ✅
+
+**完成状态：** 已完成 (2026-07-07)
+
+**关键修改文件：**
+
+| 操作 | 文件 |
+|------|------|
+| 新建 | `tests/fixtures.ts` — 共享 fixture 集（工厂、样本 item、golden 事件序列、样本 response） |
+| 新建 | `tests/scenarios.test.ts` — 19 个端到端场景测试 |
+
+**验证结果：**
+
+- `bun run typecheck` — 通过（无错误）
+- `bun run test` — 通过（228 tests, 228 pass, 549 expect calls）
+
+**验收标准对照：**
+
+1. ✅ 三类 adapter 都有正向和降级测试 — responses/messages/chat-completions 各有 15-16 个测试；warning 降级、断流等异常场景有单独覆盖
+2. ✅ replay 行为有明确回归保护 — `replayFromOutput` 测试 + replay round-trip 场景测试 + opaque replay 保留验证
+3. ✅ 事件序列和最终响应都可 golden 对比 — `goldenTextOnlySequence`、`goldenMessageReasoningToolCallSequence`、`goldenWarningSequence`、`goldenInterruptedSequence` 四个 golden 序列可用于 snapshot 回归
+
+**场景覆盖矩阵：**
+
+| 场景 | 测试 | 文件 |
+|------|------|------|
+| 单轮文本流 | `goldenTextOnlySequence` → aggregate | `scenarios.test.ts` |
+| Reasoning 流 | `goldenMessageReasoningToolCallSequence` → aggregate | `scenarios.test.ts` |
+| 工具调用流 | 纯 tool_call 序列 + delta 合并 | `scenarios.test.ts` |
+| Replay 回放 | `replayFromOutput` + opaque 保留 + round-trip | `scenarios.test.ts` |
+| 手动工具循环 | 两轮 `createAIClient` mock：tool_call → execute → tool_result → next | `scenarios.test.ts` |
+| Usage/billing 回填 | response.completed 携带 usage/billing | `scenarios.test.ts` |
+| 降级 warning | `goldenWarningSequence` → warning 出现在结果中 | `scenarios.test.ts` |
+| 中途断流 | `goldenInterruptedSequence` → aggregateEvents/collectStream 抛错 | `scenarios.test.ts` |
+| 跨 adapter 一致性 | golden 序列产出统一 AIResponse 形状 | `scenarios.test.ts` |
+| 稳定性 | 同一 golden 序列多次聚合结果一致 | `scenarios.test.ts` |
+
 ### Phase 12: 文档与示例
 
 目标：让最终仓库文档反映真实 API，而不是停留在设计文档层面。
