@@ -12,3 +12,7 @@ export type { NormalizeOptions } from "./normalize.js";
 export { validateRequest, assertValidRequest } from "./validation.js";
 export type { ValidationIssue } from "./validation.js";
 export { AIRequestError } from "./errors.js";
+export { createEventFactory } from "./event-factory.js";
+export type { EventFactory, EventFactoryState, EventFactoryBackend } from "./event-factory.js";
+export { aggregateEvents } from "./aggregator.js";
+export { collectStream } from "./collect-stream.js";

@@ -284,6 +284,42 @@ v1 实现目标如下：
 - 中间 `auxiliary` 补丁能正确合并
 - 未收到 `response.completed` 时不会伪造最终响应
 
+#### Phase 3 实施结果 ✅
+
+**完成状态：** 已完成 (2026-07-07)
+
+**关键修改文件：**
+
+| 操作 | 文件 |
+|------|------|
+| 新建 | `src/core/event-factory.ts` — `createEventFactory` 共享事件工厂 |
+| 新建 | `src/core/aggregator.ts` — `aggregateEvents` 流聚合器 |
+| 新建 | `src/core/collect-stream.ts` — `collectStream` 流收集 helper |
+| 修改 | `src/core/index.ts` — 导出新模块 |
+| 新建 | `tests/events-aggregator.test.ts` — 20 个事件/聚合器测试 |
+
+**验证结果：**
+
+- `bun run typecheck` — 通过（无错误）
+- `bun run test` — 通过（82 tests, 82 pass, 141 expect calls）
+
+**验收标准对照：**
+
+1. ✅ 给定同一事件流，聚合结果稳定且可预测 — `aggregateEvents` 从事件流独立构建 output/text/toolCalls，结果仅依赖事件顺序和内容
+2. ✅ 中间 `auxiliary` 补丁能正确合并 — 多次 `response.auxiliary` 事件的 usage/billing/auxiliary 字段通过展开合并
+3. ✅ 未收到 `response.completed` 时不会伪造最终响应 — `aggregateEvents` 和 `collectStream` 在流末尾没有 `response.completed` 时抛错
+
+**事件工厂覆盖的事件类型：**
+
+`response.started` · `response.warning` · `response.auxiliary` · `response.completed` · `message.started` · `message.delta` · `message.completed` · `reasoning.started` · `reasoning.delta` · `reasoning.completed` · `tool_call.started` · `tool_call.delta` · `tool_call.completed`
+
+**聚合器约束遵守情况：**
+
+- `replay` 取自 `response.completed.response.replay`，聚合器不猜测
+- `reasoning` 透传 adapter 信息，聚合器不伪造
+- `opaque` payload 不解释
+- output 按事件完成顺序稳定排列
+
 ### Phase 4: Adapter 内部协议
 
 目标：在接真实后端前，先统一 adapter 的实现骨架，避免三个 adapter 演化成三套风格。
