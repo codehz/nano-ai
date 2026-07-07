@@ -244,7 +244,9 @@ export class MessagesAdapter extends AdapterBase {
             type: "tool_use",
             id: item.id,
             name: item.name,
-            input: (item.argumentsJson as Record<string, unknown>) ?? JSON.parse(item.argumentsText),
+            input:
+              (item.argumentsJson as Record<string, unknown> | undefined) ??
+              parseToolUseInput(item.argumentsText),
           };
 
           if (lastMsg && lastMsg.role === "assistant" && typeof lastMsg.content !== "string") {

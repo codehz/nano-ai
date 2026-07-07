@@ -318,6 +318,30 @@ describe("MessagesAdapter - request building", () => {
     expect(content[0]?.type).toBe("tool_use");
   });
 
+  it("should tolerate non-JSON tool_call argumentsText", async () => {
+    const { captured, fetch } = captureRequest();
+    const adapter = new MessagesAdapter({ apiKey: "test-key", fetch });
+
+    await collectStream(
+      adapter.stream(
+        makeRequest({
+          input: [{ type: "tool_call" as const, id: "tc1", name: "get_weather", argumentsText: '{"city":' }],
+        }),
+      ),
+    );
+    const body = captured.current as Record<string, unknown> | null;
+    const messages = (body?.messages as Array<Record<string, unknown>> | undefined) ?? [];
+    const lastMsg = messages[messages.length - 1];
+    const content = (lastMsg?.content as Array<Record<string, unknown>> | undefined) ?? [];
+    expect(lastMsg?.role).toBe("assistant");
+    expect(content[0]).toEqual({
+      type: "tool_use",
+      id: "tc1",
+      name: "get_weather",
+      input: {},
+    });
+  });
+
   it("should map tool_result to user message with tool_result block", async () => {
     const { captured, fetch } = captureRequest();
     const adapter = new MessagesAdapter({ apiKey: "test-key", fetch });

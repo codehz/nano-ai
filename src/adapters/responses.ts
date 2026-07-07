@@ -43,6 +43,7 @@ type ResponsesAPIRequest = {
   input: ResponsesInputItem[];
   instructions?: string;
   tools?: ResponsesTool[];
+  tool_choice?: "auto" | "none" | { type: "function"; name: string };
   temperature?: number;
   max_output_tokens?: number;
   stream: true;
@@ -234,6 +235,14 @@ export class ResponsesAdapter extends AdapterBase {
           input_schema: t.inputSchema,
         }),
       );
+    }
+
+    if (request.toolChoice) {
+      if (request.toolChoice === "auto") body.tool_choice = "auto";
+      else if (request.toolChoice === "none") body.tool_choice = "none";
+      else if (request.toolChoice.type === "tool") {
+        body.tool_choice = { type: "function", name: request.toolChoice.name };
+      }
     }
 
     if (request.temperature !== undefined) body.temperature = request.temperature;
