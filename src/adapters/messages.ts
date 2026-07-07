@@ -101,8 +101,9 @@ type MessagesAPIMessageResponse = {
 
 // ── SSE 解析 ──────────────────────────────────────────────────
 
-function parseMessagesSSE(chunk: string): MessagesSSEEvent[] {
-  return parseSSEEvents(chunk) as MessagesSSEEvent[];
+function parseMessagesSSE(chunk: string): { events: MessagesSSEEvent[]; rest: string } {
+  const result = parseSSEEvents(chunk);
+  return { events: result.events as MessagesSSEEvent[], rest: result.rest };
 }
 
 // ── Content block 映射 ─────────────────────────────────────────
@@ -305,8 +306,8 @@ export class MessagesAdapter extends AdapterBase {
         if (done) break;
 
         buffer += decoder.decode(value, { stream: true });
-        const events = parseMessagesSSE(buffer);
-        buffer = "";
+        const { events, rest } = parseMessagesSSE(buffer);
+        buffer = rest;
 
         for (const sseEvent of events) {
           switch (sseEvent.type) {
