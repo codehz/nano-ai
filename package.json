@@ -1,7 +1,15 @@
 {
   "name": "nano-ai",
-  "module": "index.ts",
+  "module": "src/index.ts",
   "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test",
+    "example:basic": "bun run examples/basic.ts"
+  },
   "devDependencies": {
     "@types/bun": "latest",
     "typescript": "^6"

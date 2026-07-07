@@ -90,6 +90,35 @@ v1 实现目标如下：
 - 可以通过一个固定命令完成类型检查
 - 可以通过一个固定命令执行测试
 
+#### Phase 0 实施结果 ✅
+
+**完成状态：** 已完成 (2026-07-07)
+
+**关键修改文件：**
+
+| 操作 | 文件 |
+|------|------|
+| 新建 | `src/types/index.ts` — 类型系统模块边界 |
+| 新建 | `src/core/index.ts` + `src/core/client.ts` — 核心运行时模块边界 + AIClient 桩 |
+| 新建 | `src/adapters/index.ts` — adapter 模块边界 |
+| 新建 | `src/helpers/index.ts` — helper 模块边界 |
+| 新建 | `src/index.ts` — 统一导出入口 |
+| 修改 | `package.json` — 入口指向 `src/index.ts`，新增 `typecheck`/`test`/`example:basic` 脚本 |
+| 修改 | `index.ts` — 改为重新导出 `src/index.ts` |
+| 新建 | `tests/index.test.ts` — 首个骨架测试 |
+| 新建 | `examples/basic.ts` — 基础示例 |
+
+**验证结果：**
+
+- `bun run typecheck` — 通过（无错误）
+- `bun run test` — 通过（1 test, 1 pass）
+- `bun run example:basic` — 通过（导入链路正常）
+
+**备注：**
+
+- `createAIClient()` 为 Phase 2 桩实现，目前仅保证导入编译通过
+- 测试使用 `bun:test`，已随 Bun 内置，无需额外安装测试框架
+
 ### Phase 1: Canonical 类型系统
 
 目标：把设计文档中的统一请求、事件、响应模型固化为代码。
