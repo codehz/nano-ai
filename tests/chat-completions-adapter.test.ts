@@ -217,12 +217,16 @@ describe("ChatCompletionsAdapter - request building", () => {
     const { captured, fetch } = captureRequest();
     const adapter = new ChatCompletionsAdapter({ apiKey: "test-key", fetch });
 
-    await collectStream(adapter.stream(makeRequest({
-      input: [
-        { type: "message" as const, role: "user" as const, content: [{ type: "text" as const, text: "weather?" }] },
-        { type: "tool_call" as const, id: "tc1", name: "get_weather", argumentsText: "{}" },
-      ],
-    })));
+    await collectStream(
+      adapter.stream(
+        makeRequest({
+          input: [
+            { type: "message" as const, role: "user" as const, content: [{ type: "text" as const, text: "weather?" }] },
+            { type: "tool_call" as const, id: "tc1", name: "get_weather", argumentsText: "{}" },
+          ],
+        }),
+      ),
+    );
     const body = captured.current as Record<string, unknown> | null;
     const messages = body?.messages as Array<Record<string, unknown>>;
     const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant");
@@ -233,11 +237,21 @@ describe("ChatCompletionsAdapter - request building", () => {
     const { captured, fetch } = captureRequest();
     const adapter = new ChatCompletionsAdapter({ apiKey: "test-key", fetch });
 
-    await collectStream(adapter.stream(makeRequest({
-      input: [
-        { type: "tool_result" as const, callId: "tc1", toolName: "get_weather", outcome: "success" as const, content: [{ type: "text" as const, text: "sunny" }] },
-      ],
-    })));
+    await collectStream(
+      adapter.stream(
+        makeRequest({
+          input: [
+            {
+              type: "tool_result" as const,
+              callId: "tc1",
+              toolName: "get_weather",
+              outcome: "success" as const,
+              content: [{ type: "text" as const, text: "sunny" }],
+            },
+          ],
+        }),
+      ),
+    );
     const body = captured.current as Record<string, unknown> | null;
     const messages = body?.messages as Array<Record<string, unknown>>;
     const toolMsg = messages.find((m) => m.role === "tool");
@@ -249,10 +263,14 @@ describe("ChatCompletionsAdapter - request building", () => {
     const { captured, fetch } = captureRequest();
     const adapter = new ChatCompletionsAdapter({ apiKey: "test-key", fetch });
 
-    await collectStream(adapter.stream(makeRequest({
-      tools: [{ name: "get_weather", inputSchema: {} }],
-      toolChoice: { type: "tool" as const, name: "get_weather" },
-    })));
+    await collectStream(
+      adapter.stream(
+        makeRequest({
+          tools: [{ name: "get_weather", inputSchema: {} }],
+          toolChoice: { type: "tool" as const, name: "get_weather" },
+        }),
+      ),
+    );
     const body = captured.current as Record<string, unknown> | null;
     expect(body?.tool_choice).toEqual({ type: "function", function: { name: "get_weather" } });
   });
@@ -340,9 +358,13 @@ describe("ChatCompletionsAdapter - integration", () => {
       fetch: mockFetch(sseResponse(...chunks)),
     });
 
-    const result = await collectStream(adapter.stream(makeRequest({
-      requestId: "chat-integration",
-    })));
+    const result = await collectStream(
+      adapter.stream(
+        makeRequest({
+          requestId: "chat-integration",
+        }),
+      ),
+    );
 
     expect(result.text).toBe("Done");
     expect(result.output).toHaveLength(1);

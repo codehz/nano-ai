@@ -1,18 +1,8 @@
 import { describe, it, expect } from "bun:test";
 
-import {
-  createEventFactory,
-  aggregateEvents,
-  collectStream,
-} from "../src/index.js";
+import { createEventFactory, aggregateEvents, collectStream } from "../src/index.js";
 
-import type {
-  AIStreamEvent,
-  AIResponse,
-  MessageItem,
-  ReasoningItem,
-  ToolCallItem,
-} from "../src/index.js";
+import type { AIStreamEvent, AIResponse, MessageItem, ReasoningItem, ToolCallItem } from "../src/index.js";
 
 // ── Shared helpers ───────────────────────────────────────────
 
@@ -87,7 +77,11 @@ describe("EventFactory", () => {
 
     expect(f.reasoningStarted("r1", "full").type).toBe("reasoning.started");
     expect(f.reasoningDelta("r1", { type: "text", text: "thinking..." }).type).toBe("reasoning.delta");
-    const reasonItem: ReasoningItem = { type: "reasoning", visibility: "full", content: [{ type: "text", text: "..." }] };
+    const reasonItem: ReasoningItem = {
+      type: "reasoning",
+      visibility: "full",
+      content: [{ type: "text", text: "..." }],
+    };
     expect(f.reasoningCompleted(reasonItem).type).toBe("reasoning.completed");
 
     expect(f.toolCallStarted("tc1", "get_weather").type).toBe("tool_call.started");
@@ -118,16 +112,22 @@ describe("aggregateEvents", () => {
       f.messageDelta("m1", "Hello"),
       f.messageDelta("m1", " world"),
       f.messageCompleted({
-        type: "message", role: "assistant",
+        type: "message",
+        role: "assistant",
         content: [{ type: "text", text: "Hello world" }],
       }),
-      f.responseCompleted(makeCompletedResponse({
-        output: [{
-          type: "message", role: "assistant",
-          content: [{ type: "text", text: "Hello world" }],
-        }],
-        text: "Hello world",
-      })),
+      f.responseCompleted(
+        makeCompletedResponse({
+          output: [
+            {
+              type: "message",
+              role: "assistant",
+              content: [{ type: "text", text: "Hello world" }],
+            },
+          ],
+          text: "Hello world",
+        }),
+      ),
     ];
 
     const result = aggregateEvents(events);
@@ -143,15 +143,21 @@ describe("aggregateEvents", () => {
       f.reasoningStarted("r1", "full"),
       f.reasoningDelta("r1", { type: "text", text: "Thinking step 1..." }),
       f.reasoningCompleted({
-        type: "reasoning", visibility: "full",
+        type: "reasoning",
+        visibility: "full",
         content: [{ type: "text", text: "Thinking step 1..." }],
       }),
-      f.responseCompleted(makeCompletedResponse({
-        output: [{
-          type: "reasoning", visibility: "full",
-          content: [{ type: "text", text: "Thinking step 1..." }],
-        }],
-      })),
+      f.responseCompleted(
+        makeCompletedResponse({
+          output: [
+            {
+              type: "reasoning",
+              visibility: "full",
+              content: [{ type: "text", text: "Thinking step 1..." }],
+            },
+          ],
+        }),
+      ),
     ];
 
     const result = aggregateEvents(events);
@@ -170,19 +176,31 @@ describe("aggregateEvents", () => {
       f.toolCallDelta("tc1", { argumentsText: '{"city":' }),
       f.toolCallDelta("tc1", { argumentsText: '"Hangzhou"}' }),
       f.toolCallCompleted({
-        type: "tool_call", id: "tc1", name: "get_weather",
+        type: "tool_call",
+        id: "tc1",
+        name: "get_weather",
         argumentsText: '{"city":"Hangzhou"}',
       }),
-      f.responseCompleted(makeCompletedResponse({
-        output: [{
-          type: "tool_call", id: "tc1", name: "get_weather",
-          argumentsText: '{"city":"Hangzhou"}',
-        }],
-        toolCalls: [{
-          type: "tool_call", id: "tc1", name: "get_weather",
-          argumentsText: '{"city":"Hangzhou"}',
-        }],
-      })),
+      f.responseCompleted(
+        makeCompletedResponse({
+          output: [
+            {
+              type: "tool_call",
+              id: "tc1",
+              name: "get_weather",
+              argumentsText: '{"city":"Hangzhou"}',
+            },
+          ],
+          toolCalls: [
+            {
+              type: "tool_call",
+              id: "tc1",
+              name: "get_weather",
+              argumentsText: '{"city":"Hangzhou"}',
+            },
+          ],
+        }),
+      ),
     ];
 
     const result = aggregateEvents(events);
@@ -197,9 +215,11 @@ describe("aggregateEvents", () => {
       f.responseStarted("gpt-4"),
       f.responseAuxiliary({ usage: { inputTokens: 10 } }),
       f.responseAuxiliary({ usage: { outputTokens: 20 } }),
-      f.responseCompleted(makeCompletedResponse({
-        usage: { inputTokens: 10, outputTokens: 20 },
-      })),
+      f.responseCompleted(
+        makeCompletedResponse({
+          usage: { inputTokens: 10, outputTokens: 20 },
+        }),
+      ),
     ];
 
     const result = aggregateEvents(events);
@@ -213,9 +233,11 @@ describe("aggregateEvents", () => {
       f.responseStarted("gpt-4"),
       f.responseWarning("usage missing", "USAGE_MISSING"),
       f.responseWarning("replay degraded"),
-      f.responseCompleted(makeCompletedResponse({
-        warnings: ["usage missing", "replay degraded"],
-      })),
+      f.responseCompleted(
+        makeCompletedResponse({
+          warnings: ["usage missing", "replay degraded"],
+        }),
+      ),
     ];
 
     const result = aggregateEvents(events);
@@ -229,22 +251,26 @@ describe("aggregateEvents", () => {
       f.messageStarted("m1"),
       f.messageDelta("m1", "First. "),
       f.messageCompleted({
-        type: "message", role: "assistant",
+        type: "message",
+        role: "assistant",
         content: [{ type: "text", text: "First. " }],
       }),
       f.messageStarted("m2"),
       f.messageDelta("m2", "Second."),
       f.messageCompleted({
-        type: "message", role: "assistant",
+        type: "message",
+        role: "assistant",
         content: [{ type: "text", text: "Second." }],
       }),
-      f.responseCompleted(makeCompletedResponse({
-        output: [
-          { type: "message", role: "assistant", content: [{ type: "text", text: "First. " }] },
-          { type: "message", role: "assistant", content: [{ type: "text", text: "Second." }] },
-        ],
-        text: "First. Second.",
-      })),
+      f.responseCompleted(
+        makeCompletedResponse({
+          output: [
+            { type: "message", role: "assistant", content: [{ type: "text", text: "First. " }] },
+            { type: "message", role: "assistant", content: [{ type: "text", text: "Second." }] },
+          ],
+          text: "First. Second.",
+        }),
+      ),
     ];
 
     const result = aggregateEvents(events);
@@ -259,31 +285,37 @@ describe("aggregateEvents", () => {
       f.reasoningStarted("r1", "full"),
       f.reasoningDelta("r1", { type: "text", text: "think..." }),
       f.reasoningCompleted({
-        type: "reasoning", visibility: "full",
+        type: "reasoning",
+        visibility: "full",
         content: [{ type: "text", text: "think..." }],
       }),
       // then message
       f.messageStarted("m1"),
       f.messageDelta("m1", "Answer."),
       f.messageCompleted({
-        type: "message", role: "assistant",
+        type: "message",
+        role: "assistant",
         content: [{ type: "text", text: "Answer." }],
       }),
       // then tool_call
       f.toolCallStarted("tc1", "search"),
       f.toolCallCompleted({
-        type: "tool_call", id: "tc1", name: "search",
+        type: "tool_call",
+        id: "tc1",
+        name: "search",
         argumentsText: "{}",
       }),
-      f.responseCompleted(makeCompletedResponse({
-        output: [
-          { type: "reasoning", visibility: "full", content: [{ type: "text", text: "think..." }] },
-          { type: "message", role: "assistant", content: [{ type: "text", text: "Answer." }] },
-          { type: "tool_call", id: "tc1", name: "search", argumentsText: "{}" },
-        ],
-        text: "Answer.",
-        toolCalls: [{ type: "tool_call", id: "tc1", name: "search", argumentsText: "{}" }],
-      })),
+      f.responseCompleted(
+        makeCompletedResponse({
+          output: [
+            { type: "reasoning", visibility: "full", content: [{ type: "text", text: "think..." }] },
+            { type: "message", role: "assistant", content: [{ type: "text", text: "Answer." }] },
+            { type: "tool_call", id: "tc1", name: "search", argumentsText: "{}" },
+          ],
+          text: "Answer.",
+          toolCalls: [{ type: "tool_call", id: "tc1", name: "search", argumentsText: "{}" }],
+        }),
+      ),
     ];
 
     const result = aggregateEvents(events);
@@ -301,14 +333,17 @@ describe("aggregateEvents", () => {
       f.messageStarted("m1"),
       f.messageDelta("m1", "ok"),
       f.messageCompleted({
-        type: "message", role: "assistant",
+        type: "message",
+        role: "assistant",
         content: [{ type: "text", text: "ok" }],
       }),
-      f.responseCompleted(makeCompletedResponse({
-        stopReason: "end_turn",
-        output: [{ type: "message", role: "assistant", content: [{ type: "text", text: "ok" }] }],
-        text: "ok",
-      })),
+      f.responseCompleted(
+        makeCompletedResponse({
+          stopReason: "end_turn",
+          output: [{ type: "message", role: "assistant", content: [{ type: "text", text: "ok" }] }],
+          text: "ok",
+        }),
+      ),
     ];
 
     const result = aggregateEvents(events);
@@ -317,7 +352,9 @@ describe("aggregateEvents", () => {
 
   it("should take replay from response.completed", () => {
     const f = makeFactory();
-    const replay = [{ type: "message" as const, role: "assistant" as const, content: [{ type: "text" as const, text: "prev" }] }];
+    const replay = [
+      { type: "message" as const, role: "assistant" as const, content: [{ type: "text" as const, text: "prev" }] },
+    ];
     const events: AIStreamEvent[] = [
       f.responseStarted("gpt-4"),
       f.responseCompleted(makeCompletedResponse({ replay })),
@@ -332,9 +369,11 @@ describe("aggregateEvents", () => {
     const events: AIStreamEvent[] = [
       f.responseStarted("gpt-4"),
       f.responseAuxiliary({ usage: { inputTokens: 10, outputTokens: 5 } }),
-      f.responseCompleted(makeCompletedResponse({
-        usage: { inputTokens: 10, outputTokens: 5 },
-      })),
+      f.responseCompleted(
+        makeCompletedResponse({
+          usage: { inputTokens: 10, outputTokens: 5 },
+        }),
+      ),
     ];
     const result = aggregateEvents(events);
     expect(result.usage?.inputTokens).toBe(10);
@@ -343,11 +382,7 @@ describe("aggregateEvents", () => {
 
   it("should throw if stream ends without response.completed", () => {
     const f = makeFactory();
-    const events: AIStreamEvent[] = [
-      f.responseStarted("gpt-4"),
-      f.messageStarted("m1"),
-      f.messageDelta("m1", "hi"),
-    ];
+    const events: AIStreamEvent[] = [f.responseStarted("gpt-4"), f.messageStarted("m1"), f.messageDelta("m1", "hi")];
 
     expect(() => aggregateEvents(events)).toThrow();
   });
@@ -366,10 +401,7 @@ describe("aggregateEvents", () => {
 
   it("should not include warnings when none are emitted", () => {
     const f = makeFactory();
-    const events: AIStreamEvent[] = [
-      f.responseStarted("gpt-4"),
-      f.responseCompleted(makeCompletedResponse()),
-    ];
+    const events: AIStreamEvent[] = [f.responseStarted("gpt-4"), f.responseCompleted(makeCompletedResponse())];
 
     const result = aggregateEvents(events);
     expect(result.warnings).toBeUndefined();
@@ -386,13 +418,16 @@ describe("collectStream", () => {
       f.messageStarted("m1"),
       f.messageDelta("m1", "Hello"),
       f.messageCompleted({
-        type: "message", role: "assistant",
+        type: "message",
+        role: "assistant",
         content: [{ type: "text", text: "Hello" }],
       }),
-      f.responseCompleted(makeCompletedResponse({
-        output: [{ type: "message", role: "assistant", content: [{ type: "text", text: "Hello" }] }],
-        text: "Hello",
-      })),
+      f.responseCompleted(
+        makeCompletedResponse({
+          output: [{ type: "message", role: "assistant", content: [{ type: "text", text: "Hello" }] }],
+          text: "Hello",
+        }),
+      ),
     ];
 
     const result = await collectStream(iter(events));
@@ -401,9 +436,7 @@ describe("collectStream", () => {
 
   it("should reject when there is no response.completed", async () => {
     const f = makeFactory();
-    const events: AIStreamEvent[] = [
-      f.responseStarted("gpt-4"),
-    ];
+    const events: AIStreamEvent[] = [f.responseStarted("gpt-4")];
 
     await expect(collectStream(iter(events))).rejects.toThrow();
   });

@@ -226,12 +226,16 @@ describe("MessagesAdapter - request building", () => {
     const { captured, fetch } = captureRequest();
     const adapter = new MessagesAdapter({ apiKey: "test-key", fetch });
 
-    await collectStream(adapter.stream(makeRequest({
-      input: [
-        { type: "message" as const, role: "user" as const, content: [{ type: "text" as const, text: "weather?" }] },
-        { type: "tool_call" as const, id: "tc1", name: "get_weather", argumentsText: "{}" },
-      ],
-    })));
+    await collectStream(
+      adapter.stream(
+        makeRequest({
+          input: [
+            { type: "message" as const, role: "user" as const, content: [{ type: "text" as const, text: "weather?" }] },
+            { type: "tool_call" as const, id: "tc1", name: "get_weather", argumentsText: "{}" },
+          ],
+        }),
+      ),
+    );
     const body = captured.current as Record<string, unknown> | null;
     // 最后一条消息应该是 assistant 消息包含 tool_use block
     const messages = body?.messages as Array<Record<string, unknown>>;
@@ -244,11 +248,21 @@ describe("MessagesAdapter - request building", () => {
     const { captured, fetch } = captureRequest();
     const adapter = new MessagesAdapter({ apiKey: "test-key", fetch });
 
-    await collectStream(adapter.stream(makeRequest({
-      input: [
-        { type: "tool_result" as const, callId: "tc1", toolName: "get_weather", outcome: "success" as const, content: [{ type: "text" as const, text: "sunny" }] },
-      ],
-    })));
+    await collectStream(
+      adapter.stream(
+        makeRequest({
+          input: [
+            {
+              type: "tool_result" as const,
+              callId: "tc1",
+              toolName: "get_weather",
+              outcome: "success" as const,
+              content: [{ type: "text" as const, text: "sunny" }],
+            },
+          ],
+        }),
+      ),
+    );
     const body = captured.current as Record<string, unknown> | null;
     const messages = body?.messages as Array<Record<string, unknown>>;
     const lastMsg = messages[messages.length - 1];
@@ -260,12 +274,24 @@ describe("MessagesAdapter - request building", () => {
     const { captured, fetch } = captureRequest();
     const adapter = new MessagesAdapter({ apiKey: "test-key", fetch });
 
-    await collectStream(adapter.stream(makeRequest({
-      input: [
-        { type: "message" as const, role: "system" as const, content: [{ type: "text" as const, text: "Be concise." }] },
-        { type: "message" as const, role: "developer" as const, content: [{ type: "text" as const, text: "Use JSON." }] },
-      ],
-    })));
+    await collectStream(
+      adapter.stream(
+        makeRequest({
+          input: [
+            {
+              type: "message" as const,
+              role: "system" as const,
+              content: [{ type: "text" as const, text: "Be concise." }],
+            },
+            {
+              type: "message" as const,
+              role: "developer" as const,
+              content: [{ type: "text" as const, text: "Use JSON." }],
+            },
+          ],
+        }),
+      ),
+    );
     const body = captured.current as Record<string, unknown> | null;
     expect(body?.system).toContain("Be concise.");
     expect(body?.system).toContain("Use JSON.");
@@ -361,9 +387,13 @@ describe("MessagesAdapter - integration", () => {
       fetch: mockFetch(sseResponse(...sse)),
     });
 
-    const result = await collectStream(adapter.stream(makeRequest({
-      requestId: "messages-integration",
-    })));
+    const result = await collectStream(
+      adapter.stream(
+        makeRequest({
+          requestId: "messages-integration",
+        }),
+      ),
+    );
 
     expect(result.text).toBe("Done");
     expect(result.output).toHaveLength(2);

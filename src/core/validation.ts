@@ -79,7 +79,12 @@ export function validateRequest(request: AIRequest): ValidationIssue[] {
   }
 
   // toolChoice 与 tools 的一致性
-  if (request.toolChoice && typeof request.toolChoice === "object" && "type" in request.toolChoice && request.toolChoice.type === "tool") {
+  if (
+    request.toolChoice &&
+    typeof request.toolChoice === "object" &&
+    "type" in request.toolChoice &&
+    request.toolChoice.type === "tool"
+  ) {
     const chosenName = request.toolChoice.name;
     if (!request.tools || request.tools.length === 0) {
       issues.push({

@@ -23,12 +23,7 @@ import {
 } from "../src/index.js";
 import { textBlock, messageItem } from "../src/index.js";
 
-import type {
-  NormalizedRequest,
-  AIStreamEvent,
-  EventFactory,
-  AdapterCapabilities,
-} from "../src/index.js";
+import type { NormalizedRequest, AIStreamEvent, EventFactory, AdapterCapabilities } from "../src/index.js";
 
 // ── 错误类型 ──────────────────────────────────────────────────
 
@@ -105,7 +100,17 @@ describe("Fatal errors", () => {
 
   it("should throw when temperature is out of range", () => {
     const { normalizeRequest } = require("../src/index.js");
-    expect(() => normalizeRequest({ input: [{ type: "message" as const, role: "user" as const, content: [{ type: "text" as const, text: "hi" }] }], temperature: 3 }, { model: "gpt-4" })).toThrow(AIRequestError);
+    expect(() =>
+      normalizeRequest(
+        {
+          input: [
+            { type: "message" as const, role: "user" as const, content: [{ type: "text" as const, text: "hi" }] },
+          ],
+          temperature: 3,
+        },
+        { model: "gpt-4" },
+      ),
+    ).toThrow(AIRequestError);
   });
 
   it("aggregateEvents should throw when stream lacks response.completed", () => {
@@ -172,10 +177,16 @@ describe("Stream interruption semantics", () => {
     class ErrorAdapter extends AdapterBase {
       readonly kind = "responses" as const;
       readonly capabilities: AdapterCapabilities = {
-        nativeStreaming: false, messageStreaming: true,
-        reasoningStreaming: false, toolCallStreaming: false,
-        hiddenReasoningReplay: "none", replayFidelity: "low",
-        tools: false, usage: "none", billing: "none", providerMetadata: false,
+        nativeStreaming: false,
+        messageStreaming: true,
+        reasoningStreaming: false,
+        toolCallStreaming: false,
+        hiddenReasoningReplay: "none",
+        replayFidelity: "low",
+        tools: false,
+        usage: "none",
+        billing: "none",
+        providerMetadata: false,
       };
       protected buildRequest(): never {
         throw new AIProviderError("API key invalid", "AUTH_ERROR", 401);
@@ -188,7 +199,9 @@ describe("Stream interruption semantics", () => {
     const adapter = new ErrorAdapter();
     const events: AIStreamEvent[] = [];
     for await (const event of adapter.stream({
-      model: "gpt-4", requestId: "r", input: [],
+      model: "gpt-4",
+      requestId: "r",
+      input: [],
     })) {
       events.push(event);
     }
@@ -218,18 +231,18 @@ describe("Stream interruption semantics", () => {
       f.messageDelta("m1", "ok"),
       f.messageCompleted(messageItem([textBlock("ok")], { id: "m1" })),
       f.responseCompleted({
-        id: "r", output: [], replay: [], text: "ok", toolCalls: [],
+        id: "r",
+        output: [],
+        replay: [],
+        text: "ok",
+        toolCalls: [],
         backend: { adapter: "responses", isSyntheticStream: false },
       }),
     ];
     expect(() => aggregateEvents(normalEvents)).not.toThrow();
 
     // 中断
-    const interruptedEvents = [
-      f.responseStarted("gpt-4"),
-      f.messageStarted("m1"),
-      f.messageDelta("m1", "Partial"),
-    ];
+    const interruptedEvents = [f.responseStarted("gpt-4"), f.messageStarted("m1"), f.messageDelta("m1", "Partial")];
     expect(() => aggregateEvents(interruptedEvents)).toThrow();
   });
 });
@@ -247,7 +260,11 @@ describe("Non-fatal differences use warning channel", () => {
       f.responseStarted("gpt-4"),
       f.responseWarning("Usage information was not provided by the provider", WarningCode.USAGE_MISSING),
       f.responseCompleted({
-        id: "r", output: [], replay: [], text: "", toolCalls: [],
+        id: "r",
+        output: [],
+        replay: [],
+        text: "",
+        toolCalls: [],
         backend: { adapter: "responses", isSyntheticStream: false },
       }),
     ];
@@ -267,7 +284,11 @@ describe("Non-fatal differences use warning channel", () => {
       f.responseStarted("gpt-4"),
       f.responseWarning("Replay fidelity is low for this provider", WarningCode.REPLAY_FIDELITY_LOW),
       f.responseCompleted({
-        id: "r", output: [], replay: [], text: "", toolCalls: [],
+        id: "r",
+        output: [],
+        replay: [],
+        text: "",
+        toolCalls: [],
         backend: { adapter: "responses", isSyntheticStream: false },
       }),
     ];
@@ -287,7 +308,11 @@ describe("Non-fatal differences use warning channel", () => {
       f.responseStarted("gpt-4"),
       f.responseWarning("Some non-fatal issue", "NON_FATAL"),
       f.responseCompleted({
-        id: "r", output: [], replay: [], text: "", toolCalls: [],
+        id: "r",
+        output: [],
+        replay: [],
+        text: "",
+        toolCalls: [],
         backend: { adapter: "responses", isSyntheticStream: false },
       }),
     ];
@@ -308,7 +333,11 @@ describe("Non-fatal differences use warning channel", () => {
       f.responseStarted("gpt-4"),
       f.responseWarning("Billing amount is an estimate", WarningCode.BILLING_ESTIMATED),
       f.responseCompleted({
-        id: "r", output: [], replay: [], text: "", toolCalls: [],
+        id: "r",
+        output: [],
+        replay: [],
+        text: "",
+        toolCalls: [],
         backend: { adapter: "responses", isSyntheticStream: false },
       }),
     ];
@@ -331,7 +360,11 @@ describe("Normal vs abnormal termination", () => {
       f.messageDelta("m1", "Done"),
       f.messageCompleted(messageItem([textBlock("Done")], { id: "m1" })),
       f.responseCompleted({
-        id: "normal", output: [messageItem([textBlock("Done")], { id: "m1" })], replay: [], text: "Done", toolCalls: [],
+        id: "normal",
+        output: [messageItem([textBlock("Done")], { id: "m1" })],
+        replay: [],
+        text: "Done",
+        toolCalls: [],
         backend: { adapter: "responses", isSyntheticStream: false },
         stopReason: "end_turn",
       }),
@@ -346,13 +379,23 @@ describe("Normal vs abnormal termination", () => {
     class FailAdapter extends AdapterBase {
       readonly kind = "responses" as const;
       readonly capabilities: AdapterCapabilities = {
-        nativeStreaming: false, messageStreaming: true,
-        reasoningStreaming: false, toolCallStreaming: false,
-        hiddenReasoningReplay: "none", replayFidelity: "low",
-        tools: false, usage: "none", billing: "none", providerMetadata: false,
+        nativeStreaming: false,
+        messageStreaming: true,
+        reasoningStreaming: false,
+        toolCallStreaming: false,
+        hiddenReasoningReplay: "none",
+        replayFidelity: "low",
+        tools: false,
+        usage: "none",
+        billing: "none",
+        providerMetadata: false,
       };
-      protected buildRequest(): never { throw new Error("Connection refused"); }
-      protected async *runStream(): AsyncIterable<AIStreamEvent> { /* unreachable */ }
+      protected buildRequest(): never {
+        throw new Error("Connection refused");
+      }
+      protected async *runStream(): AsyncIterable<AIStreamEvent> {
+        /* unreachable */
+      }
     }
 
     const adapter = new FailAdapter();

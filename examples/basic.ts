@@ -8,11 +8,7 @@
  * 4. 用 collectStream() 收尾聚合
  */
 
-import {
-  createAIClient,
-  collectStream,
-  ResponsesAdapter,
-} from "../src/index.js";
+import { createAIClient, collectStream, ResponsesAdapter } from "../src/index.js";
 
 // ── 1. 创建 adapter ────────────────────────────────────────
 // 注意：生产环境请在环境变量中配置 API key
@@ -92,4 +88,3 @@ async function main() {
 }
 
 main().catch(console.error);
-

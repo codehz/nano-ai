@@ -74,8 +74,8 @@ describe("AuxiliaryCollector - merge order", () => {
     c.recordUsage({ outputTokens: 5 }, "final");
 
     const result = c.build();
-    expect(result.usage?.inputTokens).toBe(10);  // preserved from first
-    expect(result.usage?.outputTokens).toBe(5);   // added by second
+    expect(result.usage?.inputTokens).toBe(10); // preserved from first
+    expect(result.usage?.outputTokens).toBe(5); // added by second
     expect(result.auxiliary?.usageSource).toBe("final"); // last source wins
   });
 

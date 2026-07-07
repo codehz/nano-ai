@@ -16,12 +16,7 @@ import {
   AdapterBase,
 } from "../src/index.js";
 
-import type {
-  NormalizedRequest,
-  AIStreamEvent,
-  EventFactory,
-  AdapterCapabilities,
-} from "../src/index.js";
+import type { NormalizedRequest, AIStreamEvent, EventFactory, AdapterCapabilities } from "../src/index.js";
 
 // ── mapStopReason ─────────────────────────────────────────────
 
@@ -202,12 +197,16 @@ describe("AdapterBase", () => {
 
       const output = [messageItem([textBlock("Hello world")], { id: "m1" })];
       yield factory.responseCompleted(
-        this.buildResponse(request, {
-          output,
-          replay: output,
-          stopReason: "end_turn",
-          usage: { inputTokens: 5, outputTokens: 2 },
-        }, factory),
+        this.buildResponse(
+          request,
+          {
+            output,
+            replay: output,
+            stopReason: "end_turn",
+            usage: { inputTokens: 5, outputTokens: 2 },
+          },
+          factory,
+        ),
       );
     }
   }
@@ -262,10 +261,16 @@ describe("AdapterBase", () => {
     class ErrorAdapter extends AdapterBase {
       readonly kind = "responses" as const;
       readonly capabilities: AdapterCapabilities = {
-        nativeStreaming: false, messageStreaming: true,
-        reasoningStreaming: false, toolCallStreaming: false,
-        hiddenReasoningReplay: "none", replayFidelity: "low",
-        tools: false, usage: "none", billing: "none", providerMetadata: false,
+        nativeStreaming: false,
+        messageStreaming: true,
+        reasoningStreaming: false,
+        toolCallStreaming: false,
+        hiddenReasoningReplay: "none",
+        replayFidelity: "low",
+        tools: false,
+        usage: "none",
+        billing: "none",
+        providerMetadata: false,
       };
       protected buildRequest(): never {
         throw new Error("API connection failed");
@@ -295,7 +300,9 @@ describe("AdapterBase", () => {
     const adapter = new TestAdapter();
     const events: AIStreamEvent[] = [];
     for await (const event of adapter.stream({
-      model: "gpt-4", requestId: "my-custom-id", input: [],
+      model: "gpt-4",
+      requestId: "my-custom-id",
+      input: [],
     })) {
       events.push(event);
     }
@@ -309,7 +316,9 @@ describe("AdapterBase", () => {
     const adapter = new TestAdapter(); // nativeStreaming: false
     const events: AIStreamEvent[] = [];
     for await (const event of adapter.stream({
-      model: "gpt-4", requestId: "r", input: [],
+      model: "gpt-4",
+      requestId: "r",
+      input: [],
     })) {
       events.push(event);
     }
@@ -328,26 +337,34 @@ describe("AdapterBase", () => {
     class EmptyAdapter extends AdapterBase {
       readonly kind = "responses" as const;
       readonly capabilities: AdapterCapabilities = {
-        nativeStreaming: true, messageStreaming: true,
-        reasoningStreaming: false, toolCallStreaming: false,
-        hiddenReasoningReplay: "none", replayFidelity: "low",
-        tools: false, usage: "none", billing: "none", providerMetadata: false,
+        nativeStreaming: true,
+        messageStreaming: true,
+        reasoningStreaming: false,
+        toolCallStreaming: false,
+        hiddenReasoningReplay: "none",
+        replayFidelity: "low",
+        tools: false,
+        usage: "none",
+        billing: "none",
+        providerMetadata: false,
       };
-      protected buildRequest(r: NormalizedRequest) { return r; }
+      protected buildRequest(r: NormalizedRequest) {
+        return r;
+      }
       protected async *runStream(
         _pr: unknown,
         factory: EventFactory,
         request: NormalizedRequest,
       ): AsyncIterable<AIStreamEvent> {
-        yield factory.responseCompleted(
-          this.buildResponse(request, { output: [], replay: [] }, factory),
-        );
+        yield factory.responseCompleted(this.buildResponse(request, { output: [], replay: [] }, factory));
       }
     }
     const adapter = new EmptyAdapter();
     const events: AIStreamEvent[] = [];
     for await (const event of adapter.stream({
-      model: "gpt-4", requestId: "r", input: [],
+      model: "gpt-4",
+      requestId: "r",
+      input: [],
     })) {
       events.push(event);
     }

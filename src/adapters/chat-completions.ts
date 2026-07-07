@@ -9,15 +9,16 @@
  */
 
 import { AdapterBase } from "../helpers/adapter-base.js";
-import { textBlock, messageItem, toolCallItem, opaqueItem, replayFromOutput, mapStopReason } from "../helpers/mapping.js";
+import {
+  textBlock,
+  messageItem,
+  toolCallItem,
+  opaqueItem,
+  replayFromOutput,
+  mapStopReason,
+} from "../helpers/mapping.js";
 
-import type {
-  NormalizedRequest,
-  AIStreamEvent,
-  EventFactory,
-  OutputItem,
-  Usage,
-} from "../index.js";
+import type { NormalizedRequest, AIStreamEvent, EventFactory, OutputItem, Usage } from "../index.js";
 
 // ── 类型 ──────────────────────────────────────────────────────
 
@@ -152,18 +153,24 @@ export class ChatCompletionsAdapter extends AdapterBase {
 
     // handle instructions → system message
     if (request.instructions) {
-      const text = typeof request.instructions === "string"
-        ? request.instructions
-        : request.instructions.map((b) => (b.type === "text" ? b.text : "")).join("\n");
+      const text =
+        typeof request.instructions === "string"
+          ? request.instructions
+          : request.instructions.map((b) => (b.type === "text" ? b.text : "")).join("\n");
       messages.push({ role: "system", content: text });
     }
 
     for (const item of request.input) {
       switch (item.type) {
         case "message": {
-          const role = item.role === "developer" ? "system" :
-                       item.role === "system" ? "system" :
-                       item.role === "user" ? "user" : "assistant";
+          const role =
+            item.role === "developer"
+              ? "system"
+              : item.role === "system"
+                ? "system"
+                : item.role === "user"
+                  ? "user"
+                  : "assistant";
           const content = item.content
             .map((b) => (b.type === "text" ? b.text : b.type === "json" ? JSON.stringify(b.json) : ""))
             .join("\n");
@@ -186,11 +193,13 @@ export class ChatCompletionsAdapter extends AdapterBase {
           break;
         }
         case "tool_result": {
-          const text = item.content.map((b) => {
-            if (b.type === "text") return b.text;
-            if (b.type === "json") return JSON.stringify(b.json);
-            return "";
-          }).join("\n");
+          const text = item.content
+            .map((b) => {
+              if (b.type === "text") return b.text;
+              if (b.type === "json") return JSON.stringify(b.json);
+              return "";
+            })
+            .join("\n");
           messages.push({
             role: "tool",
             tool_call_id: item.callId,
@@ -230,14 +239,16 @@ export class ChatCompletionsAdapter extends AdapterBase {
     };
 
     if (request.tools && request.tools.length > 0) {
-      body.tools = request.tools.map((t): ChatTool => ({
-        type: "function",
-        function: {
-          name: t.name,
-          description: t.description,
-          parameters: t.inputSchema as Record<string, unknown>,
-        },
-      }));
+      body.tools = request.tools.map(
+        (t): ChatTool => ({
+          type: "function",
+          function: {
+            name: t.name,
+            description: t.description,
+            parameters: t.inputSchema as Record<string, unknown>,
+          },
+        }),
+      );
     }
 
     if (request.toolChoice) {
@@ -380,9 +391,7 @@ export class ChatCompletionsAdapter extends AdapterBase {
             if (finishReason && finishReason !== null) {
               // 关闭还未 close 的消息
               if (hasMessageStarted && accumulatedContent) {
-                yield factory.messageCompleted(
-                  messageItem([textBlock(accumulatedContent)], { id: currentMessageId }),
-                );
+                yield factory.messageCompleted(messageItem([textBlock(accumulatedContent)], { id: currentMessageId }));
                 output.push(messageItem([textBlock(accumulatedContent)], { id: currentMessageId }));
                 hasMessageStarted = false;
               }
@@ -399,9 +408,7 @@ export class ChatCompletionsAdapter extends AdapterBase {
               const stopReason = mapStopReason(finishReason);
 
               // 构建 replay
-              const replay = [
-                ...replayFromOutput(output),
-              ];
+              const replay = [...replayFromOutput(output)];
 
               // 附加 opaque replay
               replay.push(
@@ -429,9 +436,7 @@ export class ChatCompletionsAdapter extends AdapterBase {
       yield factory.responseWarning("Stream ended without a finish_reason", "INCOMPLETE_STREAM");
 
       if (hasMessageStarted && accumulatedContent) {
-        yield factory.messageCompleted(
-          messageItem([textBlock(accumulatedContent)], { id: currentMessageId }),
-        );
+        yield factory.messageCompleted(messageItem([textBlock(accumulatedContent)], { id: currentMessageId }));
         output.push(messageItem([textBlock(accumulatedContent)], { id: currentMessageId }));
       }
       for (const [, pending] of pendingToolCalls) {

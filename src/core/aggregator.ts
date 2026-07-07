@@ -91,26 +91,17 @@ function createInitialState(): AggregatorState {
 
 // ── Event handlers ────────────────────────────────────────────
 
-function handleResponseStarted(
-  state: AggregatorState,
-  event: AIStreamEvent & { type: "response.started" },
-): void {
+function handleResponseStarted(state: AggregatorState, event: AIStreamEvent & { type: "response.started" }): void {
   state.responseId = event.responseId;
   state.model = event.model;
   state.backendInfo = event.backend;
 }
 
-function handleResponseWarning(
-  state: AggregatorState,
-  event: AIStreamEvent & { type: "response.warning" },
-): void {
+function handleResponseWarning(state: AggregatorState, event: AIStreamEvent & { type: "response.warning" }): void {
   state.warnings.push(event.message);
 }
 
-function handleResponseAuxiliary(
-  state: AggregatorState,
-  event: AIStreamEvent & { type: "response.auxiliary" },
-): void {
+function handleResponseAuxiliary(state: AggregatorState, event: AIStreamEvent & { type: "response.auxiliary" }): void {
   if (event.usage) {
     state.usage = { ...state.usage, ...event.usage };
   }
@@ -122,30 +113,21 @@ function handleResponseAuxiliary(
   }
 }
 
-function handleMessageStarted(
-  state: AggregatorState,
-  event: AIStreamEvent & { type: "message.started" },
-): void {
+function handleMessageStarted(state: AggregatorState, event: AIStreamEvent & { type: "message.started" }): void {
   state.pendingMessages.set(event.item.id, {
     role: event.item.role,
     texts: [],
   });
 }
 
-function handleMessageDelta(
-  state: AggregatorState,
-  event: AIStreamEvent & { type: "message.delta" },
-): void {
+function handleMessageDelta(state: AggregatorState, event: AIStreamEvent & { type: "message.delta" }): void {
   const pending = state.pendingMessages.get(event.itemId);
   if (pending) {
     pending.texts.push(event.delta.text);
   }
 }
 
-function handleMessageCompleted(
-  state: AggregatorState,
-  event: AIStreamEvent & { type: "message.completed" },
-): void {
+function handleMessageCompleted(state: AggregatorState, event: AIStreamEvent & { type: "message.completed" }): void {
   const item = event.item;
   const itemId = item.id ?? `msg-${state.outputOrder.length}`;
   state.completedMessages.set(itemId, item);
@@ -153,20 +135,14 @@ function handleMessageCompleted(
   state.pendingMessages.delete(itemId);
 }
 
-function handleReasoningStarted(
-  state: AggregatorState,
-  event: AIStreamEvent & { type: "reasoning.started" },
-): void {
+function handleReasoningStarted(state: AggregatorState, event: AIStreamEvent & { type: "reasoning.started" }): void {
   state.pendingReasonings.set(event.item.id, {
     visibility: event.item.visibility,
     blocks: [],
   });
 }
 
-function handleReasoningDelta(
-  state: AggregatorState,
-  event: AIStreamEvent & { type: "reasoning.delta" },
-): void {
+function handleReasoningDelta(state: AggregatorState, event: AIStreamEvent & { type: "reasoning.delta" }): void {
   const pending = state.pendingReasonings.get(event.itemId);
   if (pending) {
     pending.blocks.push(event.delta);
@@ -184,40 +160,28 @@ function handleReasoningCompleted(
   state.pendingReasonings.delete(item.id ?? "");
 }
 
-function handleToolCallStarted(
-  state: AggregatorState,
-  event: AIStreamEvent & { type: "tool_call.started" },
-): void {
+function handleToolCallStarted(state: AggregatorState, event: AIStreamEvent & { type: "tool_call.started" }): void {
   state.pendingToolCalls.set(event.item.id, {
     name: event.item.name,
     argsParts: [],
   });
 }
 
-function handleToolCallDelta(
-  state: AggregatorState,
-  event: AIStreamEvent & { type: "tool_call.delta" },
-): void {
+function handleToolCallDelta(state: AggregatorState, event: AIStreamEvent & { type: "tool_call.delta" }): void {
   const pending = state.pendingToolCalls.get(event.itemId);
   if (pending && event.delta.argumentsText) {
     pending.argsParts.push(event.delta.argumentsText);
   }
 }
 
-function handleToolCallCompleted(
-  state: AggregatorState,
-  event: AIStreamEvent & { type: "tool_call.completed" },
-): void {
+function handleToolCallCompleted(state: AggregatorState, event: AIStreamEvent & { type: "tool_call.completed" }): void {
   const item = event.item;
   state.completedToolCalls.set(item.id, item);
   state.outputOrder.push(item.id);
   state.pendingToolCalls.delete(item.id);
 }
 
-function handleResponseCompleted(
-  state: AggregatorState,
-  event: AIStreamEvent & { type: "response.completed" },
-): void {
+function handleResponseCompleted(state: AggregatorState, event: AIStreamEvent & { type: "response.completed" }): void {
   state.replayFromAdapter = event.response.replay;
   state.responseIdFromAdapter = event.response.id;
   state.stopReasonFromAdapter = event.response.stopReason;
@@ -239,11 +203,20 @@ function buildResponse(state: AggregatorState): AIResponse {
   const output: OutputItem[] = [];
   for (const id of state.outputOrder) {
     const msg = state.completedMessages.get(id);
-    if (msg) { output.push(msg); continue; }
+    if (msg) {
+      output.push(msg);
+      continue;
+    }
     const reason = state.completedReasonings.get(id);
-    if (reason) { output.push(reason); continue; }
+    if (reason) {
+      output.push(reason);
+      continue;
+    }
     const tc = state.completedToolCalls.get(id);
-    if (tc) { output.push(tc); continue; }
+    if (tc) {
+      output.push(tc);
+      continue;
+    }
   }
 
   // 汇总 text
@@ -255,14 +228,12 @@ function buildResponse(state: AggregatorState): AIResponse {
     .join("");
 
   // toolCalls
-  const toolCalls = output.filter(
-    (item): item is ToolCallItem => item.type === "tool_call",
-  );
+  const toolCalls = output.filter((item): item is ToolCallItem => item.type === "tool_call");
 
   // 合并 backend trace
   const backendFromResponse = state.backendFromAdapter;
   const backend: BackendTrace = {
-    adapter: backendFromResponse?.adapter ?? state.backendInfo?.kind ?? "unknown" as BackendTrace["adapter"],
+    adapter: backendFromResponse?.adapter ?? state.backendInfo?.kind ?? ("unknown" as BackendTrace["adapter"]),
     isSyntheticStream: backendFromResponse?.isSyntheticStream ?? state.backendInfo?.isSynthetic ?? false,
     requestId: backendFromResponse?.requestId ?? state.responseId,
     rawResponseId: backendFromResponse?.rawResponseId,
@@ -341,9 +312,7 @@ export function aggregateEvents(events: AIStreamEvent[]): AIResponse {
   // 用 response.completed 中的 response 做最终构建
   const lastEvent = events[events.length - 1];
   if (!lastEvent || lastEvent.type !== "response.completed") {
-    throw new Error(
-      "Stream must end with response.completed event to produce a valid AIResponse",
-    );
+    throw new Error("Stream must end with response.completed event to produce a valid AIResponse");
   }
 
   return buildResponse(state);

@@ -15,10 +15,7 @@ export type ToolDefinition = {
   inputSchema: Record<string, unknown>;
 };
 
-export type ToolChoice =
-  | "auto"
-  | "none"
-  | { type: "tool"; name: string };
+export type ToolChoice = "auto" | "none" | { type: "tool"; name: string };
 
 // ── include 控制 ──────────────────────────────────────────────
 

@@ -1,0 +1,24 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "unicorn", "oxc", "import"],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn",
+    "perf": "warn"
+  },
+  "rules": {
+    "import/default": "error",
+    "import/no-duplicates": "error",
+    "import/named": "error",
+    "import/namespace": "error",
+    "typescript/no-non-null-assertion": "warn",
+    "unicorn/no-null": "off",
+    "unicorn/no-array-for-each": "off",
+    "unicorn/prefer-module": "off",
+    "unicorn/prefer-top-level-await": "off"
+  },
+  "env": {
+    "builtin": true,
+    "node": true
+  }
+}

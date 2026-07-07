@@ -253,7 +253,10 @@ describe("AIStreamEvent", () => {
       ...base,
       type: "response.completed",
       response: {
-        output: [], replay: [], text: "", toolCalls: [],
+        output: [],
+        replay: [],
+        text: "",
+        toolCalls: [],
         backend: { adapter: "responses", isSyntheticStream: false },
       },
     };
@@ -264,7 +267,8 @@ describe("AIStreamEvent", () => {
     const started: AIStreamEvent = { ...base, type: "message.started", item: { id: "m1", role: "assistant" } };
     const delta: AIStreamEvent = { ...base, type: "message.delta", itemId: "m1", delta: { type: "text", text: "Hi" } };
     const completed: AIStreamEvent = {
-      ...base, type: "message.completed",
+      ...base,
+      type: "message.completed",
       item: { type: "message", role: "assistant", content: [{ type: "text", text: "Hi" }] },
     };
     expect(started.type).toBe("message.started");
@@ -274,7 +278,12 @@ describe("AIStreamEvent", () => {
 
   it("should construct reasoning events", () => {
     const started: AIStreamEvent = { ...base, type: "reasoning.started", item: { id: "r1", visibility: "full" } };
-    const delta: AIStreamEvent = { ...base, type: "reasoning.delta", itemId: "r1", delta: { type: "text", text: "..." } };
+    const delta: AIStreamEvent = {
+      ...base,
+      type: "reasoning.delta",
+      itemId: "r1",
+      delta: { type: "text", text: "..." },
+    };
     expect(started.type).toBe("reasoning.started");
     expect(delta.type).toBe("reasoning.delta");
   });

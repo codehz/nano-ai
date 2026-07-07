@@ -11,15 +11,17 @@
  */
 
 import { AdapterBase } from "../helpers/adapter-base.js";
-import { textBlock, messageItem, reasoningItem, toolCallItem, opaqueItem, replayFromOutput, mapStopReason } from "../helpers/mapping.js";
+import {
+  textBlock,
+  messageItem,
+  reasoningItem,
+  toolCallItem,
+  opaqueItem,
+  replayFromOutput,
+  mapStopReason,
+} from "../helpers/mapping.js";
 
-import type {
-  NormalizedRequest,
-  AIStreamEvent,
-  EventFactory,
-  OutputItem,
-  Usage,
-} from "../index.js";
+import type { NormalizedRequest, AIStreamEvent, EventFactory, OutputItem, Usage } from "../index.js";
 
 // ── 类型 ──────────────────────────────────────────────────────
 
@@ -71,7 +73,13 @@ type MessagesSSEEvent =
   | { type: "content_block_start"; data: { index: number; content_block: { type: string; [key: string]: unknown } } }
   | { type: "content_block_delta"; data: { index: number; delta: { type: string; [key: string]: unknown } } }
   | { type: "content_block_stop"; data: { index: number } }
-  | { type: "message_delta"; data: { delta: { stop_reason?: string; stop_sequence?: string | null }; usage: { input_tokens: number; output_tokens: number } } }
+  | {
+      type: "message_delta";
+      data: {
+        delta: { stop_reason?: string; stop_sequence?: string | null };
+        usage: { input_tokens: number; output_tokens: number };
+      };
+    }
   | { type: "message_stop"; data: Record<string, never> }
   | { type: "ping"; data: Record<string, never> }
   | { type: "error"; data: { error: { type: string; message: string } } };
@@ -178,9 +186,10 @@ export class MessagesAdapter extends AdapterBase {
 
     // 处理 instructions → system prompt
     if (request.instructions) {
-      systemPrompt = typeof request.instructions === "string"
-        ? request.instructions
-        : request.instructions.map((b) => (b.type === "text" ? b.text : "")).join("\n");
+      systemPrompt =
+        typeof request.instructions === "string"
+          ? request.instructions
+          : request.instructions.map((b) => (b.type === "text" ? b.text : "")).join("\n");
     }
 
     // 处理 input items
@@ -210,7 +219,7 @@ export class MessagesAdapter extends AdapterBase {
             type: "tool_use",
             id: item.id,
             name: item.name,
-            input: item.argumentsJson as Record<string, unknown> ?? JSON.parse(item.argumentsText),
+            input: (item.argumentsJson as Record<string, unknown>) ?? JSON.parse(item.argumentsText),
           };
 
           if (lastMsg && lastMsg.role === "assistant" && typeof lastMsg.content !== "string") {
@@ -221,9 +230,7 @@ export class MessagesAdapter extends AdapterBase {
           break;
         }
         case "tool_result": {
-          const content = item.content
-            .map(blockToText)
-            .join("\n");
+          const content = item.content.map(blockToText).join("\n");
           const block: MessagesAPIContentBlock = {
             type: "tool_result",
             tool_use_id: item.callId,
@@ -268,11 +275,13 @@ export class MessagesAdapter extends AdapterBase {
     if (systemPrompt) body.system = systemPrompt;
 
     if (request.tools && request.tools.length > 0) {
-      body.tools = request.tools.map((t): MessagesAPITool => ({
-        name: t.name,
-        description: t.description,
-        input_schema: t.inputSchema,
-      }));
+      body.tools = request.tools.map(
+        (t): MessagesAPITool => ({
+          name: t.name,
+          description: t.description,
+          input_schema: t.inputSchema,
+        }),
+      );
     }
 
     if (request.temperature !== undefined) body.temperature = request.temperature;
@@ -446,9 +455,7 @@ export class MessagesAdapter extends AdapterBase {
 
             case "content_block_stop": {
               if (currentItemType === "message" && currentItemId) {
-                yield factory.messageCompleted(
-                  messageItem([textBlock(textBuffer)], { id: currentItemId }),
-                );
+                yield factory.messageCompleted(messageItem([textBlock(textBuffer)], { id: currentItemId }));
                 output.push(messageItem([textBlock(textBuffer)], { id: currentItemId }));
               } else if (currentItemType === "reasoning" && currentItemId && currentThinkingVisibility !== "redacted") {
                 yield factory.reasoningCompleted(
@@ -500,9 +507,7 @@ export class MessagesAdapter extends AdapterBase {
     }
 
     // 构造 replay
-    const replay = [
-      ...replayFromOutput(output),
-    ];
+    const replay = [...replayFromOutput(output)];
 
     // 附加 opaque replay item 用于续接
     if (rawResponseId || messageResponse) {
@@ -526,13 +531,17 @@ export class MessagesAdapter extends AdapterBase {
     }
 
     yield factory.responseCompleted(
-      this.buildResponse(request, {
-        output,
-        replay,
-        stopReason: stopReason ? mapStopReason(stopReason) : undefined,
-        usage,
-        rawResponseId,
-      }, factory),
+      this.buildResponse(
+        request,
+        {
+          output,
+          replay,
+          stopReason: stopReason ? mapStopReason(stopReason) : undefined,
+          usage,
+          rawResponseId,
+        },
+        factory,
+      ),
     );
   }
 }

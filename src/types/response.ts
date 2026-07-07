@@ -8,13 +8,7 @@ import type { OutputItem, ReplayItem, ToolCallItem } from "./items.js";
 
 // ── StopReason ────────────────────────────────────────────────
 
-export type StopReason =
-  | "end_turn"
-  | "tool_call"
-  | "max_output_tokens"
-  | "content_filter"
-  | "error"
-  | "unknown";
+export type StopReason = "end_turn" | "tool_call" | "max_output_tokens" | "content_filter" | "error" | "unknown";
 
 // ── 辅助信息类型 ──────────────────────────────────────────────
 
