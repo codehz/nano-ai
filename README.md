@@ -39,25 +39,25 @@ for await (const event of stream) {
 
 ```ts
 type AIRequest = {
-  instructions?: string;            // 系统指令
-  input: InputItem[];               // 输入 items
-  tools?: ToolDefinition[];         // 工具声明
-  toolChoice?: ToolChoice;          // 工具选择策略
-  temperature?: number;             // 温度 (0–2)
-  maxOutputTokens?: number;         // 最大输出 token
-  include?: { usage?, billing?, providerMetadata? };
+  instructions?: string; // 系统指令
+  input: InputItem[]; // 输入 items
+  tools?: ToolDefinition[]; // 工具声明
+  toolChoice?: ToolChoice; // 工具选择策略
+  temperature?: number; // 温度 (0–2)
+  maxOutputTokens?: number; // 最大输出 token
+  include?: { usage?; billing?; providerMetadata? };
 };
 ```
 
 `input` 是 item 数组，每个 item 可以是：
 
-| Item 类型 | 用途 |
-|-----------|------|
-| `message` | 用户 / 助手 / 系统消息 |
-| `reasoning` | 思维链（输入侧 replay） |
-| `tool_call` | 模型发起的工具调用（输入侧 replay） |
-| `tool_result` | 工具执行结果 |
-| `opaque` | Provider 私有续接材料 |
+| Item 类型     | 用途                                |
+| ------------- | ----------------------------------- |
+| `message`     | 用户 / 助手 / 系统消息              |
+| `reasoning`   | 思维链（输入侧 replay）             |
+| `tool_call`   | 模型发起的工具调用（输入侧 replay） |
+| `tool_result` | 工具执行结果                        |
+| `opaque`      | Provider 私有续接材料               |
 
 ### 统一事件流
 
@@ -69,15 +69,15 @@ response.started → (item.started → item.delta* → item.completed)* → resp
 
 事件类型：
 
-| 事件 | 含义 |
-|------|------|
-| `response.started` | 响应开始 |
-| `message.{started,delta,completed}` | 消息输出 |
-| `reasoning.{started,delta,completed}` | 思维链 |
-| `tool_call.{started,delta,completed}` | 工具调用 |
-| `response.warning` | 非致命警告 |
-| `response.auxiliary` | usage / billing 辅助信息 |
-| `response.completed` | 响应结束，内含完整 `AIResponse` |
+| 事件                                  | 含义                            |
+| ------------------------------------- | ------------------------------- |
+| `response.started`                    | 响应开始                        |
+| `message.{started,delta,completed}`   | 消息输出                        |
+| `reasoning.{started,delta,completed}` | 思维链                          |
+| `tool_call.{started,delta,completed}` | 工具调用                        |
+| `response.warning`                    | 非致命警告                      |
+| `response.auxiliary`                  | usage / billing 辅助信息        |
+| `response.completed`                  | 响应结束，内含完整 `AIResponse` |
 
 ### 统一终结结果
 
@@ -87,33 +87,33 @@ response.started → (item.started → item.delta* → item.completed)* → resp
 import { collectStream } from "nano-ai";
 
 const response = await collectStream(client.stream({ input }));
-console.log(response.text);        // 全部文本
-console.log(response.toolCalls);   // 工具调用列表
-console.log(response.usage);       // token 统计
-console.log(response.replay);      // 续接材料
+console.log(response.text); // 全部文本
+console.log(response.toolCalls); // 工具调用列表
+console.log(response.usage); // token 统计
+console.log(response.replay); // 续接材料
 ```
 
 `AIResponse` 包含：
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `output` | `OutputItem[]` | 当前轮输出 |
-| `replay` | `ReplayItem[]` | 续接材料（下次请求带回） |
-| `text` | `string` | 全部文本拼接 |
-| `toolCalls` | `ToolCallItem[]` | 工具调用 |
-| `stopReason` | `StopReason` | 终止原因 |
-| `usage` | `Usage` | token 统计 |
-| `billing` | `BillingInfo` | 计费信息 |
-| `warnings` | `string[]` | 非致命警告 |
-| `backend` | `BackendTrace` | 调用链路元数据 |
+| 字段         | 类型             | 说明                     |
+| ------------ | ---------------- | ------------------------ |
+| `output`     | `OutputItem[]`   | 当前轮输出               |
+| `replay`     | `ReplayItem[]`   | 续接材料（下次请求带回） |
+| `text`       | `string`         | 全部文本拼接             |
+| `toolCalls`  | `ToolCallItem[]` | 工具调用                 |
+| `stopReason` | `StopReason`     | 终止原因                 |
+| `usage`      | `Usage`          | token 统计               |
+| `billing`    | `BillingInfo`    | 计费信息                 |
+| `warnings`   | `string[]`       | 非致命警告               |
+| `backend`    | `BackendTrace`   | 调用链路元数据           |
 
 ## 后端 Adapter
 
-| Adapter | 类 | 能力评级 |
-|---------|-----|---------|
-| OpenAI Responses API | `ResponsesAdapter` | 🌟🌟🌟 |
-| Anthropic Messages API | `MessagesAdapter` | 🌟🌟☆ |
-| OpenAI Chat Completions | `ChatCompletionsAdapter` | 🌟☆☆ |
+| Adapter                 | 类                       | 能力评级 |
+| ----------------------- | ------------------------ | -------- |
+| OpenAI Responses API    | `ResponsesAdapter`       | 🌟🌟🌟   |
+| Anthropic Messages API  | `MessagesAdapter`        | 🌟🌟☆    |
+| OpenAI Chat Completions | `ChatCompletionsAdapter` | 🌟☆☆     |
 
 ```ts
 import { ResponsesAdapter, MessagesAdapter, ChatCompletionsAdapter } from "nano-ai";
@@ -131,9 +131,9 @@ const chat = new ChatCompletionsAdapter({ apiKey: "sk-..." });
 各 adapter 的能力差异通过 `capabilities` 字段暴露：
 
 ```ts
-adapter.capabilities.reasoningStreaming  // 是否支持思维链流
-adapter.capabilities.toolCallStreaming    // 是否支持工具调用流
-adapter.capabilities.replayFidelity       // "high" | "medium" | "low"
+adapter.capabilities.reasoningStreaming; // 是否支持思维链流
+adapter.capabilities.toolCallStreaming; // 是否支持工具调用流
+adapter.capabilities.replayFidelity; // "high" | "medium" | "low"
 ```
 
 ## 多轮对话
@@ -141,9 +141,7 @@ adapter.capabilities.replayFidelity       // "high" | "medium" | "low"
 库不托管会话状态。调用方自行保留 `response.replay` 并在下一轮带回：
 
 ```ts
-const transcript: InputItem[] = [
-  { type: "message", role: "user", content: [{ type: "text", text: "Hello" }] },
-];
+const transcript: InputItem[] = [{ type: "message", role: "user", content: [{ type: "text", text: "Hello" }] }];
 
 const r1 = await collectStream(client.stream({ input: transcript }));
 transcript.push(...r1.replay);
@@ -164,7 +162,13 @@ const r1 = await collectStream(client.stream({ input, tools }));
 for (const call of r1.toolCalls) {
   const result = await myTool(call);
   input.push(...r1.replay);
-  input.push({ type: "tool_result", callId: call.id, toolName: call.name, outcome: "success", content: [{ type: "json", json: result }] });
+  input.push({
+    type: "tool_result",
+    callId: call.id,
+    toolName: call.name,
+    outcome: "success",
+    content: [{ type: "json", json: result }],
+  });
 }
 
 const r2 = await collectStream(client.stream({ input, tools }));

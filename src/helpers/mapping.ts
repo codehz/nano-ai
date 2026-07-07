@@ -48,10 +48,7 @@ export function mapStopReason(providerReason: string): StopReason {
 
 // ── Reasoning visibility 映射 ──────────────────────────────────
 
-export function mapReasoningVisibility(
-  hasThinking: boolean,
-  hasRedacted: boolean,
-): ReasoningItem["visibility"] {
+export function mapReasoningVisibility(hasThinking: boolean, hasRedacted: boolean): ReasoningItem["visibility"] {
   if (hasRedacted) return "redacted";
   if (hasThinking) return "full";
   return "opaque";
@@ -102,12 +99,7 @@ export function reasoningItem(
   };
 }
 
-export function toolCallItem(
-  id: string,
-  name: string,
-  argumentsText: string,
-  argumentsJson?: unknown,
-): ToolCallItem {
+export function toolCallItem(id: string, name: string, argumentsText: string, argumentsJson?: unknown): ToolCallItem {
   return {
     type: "tool_call",
     id,

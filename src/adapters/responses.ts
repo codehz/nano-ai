@@ -10,15 +10,16 @@
  */
 
 import { AdapterBase } from "../helpers/adapter-base.js";
-import { textBlock, messageItem, reasoningItem, toolCallItem, opaqueItem, replayFromOutput } from "../helpers/mapping.js";
+import {
+  textBlock,
+  messageItem,
+  reasoningItem,
+  toolCallItem,
+  opaqueItem,
+  replayFromOutput,
+} from "../helpers/mapping.js";
 
-import type {
-  NormalizedRequest,
-  AIStreamEvent,
-  EventFactory,
-  OutputItem,
-  Usage,
-} from "../index.js";
+import type { NormalizedRequest, AIStreamEvent, EventFactory, OutputItem, Usage } from "../index.js";
 
 // ── 类型 ──────────────────────────────────────────────────────
 
@@ -186,9 +187,7 @@ export class ResponsesAdapter extends AdapterBase {
             const blocks = item.content.map(canonicalToResponsesBlock);
             input.push({ type: "message", role: item.role, content: blocks });
           } else {
-            const text = item.content
-              .map((b) => (b.type === "text" ? b.text : ""))
-              .join("\n");
+            const text = item.content.map((b) => (b.type === "text" ? b.text : "")).join("\n");
             input.push({ type: "message", role: item.role, content: text });
           }
           break;
@@ -221,7 +220,12 @@ export class ResponsesAdapter extends AdapterBase {
         }
         case "opaque": {
           // opaque items with item_reference purpose can be passed through
-          if (item.purpose === "replay" && typeof item.payload === "object" && item.payload !== null && "id" in (item.payload as Record<string, unknown>)) {
+          if (
+            item.purpose === "replay" &&
+            typeof item.payload === "object" &&
+            item.payload !== null &&
+            "id" in (item.payload as Record<string, unknown>)
+          ) {
             input.push({ type: "item_reference", id: (item.payload as Record<string, string>).id! });
           }
           break;
@@ -236,18 +240,21 @@ export class ResponsesAdapter extends AdapterBase {
     };
 
     if (request.instructions) {
-      body.instructions = typeof request.instructions === "string"
-        ? request.instructions
-        : request.instructions.map((b) => (b.type === "text" ? b.text : "")).join("\n");
+      body.instructions =
+        typeof request.instructions === "string"
+          ? request.instructions
+          : request.instructions.map((b) => (b.type === "text" ? b.text : "")).join("\n");
     }
 
     if (request.tools && request.tools.length > 0) {
-      body.tools = request.tools.map((t): ResponsesTool => ({
-        type: "function",
-        name: t.name,
-        description: t.description,
-        input_schema: t.inputSchema,
-      }));
+      body.tools = request.tools.map(
+        (t): ResponsesTool => ({
+          type: "function",
+          name: t.name,
+          description: t.description,
+          input_schema: t.inputSchema,
+        }),
+      );
     }
 
     if (request.temperature !== undefined) body.temperature = request.temperature;
@@ -314,10 +321,7 @@ export class ResponsesAdapter extends AdapterBase {
                 yield factory.reasoningStarted(item.id, "full");
                 break;
               case "function_call":
-                yield factory.toolCallStarted(
-                  item.id,
-                  (item as Record<string, unknown>).name as string ?? "unknown",
-                );
+                yield factory.toolCallStarted(item.id, ((item as Record<string, unknown>).name as string) ?? "unknown");
                 break;
             }
             continue;
@@ -329,9 +333,7 @@ export class ResponsesAdapter extends AdapterBase {
           }
 
           if (sseEvent.type === "response.output_text.done") {
-            yield factory.messageCompleted(
-              messageItem([textBlock(sseEvent.data.text)], { id: sseEvent.data.item_id }),
-            );
+            yield factory.messageCompleted(messageItem([textBlock(sseEvent.data.text)], { id: sseEvent.data.item_id }));
             output.push(messageItem([textBlock(sseEvent.data.text)], { id: sseEvent.data.item_id }));
             continue;
           }
@@ -392,21 +394,15 @@ export class ResponsesAdapter extends AdapterBase {
     }
 
     // 构造 replay：在 output 基础上追加 opaque continuation
-    const replay = [
-      ...replayFromOutput(output),
-    ];
+    const replay = [...replayFromOutput(output)];
 
     // 如果有 provider continuation id，附加 opaque replay item
     if (completedResponse?.id) {
-      replay.push(
-        opaqueItem("responses", "replay", { id: completedResponse.id }),
-      );
+      replay.push(opaqueItem("responses", "replay", { id: completedResponse.id }));
     }
 
     // 从 completedResponse 推断 stop reason
-    const stopReason = completedResponse
-      ? this.inferStopReason(completedResponse)
-      : undefined;
+    const stopReason = completedResponse ? this.inferStopReason(completedResponse) : undefined;
 
     yield factory.responseCompleted(
       this.buildResponse(request, { output, replay, stopReason, usage, rawResponseId }, factory),

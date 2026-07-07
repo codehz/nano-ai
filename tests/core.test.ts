@@ -1,18 +1,7 @@
 import { describe, it, expect } from "bun:test";
-import {
-  createAIClient,
-  normalizeRequest,
-  validateRequest,
-  assertValidRequest,
-  AIRequestError,
-} from "../src/index.js";
+import { createAIClient, normalizeRequest, validateRequest, assertValidRequest, AIRequestError } from "../src/index.js";
 
-import type {
-  AIRequest,
-  NormalizedRequest,
-  AIStreamEvent,
-  BackendAdapter,
-} from "../src/index.js";
+import type { AIRequest, NormalizedRequest, AIStreamEvent, BackendAdapter } from "../src/index.js";
 
 // ── Helpers ───────────────────────────────────────────────────
 
@@ -177,22 +166,16 @@ describe("normalizeRequest", () => {
   });
 
   it("should preserve request fields", () => {
-    const result = normalizeRequest(
-      validRequest({ temperature: 0.7, maxOutputTokens: 500 }),
-      { model: "gpt-4" },
-    );
+    const result = normalizeRequest(validRequest({ temperature: 0.7, maxOutputTokens: 500 }), { model: "gpt-4" });
     expect(result.temperature).toBe(0.7);
     expect(result.maxOutputTokens).toBe(500);
   });
 
   it("should merge defaults with request fields (request wins)", () => {
-    const result = normalizeRequest(
-      validRequest({ temperature: 0.5 }),
-      {
-        model: "gpt-4",
-        defaults: { temperature: 1.0, maxOutputTokens: 100 },
-      },
-    );
+    const result = normalizeRequest(validRequest({ temperature: 0.5 }), {
+      model: "gpt-4",
+      defaults: { temperature: 1.0, maxOutputTokens: 100 },
+    });
     // request.temperature wins
     expect(result.temperature).toBe(0.5);
     // defaults.maxOutputTokens fills in
@@ -209,13 +192,10 @@ describe("normalizeRequest", () => {
   });
 
   it("should merge include with request include winning", () => {
-    const result = normalizeRequest(
-      validRequest({ include: { usage: "off" } }),
-      {
-        model: "gpt-4",
-        defaults: { include: { billing: "off" } },
-      },
-    );
+    const result = normalizeRequest(validRequest({ include: { usage: "off" } }), {
+      model: "gpt-4",
+      defaults: { include: { billing: "off" } },
+    });
     expect(result.include).toEqual({
       usage: "off",
       billing: "off",
@@ -228,17 +208,15 @@ describe("normalizeRequest", () => {
     const customInput: AIRequest["input"] = [
       { type: "message" as const, role: "user" as const, content: [{ type: "text" as const, text: "custom" }] },
     ];
-    const result = normalizeRequest(
-      validRequest({ input: customInput }),
-      { model: "gpt-4", defaults: { input: defaultInput } },
-    );
+    const result = normalizeRequest(validRequest({ input: customInput }), {
+      model: "gpt-4",
+      defaults: { input: defaultInput },
+    });
     expect(result.input).toBe(customInput);
   });
 
   it("should throw on invalid request after normalization", () => {
-    expect(() =>
-      normalizeRequest({ input: [] }, { model: "gpt-4" })
-    ).toThrow(AIRequestError);
+    expect(() => normalizeRequest({ input: [] }, { model: "gpt-4" })).toThrow(AIRequestError);
   });
 });
 

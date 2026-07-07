@@ -49,19 +49,10 @@ export type OpaqueItem = {
 // ── Aliases ───────────────────────────────────────────────────
 
 /** 可出现在请求 input 中的 item 类型 */
-export type InputItem =
-  | MessageItem
-  | ReasoningItem
-  | ToolCallItem
-  | ToolResultItem
-  | OpaqueItem;
+export type InputItem = MessageItem | ReasoningItem | ToolCallItem | ToolResultItem | OpaqueItem;
 
 /** 可出现在响应 output 中的 item 类型（不含 ToolResultItem） */
-export type OutputItem =
-  | MessageItem
-  | ReasoningItem
-  | ToolCallItem
-  | OpaqueItem;
+export type OutputItem = MessageItem | ReasoningItem | ToolCallItem | OpaqueItem;
 
 /** replay 材料的类型等价于 InputItem */
 export type ReplayItem = InputItem;

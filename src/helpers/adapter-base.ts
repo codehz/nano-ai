@@ -71,22 +71,15 @@ export abstract class AdapterBase implements BackendAdapter {
       const providerRequest = await this.buildRequest(request);
       yield* this.runStream(providerRequest, factory, request);
     } catch (err) {
-      yield factory.responseWarning(
-        err instanceof Error ? err.message : String(err),
-        "PROVIDER_ERROR",
-      );
-      yield factory.responseCompleted(
-        this.buildResponse(request, { output: [], replay: [] }, factory),
-      );
+      yield factory.responseWarning(err instanceof Error ? err.message : String(err), "PROVIDER_ERROR");
+      yield factory.responseCompleted(this.buildResponse(request, { output: [], replay: [] }, factory));
     }
   }
 
   // ── 子类必须实现 ──────────────────────────────────────────
 
   /** 将 NormalizedRequest 转换为 provider 请求格式。 */
-  protected abstract buildRequest(
-    request: NormalizedRequest,
-  ): ProviderResponse | Promise<ProviderResponse>;
+  protected abstract buildRequest(request: NormalizedRequest): ProviderResponse | Promise<ProviderResponse>;
 
   /**
    * 执行流式请求，发射全部事件（含 response.completed）。
@@ -109,11 +102,7 @@ export abstract class AdapterBase implements BackendAdapter {
    * 从 StreamResult 构建完整 AIResponse。
    * 子类可在返回前自定义覆盖。
    */
-  protected buildResponse(
-    request: NormalizedRequest,
-    result: StreamResult,
-    _factory: EventFactory,
-  ): AIResponse {
+  protected buildResponse(request: NormalizedRequest, result: StreamResult, _factory: EventFactory): AIResponse {
     const text = this.extractText(result.output);
 
     return {
@@ -121,15 +110,11 @@ export abstract class AdapterBase implements BackendAdapter {
       output: result.output,
       replay: result.replay,
       text,
-      toolCalls: result.output.filter(
-        (item): item is ToolCallItem => item.type === "tool_call",
-      ),
+      toolCalls: result.output.filter((item): item is ToolCallItem => item.type === "tool_call"),
       stopReason: result.stopReason,
       usage: result.usage,
       billing: result.billing,
-      auxiliary: result.providerMetadata
-        ? { providerMetadata: result.providerMetadata }
-        : undefined,
+      auxiliary: result.providerMetadata ? { providerMetadata: result.providerMetadata } : undefined,
       backend: {
         requestId: request.requestId,
         rawResponseId: result.rawResponseId,

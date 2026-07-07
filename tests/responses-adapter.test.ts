@@ -48,10 +48,10 @@ function makeRequest(overrides?: Partial<NormalizedRequest>): NormalizedRequest 
 describe("ResponsesAdapter - text streaming", () => {
   it("should produce message events from a simple text SSE stream", async () => {
     const sse = [
-      "event: response.output_item.added\ndata: {\"item\":{\"id\":\"m1\",\"type\":\"message\"}}\n\n",
-      "event: response.output_text.delta\ndata: {\"item_id\":\"m1\",\"delta\":\"Hello\"}\n\n",
-      "event: response.output_text.delta\ndata: {\"item_id\":\"m1\",\"delta\":\" world\"}\n\n",
-      "event: response.output_text.done\ndata: {\"item_id\":\"m1\",\"text\":\"Hello world\"}\n\n",
+      'event: response.output_item.added\ndata: {"item":{"id":"m1","type":"message"}}\n\n',
+      'event: response.output_text.delta\ndata: {"item_id":"m1","delta":"Hello"}\n\n',
+      'event: response.output_text.delta\ndata: {"item_id":"m1","delta":" world"}\n\n',
+      'event: response.output_text.done\ndata: {"item_id":"m1","text":"Hello world"}\n\n',
       `event: response.completed\ndata: ${JSON.stringify({
         response: {
           id: "resp-123",
@@ -78,12 +78,12 @@ describe("ResponsesAdapter - text streaming", () => {
 
   it("should handle streaming multiple messages", async () => {
     const sse = [
-      "event: response.output_item.added\ndata: {\"item\":{\"id\":\"m1\",\"type\":\"message\"}}\n\n",
-      "event: response.output_text.delta\ndata: {\"item_id\":\"m1\",\"delta\":\"First\"}\n\n",
-      "event: response.output_text.done\ndata: {\"item_id\":\"m1\",\"text\":\"First\"}\n\n",
-      "event: response.output_item.added\ndata: {\"item\":{\"id\":\"m2\",\"type\":\"message\"}}\n\n",
-      "event: response.output_text.delta\ndata: {\"item_id\":\"m2\",\"delta\":\"Second\"}\n\n",
-      "event: response.output_text.done\ndata: {\"item_id\":\"m2\",\"text\":\"Second\"}\n\n",
+      'event: response.output_item.added\ndata: {"item":{"id":"m1","type":"message"}}\n\n',
+      'event: response.output_text.delta\ndata: {"item_id":"m1","delta":"First"}\n\n',
+      'event: response.output_text.done\ndata: {"item_id":"m1","text":"First"}\n\n',
+      'event: response.output_item.added\ndata: {"item":{"id":"m2","type":"message"}}\n\n',
+      'event: response.output_text.delta\ndata: {"item_id":"m2","delta":"Second"}\n\n',
+      'event: response.output_text.done\ndata: {"item_id":"m2","text":"Second"}\n\n',
       `event: response.completed\ndata: ${JSON.stringify({
         response: { id: "resp-2", model: "gpt-4o", output: [] },
       })}\n\n`,
@@ -101,12 +101,12 @@ describe("ResponsesAdapter - text streaming", () => {
 
   it("should produce reasoning events", async () => {
     const sse = [
-      "event: response.output_item.added\ndata: {\"item\":{\"id\":\"r1\",\"type\":\"reasoning\"}}\n\n",
-      "event: response.reasoning.delta\ndata: {\"item_id\":\"r1\",\"delta\":\"Thinking...\"}\n\n",
-      "event: response.reasoning.done\ndata: {\"item_id\":\"r1\",\"text\":\"Thinking...\"}\n\n",
-      "event: response.output_item.added\ndata: {\"item\":{\"id\":\"m1\",\"type\":\"message\"}}\n\n",
-      "event: response.output_text.delta\ndata: {\"item_id\":\"m1\",\"delta\":\"Answer\"}\n\n",
-      "event: response.output_text.done\ndata: {\"item_id\":\"m1\",\"text\":\"Answer\"}\n\n",
+      'event: response.output_item.added\ndata: {"item":{"id":"r1","type":"reasoning"}}\n\n',
+      'event: response.reasoning.delta\ndata: {"item_id":"r1","delta":"Thinking..."}\n\n',
+      'event: response.reasoning.done\ndata: {"item_id":"r1","text":"Thinking..."}\n\n',
+      'event: response.output_item.added\ndata: {"item":{"id":"m1","type":"message"}}\n\n',
+      'event: response.output_text.delta\ndata: {"item_id":"m1","delta":"Answer"}\n\n',
+      'event: response.output_text.done\ndata: {"item_id":"m1","text":"Answer"}\n\n',
       `event: response.completed\ndata: ${JSON.stringify({
         response: { id: "resp-r", model: "gpt-4o", output: [] },
       })}\n\n`,
@@ -126,11 +126,15 @@ describe("ResponsesAdapter - text streaming", () => {
 
   it("should produce tool_call events", async () => {
     const sse = [
-      "event: response.output_item.added\ndata: {\"item\":{\"id\":\"tc1\",\"type\":\"function_call\",\"name\":\"get_weather\"}}\n\n",
-      "event: response.tool_call.delta\ndata: {\"item_id\":\"tc1\",\"delta\":{\"arguments\":\"{\\\"city\\\":\\\"Hangzhou\\\"}\"}}\n\n",
-      "event: response.tool_call.done\ndata: {\"item_id\":\"tc1\",\"name\":\"get_weather\",\"arguments\":\"{\\\"city\\\":\\\"Hangzhou\\\"}\"}\n\n",
+      'event: response.output_item.added\ndata: {"item":{"id":"tc1","type":"function_call","name":"get_weather"}}\n\n',
+      'event: response.tool_call.delta\ndata: {"item_id":"tc1","delta":{"arguments":"{\\"city\\":\\"Hangzhou\\"}"}}\n\n',
+      'event: response.tool_call.done\ndata: {"item_id":"tc1","name":"get_weather","arguments":"{\\"city\\":\\"Hangzhou\\"}"}\n\n',
       `event: response.completed\ndata: ${JSON.stringify({
-        response: { id: "resp-tc", model: "gpt-4o", output: [{ id: "tc1", type: "function_call", name: "get_weather" }] },
+        response: {
+          id: "resp-tc",
+          model: "gpt-4o",
+          output: [{ id: "tc1", type: "function_call", name: "get_weather" }],
+        },
       })}\n\n`,
     ];
 
@@ -147,8 +151,8 @@ describe("ResponsesAdapter - text streaming", () => {
 
   it("should infer stop_reason as tool_call when function_call present", async () => {
     const sse = [
-      "event: response.output_item.added\ndata: {\"item\":{\"id\":\"tc1\",\"type\":\"function_call\",\"name\":\"search\"}}\n\n",
-      "event: response.tool_call.done\ndata: {\"item_id\":\"tc1\",\"name\":\"search\",\"arguments\":\"{}\"}\n\n",
+      'event: response.output_item.added\ndata: {"item":{"id":"tc1","type":"function_call","name":"search"}}\n\n',
+      'event: response.tool_call.done\ndata: {"item_id":"tc1","name":"search","arguments":"{}"}\n\n',
       `event: response.completed\ndata: ${JSON.stringify({
         response: { id: "resp-tc2", model: "gpt-4o", output: [{ id: "tc1", type: "function_call", name: "search" }] },
       })}\n\n`,
@@ -165,9 +169,9 @@ describe("ResponsesAdapter - text streaming", () => {
 
   it("should include replay with opaque continuation", async () => {
     const sse = [
-      "event: response.output_item.added\ndata: {\"item\":{\"id\":\"m1\",\"type\":\"message\"}}\n\n",
-      "event: response.output_text.delta\ndata: {\"item_id\":\"m1\",\"delta\":\"Hi\"}\n\n",
-      "event: response.output_text.done\ndata: {\"item_id\":\"m1\",\"text\":\"Hi\"}\n\n",
+      'event: response.output_item.added\ndata: {"item":{"id":"m1","type":"message"}}\n\n',
+      'event: response.output_text.delta\ndata: {"item_id":"m1","delta":"Hi"}\n\n',
+      'event: response.output_text.done\ndata: {"item_id":"m1","text":"Hi"}\n\n',
       `event: response.completed\ndata: ${JSON.stringify({
         response: { id: "resp-replay", model: "gpt-4o", output: [] },
       })}\n\n`,
@@ -198,7 +202,9 @@ describe("ResponsesAdapter - request building", () => {
       captured,
       fetch: async (_url: string, init: RequestInit) => {
         captured.current = JSON.parse(init.body as string);
-        return sseResponse(`event: response.completed\ndata: ${JSON.stringify({ response: { id: "r", model: "gpt-4o", output: [] } })}\n\n`);
+        return sseResponse(
+          `event: response.completed\ndata: ${JSON.stringify({ response: { id: "r", model: "gpt-4o", output: [] } })}\n\n`,
+        );
       },
     };
   }
@@ -227,9 +233,13 @@ describe("ResponsesAdapter - request building", () => {
     const { captured, fetch } = captureRequest();
     const adapter = new ResponsesAdapter({ apiKey: "test-key", fetch });
 
-    await collectStream(adapter.stream(makeRequest({
-      tools: [{ name: "get_weather", description: "Get weather", inputSchema: { type: "object" } }],
-    })));
+    await collectStream(
+      adapter.stream(
+        makeRequest({
+          tools: [{ name: "get_weather", description: "Get weather", inputSchema: { type: "object" } }],
+        }),
+      ),
+    );
     const body = captured.current as Record<string, unknown> | null;
     expect(body?.tools).toHaveLength(1);
   });
@@ -267,7 +277,7 @@ describe("ResponsesAdapter - error handling", () => {
 
   it("should emit warning on SSE error event", async () => {
     const sse = [
-      "event: error\ndata: {\"message\":\"Rate limit exceeded\",\"code\":\"RATE_LIMITED\"}\n\n",
+      'event: error\ndata: {"message":"Rate limit exceeded","code":"RATE_LIMITED"}\n\n',
       `event: response.completed\ndata: ${JSON.stringify({
         response: { id: "r", model: "gpt-4o", output: [] },
       })}\n\n`,
@@ -289,9 +299,9 @@ describe("ResponsesAdapter - error handling", () => {
 describe("ResponsesAdapter - integration", () => {
   it("should produce events consumable via for-await-of", async () => {
     const sse = [
-      "event: response.output_item.added\ndata: {\"item\":{\"id\":\"m1\",\"type\":\"message\"}}\n\n",
-      "event: response.output_text.delta\ndata: {\"item_id\":\"m1\",\"delta\":\"Hi\"}\n\n",
-      "event: response.output_text.done\ndata: {\"item_id\":\"m1\",\"text\":\"Hi\"}\n\n",
+      'event: response.output_item.added\ndata: {"item":{"id":"m1","type":"message"}}\n\n',
+      'event: response.output_text.delta\ndata: {"item_id":"m1","delta":"Hi"}\n\n',
+      'event: response.output_text.done\ndata: {"item_id":"m1","text":"Hi"}\n\n',
       `event: response.completed\ndata: ${JSON.stringify({
         response: { id: "r", model: "gpt-4o", output: [] },
       })}\n\n`,
@@ -316,9 +326,9 @@ describe("ResponsesAdapter - integration", () => {
 
   it("should produce a complete stream with all response fields populated", async () => {
     const sse = [
-      "event: response.output_item.added\ndata: {\"item\":{\"id\":\"m1\",\"type\":\"message\"}}\n\n",
-      "event: response.output_text.delta\ndata: {\"item_id\":\"m1\",\"delta\":\"Done\"}\n\n",
-      "event: response.output_text.done\ndata: {\"item_id\":\"m1\",\"text\":\"Done\"}\n\n",
+      'event: response.output_item.added\ndata: {"item":{"id":"m1","type":"message"}}\n\n',
+      'event: response.output_text.delta\ndata: {"item_id":"m1","delta":"Done"}\n\n',
+      'event: response.output_text.done\ndata: {"item_id":"m1","text":"Done"}\n\n',
       `event: response.completed\ndata: ${JSON.stringify({
         response: {
           id: "resp-final",
@@ -334,9 +344,13 @@ describe("ResponsesAdapter - integration", () => {
       fetch: mockFetch(sseResponse(...sse)),
     });
 
-    const result = await collectStream(adapter.stream(makeRequest({
-      requestId: "integration-test-1",
-    })));
+    const result = await collectStream(
+      adapter.stream(
+        makeRequest({
+          requestId: "integration-test-1",
+        }),
+      ),
+    );
 
     // 验证 AIResponse 的完整结构
     expect(result.id).toBe("integration-test-1");

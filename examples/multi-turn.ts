@@ -5,12 +5,7 @@
  * 这是唯一推荐的多轮方式 — 库不托管会话状态。
  */
 
-import {
-  createAIClient,
-  collectStream,
-  ResponsesAdapter,
-  textBlock,
-} from "../src/index.js";
+import { createAIClient, collectStream, ResponsesAdapter, textBlock } from "../src/index.js";
 
 import type { InputItem } from "../src/index.js";
 
@@ -36,9 +31,7 @@ async function main() {
     content: [textBlock("My name is Alice.")],
   });
 
-  const r1 = await collectStream(
-    client.stream({ input: transcript }),
-  );
+  const r1 = await collectStream(client.stream({ input: transcript }));
   console.log(`Assistant: ${r1.text}`);
 
   // 将本轮 replay 追加到 transcript
@@ -53,9 +46,7 @@ async function main() {
     content: [textBlock("What's my name?")],
   });
 
-  const r2 = await collectStream(
-    client.stream({ input: transcript }),
-  );
+  const r2 = await collectStream(client.stream({ input: transcript }));
   console.log(`Assistant: ${r2.text}`);
 
   transcript.push(...r2.replay);
@@ -69,9 +60,7 @@ async function main() {
     content: [textBlock("Tell me a joke.")],
   });
 
-  const r3 = await collectStream(
-    client.stream({ input: transcript }),
-  );
+  const r3 = await collectStream(client.stream({ input: transcript }));
   console.log(`Assistant: ${r3.text}`);
 
   console.log("\n=== Done ===");

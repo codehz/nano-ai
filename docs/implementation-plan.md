@@ -96,17 +96,17 @@ v1 实现目标如下：
 
 **关键修改文件：**
 
-| 操作 | 文件 |
-|------|------|
-| 新建 | `src/types/index.ts` — 类型系统模块边界 |
-| 新建 | `src/core/index.ts` + `src/core/client.ts` — 核心运行时模块边界 + AIClient 桩 |
-| 新建 | `src/adapters/index.ts` — adapter 模块边界 |
-| 新建 | `src/helpers/index.ts` — helper 模块边界 |
-| 新建 | `src/index.ts` — 统一导出入口 |
+| 操作 | 文件                                                                                   |
+| ---- | -------------------------------------------------------------------------------------- |
+| 新建 | `src/types/index.ts` — 类型系统模块边界                                                |
+| 新建 | `src/core/index.ts` + `src/core/client.ts` — 核心运行时模块边界 + AIClient 桩          |
+| 新建 | `src/adapters/index.ts` — adapter 模块边界                                             |
+| 新建 | `src/helpers/index.ts` — helper 模块边界                                               |
+| 新建 | `src/index.ts` — 统一导出入口                                                          |
 | 修改 | `package.json` — 入口指向 `src/index.ts`，新增 `typecheck`/`test`/`example:basic` 脚本 |
-| 修改 | `index.ts` — 改为重新导出 `src/index.ts` |
-| 新建 | `tests/index.test.ts` — 首个骨架测试 |
-| 新建 | `examples/basic.ts` — 基础示例 |
+| 修改 | `index.ts` — 改为重新导出 `src/index.ts`                                               |
+| 新建 | `tests/index.test.ts` — 首个骨架测试                                                   |
+| 新建 | `examples/basic.ts` — 基础示例                                                         |
 
 **验证结果：**
 
@@ -153,17 +153,17 @@ v1 实现目标如下：
 
 **关键修改文件：**
 
-| 操作 | 文件 |
-|------|------|
-| 新建 | `src/types/content.ts` — `ContentBlock` 联合类型 |
-| 新建 | `src/types/items.ts` — `MessageItem`、`ReasoningItem`、`ToolCallItem`、`ToolResultItem`、`OpaqueItem`、`InputItem`、`OutputItem`、`ReplayItem` |
-| 新建 | `src/types/request.ts` — `AIRequest`、`ToolDefinition`、`ToolChoice`、`IncludeSettings` |
-| 新建 | `src/types/response.ts` — `AIResponse`、`StopReason`、`Usage`、`BillingInfo`、`AuxiliaryInfo`、`BackendTrace` |
-| 新建 | `src/types/events.ts` — 全部 13 类流事件类型 + `AIStreamEvent` 联合 |
+| 操作 | 文件                                                                                                                                                 |
+| ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 新建 | `src/types/content.ts` — `ContentBlock` 联合类型                                                                                                     |
+| 新建 | `src/types/items.ts` — `MessageItem`、`ReasoningItem`、`ToolCallItem`、`ToolResultItem`、`OpaqueItem`、`InputItem`、`OutputItem`、`ReplayItem`       |
+| 新建 | `src/types/request.ts` — `AIRequest`、`ToolDefinition`、`ToolChoice`、`IncludeSettings`                                                              |
+| 新建 | `src/types/response.ts` — `AIResponse`、`StopReason`、`Usage`、`BillingInfo`、`AuxiliaryInfo`、`BackendTrace`                                        |
+| 新建 | `src/types/events.ts` — 全部 13 类流事件类型 + `AIStreamEvent` 联合                                                                                  |
 | 新建 | `src/types/adapter.ts` — `BackendAdapter`、`AdapterCapabilities`、`NormalizedRequest`、`CreateAIClientOptions`、`AIClient`、`CAPABILITY_MATRIX` 常量 |
-| 修改 | `src/types/index.ts` — 所有类型统一导出入口 |
-| 修改 | `src/core/client.ts` — 更新为使用正式类型导入 |
-| 修改 | `tests/index.test.ts` — 新增 31 个类型构造测试 |
+| 修改 | `src/types/index.ts` — 所有类型统一导出入口                                                                                                          |
+| 修改 | `src/core/client.ts` — 更新为使用正式类型导入                                                                                                        |
+| 修改 | `tests/index.test.ts` — 新增 31 个类型构造测试                                                                                                       |
 
 **验证结果：**
 
@@ -215,14 +215,14 @@ v1 实现目标如下：
 
 **关键修改文件：**
 
-| 操作 | 文件 |
-|------|------|
-| 新建 | `src/core/errors.ts` — `AIRequestError` 错误类型 |
+| 操作 | 文件                                                                    |
+| ---- | ----------------------------------------------------------------------- |
+| 新建 | `src/core/errors.ts` — `AIRequestError` 错误类型                        |
 | 新建 | `src/core/validation.ts` — `validateRequest()` + `assertValidRequest()` |
-| 新建 | `src/core/normalize.ts` — `normalizeRequest()` 归一化实现 |
-| 修改 | `src/core/client.ts` — `createAIClient()` 完整实现 |
-| 修改 | `src/core/index.ts` — 导出新模块 |
-| 新建 | `tests/core.test.ts` — 31 个核心单元测试 |
+| 新建 | `src/core/normalize.ts` — `normalizeRequest()` 归一化实现               |
+| 修改 | `src/core/client.ts` — `createAIClient()` 完整实现                      |
+| 修改 | `src/core/index.ts` — 导出新模块                                        |
+| 新建 | `tests/core.test.ts` — 31 个核心单元测试                                |
 
 **验证结果：**
 
@@ -290,13 +290,13 @@ v1 实现目标如下：
 
 **关键修改文件：**
 
-| 操作 | 文件 |
-|------|------|
+| 操作 | 文件                                                            |
+| ---- | --------------------------------------------------------------- |
 | 新建 | `src/core/event-factory.ts` — `createEventFactory` 共享事件工厂 |
-| 新建 | `src/core/aggregator.ts` — `aggregateEvents` 流聚合器 |
-| 新建 | `src/core/collect-stream.ts` — `collectStream` 流收集 helper |
-| 修改 | `src/core/index.ts` — 导出新模块 |
-| 新建 | `tests/events-aggregator.test.ts` — 20 个事件/聚合器测试 |
+| 新建 | `src/core/aggregator.ts` — `aggregateEvents` 流聚合器           |
+| 新建 | `src/core/collect-stream.ts` — `collectStream` 流收集 helper    |
+| 修改 | `src/core/index.ts` — 导出新模块                                |
+| 新建 | `tests/events-aggregator.test.ts` — 20 个事件/聚合器测试        |
 
 **验证结果：**
 
@@ -356,12 +356,12 @@ v1 实现目标如下：
 
 **关键修改文件：**
 
-| 操作 | 文件 |
-|------|------|
+| 操作 | 文件                                                                                             |
+| ---- | ------------------------------------------------------------------------------------------------ |
 | 新建 | `src/helpers/mapping.ts` — 共享映射 helper（stop reason、content block、item 构造、replay 构造） |
-| 新建 | `src/helpers/adapter-base.ts` — `AdapterBase` 抽象基类（build/invoke/parse/emit 四层约定） |
-| 修改 | `src/helpers/index.ts` — 导出新模块 |
-| 新建 | `tests/adapter-base.test.ts` — 28 个映射和基类测试 |
+| 新建 | `src/helpers/adapter-base.ts` — `AdapterBase` 抽象基类（build/invoke/parse/emit 四层约定）       |
+| 修改 | `src/helpers/index.ts` — 导出新模块                                                              |
+| 新建 | `tests/adapter-base.test.ts` — 28 个映射和基类测试                                               |
 
 **验证结果：**
 
@@ -375,22 +375,22 @@ v1 实现目标如下：
 
 **AdapterBase 内部职责分层：**
 
-| 层 | 方法 | 职责 |
-|---|---|---|
-| build | `buildRequest(request)` | 将 `NormalizedRequest` 转换为 provider 请求格式 |
-| invoke | `runStream(providerRequest, factory)` | 调用 provider 并驱动事件发射 |
-| parse |（子类在 runStream 内自行处理）| 解析 provider chunk/response 为 canonical 中间态 |
-| emit |（通过 factory 参数）| 使用 `EventFactory` 发射规范的 `AIStreamEvent` |
+| 层     | 方法                                  | 职责                                             |
+| ------ | ------------------------------------- | ------------------------------------------------ |
+| build  | `buildRequest(request)`               | 将 `NormalizedRequest` 转换为 provider 请求格式  |
+| invoke | `runStream(providerRequest, factory)` | 调用 provider 并驱动事件发射                     |
+| parse  | （子类在 runStream 内自行处理）       | 解析 provider chunk/response 为 canonical 中间态 |
+| emit   | （通过 factory 参数）                 | 使用 `EventFactory` 发射规范的 `AIStreamEvent`   |
 
 **共享映射 helper 清单：**
 
-| 函数 | 用途 |
-|---|---|
-| `mapStopReason(providerReason)` | provider stop_reason → `StopReason` |
-| `mapReasoningVisibility(hasThinking, hasRedacted)` | → `"full"\|"summary"\|"redacted"\|"opaque"` |
-| `textBlock` / `jsonBlock` / `imageBlock` / `opaqueBlock` | `ContentBlock` 构造 |
-| `messageItem` / `reasoningItem` / `toolCallItem` / `toolResultItem` / `opaqueItem` | Item 构造 |
-| `replayFromOutput(output)` | output → replay 默认映射 |
+| 函数                                                                               | 用途                                        |
+| ---------------------------------------------------------------------------------- | ------------------------------------------- |
+| `mapStopReason(providerReason)`                                                    | provider stop_reason → `StopReason`         |
+| `mapReasoningVisibility(hasThinking, hasRedacted)`                                 | → `"full"\|"summary"\|"redacted"\|"opaque"` |
+| `textBlock` / `jsonBlock` / `imageBlock` / `opaqueBlock`                           | `ContentBlock` 构造                         |
+| `messageItem` / `reasoningItem` / `toolCallItem` / `toolResultItem` / `opaqueItem` | Item 构造                                   |
+| `replayFromOutput(output)`                                                         | output → replay 默认映射                    |
 
 ### Phase 5: `responses` Adapter
 
@@ -426,12 +426,12 @@ v1 实现目标如下：
 
 **关键修改文件：**
 
-| 操作 | 文件 |
-|------|------|
-| 新建 | `src/adapters/responses.ts` — `ResponsesAdapter` 完整实现（SSE 解析、请求构造、事件映射） |
-| 修改 | `src/helpers/adapter-base.ts` — 重构 `runStream` 返回 `AsyncIterable<AIStreamEvent>` 支持实时事件发射 |
-| 修改 | `src/core/aggregator.ts` — `handleResponseCompleted` 增加 usage/billing 提取 |
-| 修改 | `src/adapters/index.ts` — 导出 `ResponsesAdapter` |
+| 操作 | 文件                                                                                                                        |
+| ---- | --------------------------------------------------------------------------------------------------------------------------- |
+| 新建 | `src/adapters/responses.ts` — `ResponsesAdapter` 完整实现（SSE 解析、请求构造、事件映射）                                   |
+| 修改 | `src/helpers/adapter-base.ts` — 重构 `runStream` 返回 `AsyncIterable<AIStreamEvent>` 支持实时事件发射                       |
+| 修改 | `src/core/aggregator.ts` — `handleResponseCompleted` 增加 usage/billing 提取                                                |
+| 修改 | `src/adapters/index.ts` — 导出 `ResponsesAdapter`                                                                           |
 | 新建 | `tests/responses-adapter.test.ts` — 15 个端到端测试（文本流、reasoning 流、tool_call 流、replay、请求构建、错误处理、集成） |
 
 **验证结果：**
@@ -447,18 +447,18 @@ v1 实现目标如下：
 
 **ResponsesAdapter 能力全景：**
 
-| 能力 | 状态 |
-|------|------|
-| SSE 协议解析 | ✅ `parseSSE` 处理 event/data 行 |
-| 消息流 (message.*) | ✅ started → delta → completed |
-| 思维链流 (reasoning.*) | ✅ started → delta → completed |
-| 工具调用流 (tool_call.*) | ✅ started → delta (arguments) → completed |
-| 请求构建 (buildRequest) | ✅ message/reasoning/tool_call/tool_result/opaque → Responses API 格式 |
-| Stop reason 推断 | ✅ 基于 output items 判断 end_turn / tool_call / max_output_tokens |
-| Replay 构造 | ✅ `replayFromOutput()` + `opaque` continuation |
-| Usage 采集 | ✅ 从 `response.completed` 提取 |
-| 错误处理 | ✅ HTTP 错误 → warning + 空 completed；SSE error 事件 → warning |
-| 可测试性 | ✅ 注入 `FetchFn` mock，无需真实 API key |
+| 能力                     | 状态                                                                   |
+| ------------------------ | ---------------------------------------------------------------------- |
+| SSE 协议解析             | ✅ `parseSSE` 处理 event/data 行                                       |
+| 消息流 (message.*)       | ✅ started → delta → completed                                         |
+| 思维链流 (reasoning.*)   | ✅ started → delta → completed                                         |
+| 工具调用流 (tool_call.*) | ✅ started → delta (arguments) → completed                             |
+| 请求构建 (buildRequest)  | ✅ message/reasoning/tool_call/tool_result/opaque → Responses API 格式 |
+| Stop reason 推断         | ✅ 基于 output items 判断 end_turn / tool_call / max_output_tokens     |
+| Replay 构造              | ✅ `replayFromOutput()` + `opaque` continuation                        |
+| Usage 采集               | ✅ 从 `response.completed` 提取                                        |
+| 错误处理                 | ✅ HTTP 错误 → warning + 空 completed；SSE error 事件 → warning        |
+| 可测试性                 | ✅ 注入 `FetchFn` mock，无需真实 API key                               |
 
 任务：
 
@@ -498,12 +498,12 @@ v1 实现目标如下：
 
 **关键修改文件：**
 
-| 操作 | 文件 |
-|------|------|
+| 操作 | 文件                                                                                                            |
+| ---- | --------------------------------------------------------------------------------------------------------------- |
 | 新建 | `src/adapters/messages.ts` — `MessagesAdapter` 完整实现（SSE 解析、thinking/tool_use 映射、system prompt 合并） |
-| 修改 | `src/helpers/mapping.ts` — `STOP_REASON_MAP` 增加 `tool_use` → `tool_call` 映射 |
-| 修改 | `src/adapters/index.ts` — 导出 `MessagesAdapter` |
-| 新建 | `tests/messages-adapter.test.ts` — 15 个端到端测试 |
+| 修改 | `src/helpers/mapping.ts` — `STOP_REASON_MAP` 增加 `tool_use` → `tool_call` 映射                                 |
+| 修改 | `src/adapters/index.ts` — 导出 `MessagesAdapter`                                                                |
+| 新建 | `tests/messages-adapter.test.ts` — 15 个端到端测试                                                              |
 
 **验证结果：**
 
@@ -518,19 +518,19 @@ v1 实现目标如下：
 
 **MessagesAdapter 能力全景：**
 
-| 能力 | 状态 |
-|------|------|
-| SSE 协议解析 | ✅ `parseMessagesSSE` 处理 8 类事件 |
-| 文本消息流 | ✅ `content_block_start(text)` → `message.*` |
-| 思维链流 (thinking) | ✅ `content_block_start(thinking)` → `reasoning.*`，visibility 为 `"full"` |
-| 隐藏思维链 (redacted_thinking) | ✅ 一次性发射完整块，visibility 为 `"redacted"` |
-| 工具调用流 (tool_use) | ✅ `input_json_delta` → `tool_call.delta` |
-| 请求构建 (buildRequest) | ✅ message/tool_call/tool_result/reasoning → Messages API 格式 |
-| System prompt 合并 | ✅ instructions + system/developer role → `system` 字段 |
-| Stop reason 映射 | ✅ `end_turn` / `max_tokens` / `tool_use` → canonical |
-| Replay 构造 | ✅ `replayFromOutput()` + `opaque` continuation（含 content blocks） |
-| Usage 采集 | ✅ 从 `message_delta` 提取 |
-| 错误处理 | ✅ HTTP 错误 → warning；SSE error 事件 → warning |
+| 能力                           | 状态                                                                       |
+| ------------------------------ | -------------------------------------------------------------------------- |
+| SSE 协议解析                   | ✅ `parseMessagesSSE` 处理 8 类事件                                        |
+| 文本消息流                     | ✅ `content_block_start(text)` → `message.*`                               |
+| 思维链流 (thinking)            | ✅ `content_block_start(thinking)` → `reasoning.*`，visibility 为 `"full"` |
+| 隐藏思维链 (redacted_thinking) | ✅ 一次性发射完整块，visibility 为 `"redacted"`                            |
+| 工具调用流 (tool_use)          | ✅ `input_json_delta` → `tool_call.delta`                                  |
+| 请求构建 (buildRequest)        | ✅ message/tool_call/tool_result/reasoning → Messages API 格式             |
+| System prompt 合并             | ✅ instructions + system/developer role → `system` 字段                    |
+| Stop reason 映射               | ✅ `end_turn` / `max_tokens` / `tool_use` → canonical                      |
+| Replay 构造                    | ✅ `replayFromOutput()` + `opaque` continuation（含 content blocks）       |
+| Usage 采集                     | ✅ 从 `message_delta` 提取                                                 |
+| 错误处理                       | ✅ HTTP 错误 → warning；SSE error 事件 → warning                           |
 
 ### Phase 7: `chat.completions` Adapter
 
@@ -561,11 +561,11 @@ v1 实现目标如下：
 
 **关键修改文件：**
 
-| 操作 | 文件 |
-|------|------|
+| 操作 | 文件                                                                                                              |
+| ---- | ----------------------------------------------------------------------------------------------------------------- |
 | 新建 | `src/adapters/chat-completions.ts` — `ChatCompletionsAdapter` 完整实现（SSE 解析、tool_calls/function_call 映射） |
-| 修改 | `src/adapters/index.ts` — 导出 `ChatCompletionsAdapter` |
-| 新建 | `tests/chat-completions-adapter.test.ts` — 16 个弱能力场景测试 |
+| 修改 | `src/adapters/index.ts` — 导出 `ChatCompletionsAdapter`                                                           |
+| 新建 | `tests/chat-completions-adapter.test.ts` — 16 个弱能力场景测试                                                    |
 
 **验证结果：**
 
@@ -580,18 +580,18 @@ v1 实现目标如下：
 
 **ChatCompletionsAdapter 能力全景：**
 
-| 能力 | 状态 |
-|------|------|
-| SSE 解析 | ✅ `parseChatSSE` 处理 `data: {...}` 行 + `[DONE]` 终止符 |
-| 文本消息流 | ✅ `delta.content` → `message.*` 事件 |
-| 工具调用流 (tool_calls) | ✅ `delta.tool_calls` 数组 → `tool_call.*`，支持多工具并行累积 |
-| 旧格式工具调用 (function_call) | ✅ `delta.function_call` → `tool_call.*` 事件 |
-| 消息首块标识 | ✅ `delta.role="assistant"` 识别；无 role 时从首个 `delta.content` 自动创建 |
-| 请求构建 | ✅ message/tool_call/tool_result/reasoning → Chat Completions 格式 |
-| tool_choice 映射 | ✅ `"auto"` / `"none"` / `{ type: "tool", name }` |
-| 断流保护 | ✅ 流未正常结束（无 finish_reason）时仍 emit warning + 部分 output |
-| 能力声明 | `reasoningStreaming: false`, `toolCallStreaming: false`, `replayFidelity: "low"` |
-| 错误处理 | ✅ HTTP 错误 → warning；不完整流 → warning + partial output |
+| 能力                           | 状态                                                                             |
+| ------------------------------ | -------------------------------------------------------------------------------- |
+| SSE 解析                       | ✅ `parseChatSSE` 处理 `data: {...}` 行 + `[DONE]` 终止符                        |
+| 文本消息流                     | ✅ `delta.content` → `message.*` 事件                                            |
+| 工具调用流 (tool_calls)        | ✅ `delta.tool_calls` 数组 → `tool_call.*`，支持多工具并行累积                   |
+| 旧格式工具调用 (function_call) | ✅ `delta.function_call` → `tool_call.*` 事件                                    |
+| 消息首块标识                   | ✅ `delta.role="assistant"` 识别；无 role 时从首个 `delta.content` 自动创建      |
+| 请求构建                       | ✅ message/tool_call/tool_result/reasoning → Chat Completions 格式               |
+| tool_choice 映射               | ✅ `"auto"` / `"none"` / `{ type: "tool", name }`                                |
+| 断流保护                       | ✅ 流未正常结束（无 finish_reason）时仍 emit warning + 部分 output               |
+| 能力声明                       | `reasoningStreaming: false`, `toolCallStreaming: false`, `replayFidelity: "low"` |
+| 错误处理                       | ✅ HTTP 错误 → warning；不完整流 → warning + partial output                      |
 
 ### Phase 8: 模拟流式层
 
@@ -623,11 +623,11 @@ v1 实现目标如下：
 
 **关键修改文件：**
 
-| 操作 | 文件 |
-|------|------|
+| 操作 | 文件                                                                     |
+| ---- | ------------------------------------------------------------------------ |
 | 新建 | `src/helpers/synthetic-stream.ts` — `syntheticStream()` 通用模拟流式实现 |
-| 修改 | `src/helpers/index.ts` — 导出 `syntheticStream` |
-| 新建 | `tests/synthetic-stream.test.ts` — 16 个测试 |
+| 修改 | `src/helpers/index.ts` — 导出 `syntheticStream`                          |
+| 新建 | `tests/synthetic-stream.test.ts` — 16 个测试                             |
 
 **验证结果：**
 
@@ -641,14 +641,14 @@ v1 实现目标如下：
 
 **约束遵守情况：**
 
-| 约束 | 状态 |
-|------|------|
-| 每个 item 只发一块完整 delta | ✅ `message.delta` 一次性发射全部 text |
-| 保持 item 边界 | ✅ `started` → `delta` → `completed` 严格遵守 |
-| 保持后端原始顺序 | ✅ `output` 数组顺序决定事件发射顺序 |
-| 不发明 reasoning | ✅ 只发射 output 中已存在的 `ReasoningItem` |
-| 不改写工具参数 | ✅ 透传 `ToolCallItem.argumentsText` |
-| Opaque items 无事件 | ✅ `opaque` 类型跳过事件发射，保留在最终 `AIResponse.output` 中 |
+| 约束                         | 状态                                                            |
+| ---------------------------- | --------------------------------------------------------------- |
+| 每个 item 只发一块完整 delta | ✅ `message.delta` 一次性发射全部 text                          |
+| 保持 item 边界               | ✅ `started` → `delta` → `completed` 严格遵守                   |
+| 保持后端原始顺序             | ✅ `output` 数组顺序决定事件发射顺序                            |
+| 不发明 reasoning             | ✅ 只发射 output 中已存在的 `ReasoningItem`                     |
+| 不改写工具参数               | ✅ 透传 `ToolCallItem.argumentsText`                            |
+| Opaque items 无事件          | ✅ `opaque` 类型跳过事件发射，保留在最终 `AIResponse.output` 中 |
 
 **使用场景：**
 
@@ -697,11 +697,11 @@ v1 实现目标如下：
 
 **关键修改文件：**
 
-| 操作 | 文件 |
-|------|------|
+| 操作 | 文件                                                           |
+| ---- | -------------------------------------------------------------- |
 | 新建 | `src/helpers/auxiliary-collector.ts` — `AuxiliaryCollector` 类 |
-| 修改 | `src/helpers/index.ts` — 导出 `AuxiliaryCollector` |
-| 新建 | `tests/auxiliary-collector.test.ts` — 18 个测试 |
+| 修改 | `src/helpers/index.ts` — 导出 `AuxiliaryCollector`             |
+| 新建 | `tests/auxiliary-collector.test.ts` — 18 个测试                |
 
 **验证结果：**
 
@@ -716,23 +716,23 @@ v1 实现目标如下：
 
 **AuxiliaryCollector API：**
 
-| 方法 | 用途 |
-|---|---|
-| `recordUsage(usage, source, raw?)` | 记录 usage，标明来源和原始 payload |
-| `recordBilling(billing, source, raw?)` | 记录 billing，标明来源和原始 payload |
-| `recordMetadata(metadata)` | 记录 provider 特有元数据 |
-| `recordWarning(message)` | 记录 warning |
-| `tryLookup(fn, timeoutMs?)` | 一次有界 lookup（最多一次，超时保护） |
-| `build()` | 构建最终 `{ usage, billing, auxiliary, warnings }` |
+| 方法                                   | 用途                                               |
+| -------------------------------------- | -------------------------------------------------- |
+| `recordUsage(usage, source, raw?)`     | 记录 usage，标明来源和原始 payload                 |
+| `recordBilling(billing, source, raw?)` | 记录 billing，标明来源和原始 payload               |
+| `recordMetadata(metadata)`             | 记录 provider 特有元数据                           |
+| `recordWarning(message)`               | 记录 warning                                       |
+| `tryLookup(fn, timeoutMs?)`            | 一次有界 lookup（最多一次，超时保护）              |
+| `build()`                              | 构建最终 `{ usage, billing, auxiliary, warnings }` |
 
 **Lookup 保护机制：**
 
-| 场景 | 行为 |
-|------|------|
-| 多次调用 `tryLookup` | 仅第一次执行，后续忽略 |
-| lookup 抛错 | 记录 warning，不传播异常 |
-| lookup 超时 | `withTimeout` 在指定 ms 后 reject，记 warning |
-| pre-lookup 数据 | lookup 失败时 pre-lookup 数据不受影响 |
+| 场景                 | 行为                                          |
+| -------------------- | --------------------------------------------- |
+| 多次调用 `tryLookup` | 仅第一次执行，后续忽略                        |
+| lookup 抛错          | 记录 warning，不传播异常                      |
+| lookup 超时          | `withTimeout` 在指定 ms 后 reject，记 warning |
+| pre-lookup 数据      | lookup 失败时 pre-lookup 数据不受影响         |
 
 ### Phase 10: 错误模型与中断语义
 
@@ -768,11 +768,11 @@ v1 实现目标如下：
 
 **关键修改文件：**
 
-| 操作 | 文件 |
-|------|------|
+| 操作 | 文件                                                                                                                                        |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------- |
 | 修改 | `src/core/errors.ts` — 扩展为完整错误模型：`AIError`、`AIRequestError`、`AIProviderError`、`AIStreamError`、`AIMappingError`、`WarningCode` |
-| 修改 | `src/core/index.ts` — 导出新错误类型 |
-| 新建 | `tests/error-model.test.ts` — 21 个错误/中断语义测试 |
+| 修改 | `src/core/index.ts` — 导出新错误类型                                                                                                        |
+| 新建 | `tests/error-model.test.ts` — 21 个错误/中断语义测试                                                                                        |
 
 **验证结果：**
 
@@ -786,21 +786,21 @@ v1 实现目标如下：
 
 **错误模型层次：**
 
-| 错误类型 | 致命? | 处理方式 | 示例场景 |
-|---------|-------|---------|---------|
-| `AIRequestError` | ✅ 致命 | 同步抛错 | input 为空、temperature 越界、toolChoice 不一致 |
-| `AIProviderError` | ⚠️ 非致命 | AdapterBase 捕获 → warning + 空 completed | HTTP 401、网络断开 |
-| `AIStreamError` | ⚠️ 非致命 | adapter 内部处理 → warning | chunk JSON 解析失败、事件类型不匹配 |
-| `AIMappingError` | ⚠️ 非致命 | adapter 内部处理 → warning | 无法将 provider 响应映射为 canonical 类型 |
+| 错误类型          | 致命?     | 处理方式                                  | 示例场景                                        |
+| ----------------- | --------- | ----------------------------------------- | ----------------------------------------------- |
+| `AIRequestError`  | ✅ 致命   | 同步抛错                                  | input 为空、temperature 越界、toolChoice 不一致 |
+| `AIProviderError` | ⚠️ 非致命 | AdapterBase 捕获 → warning + 空 completed | HTTP 401、网络断开                              |
+| `AIStreamError`   | ⚠️ 非致命 | adapter 内部处理 → warning                | chunk JSON 解析失败、事件类型不匹配             |
+| `AIMappingError`  | ⚠️ 非致命 | adapter 内部处理 → warning                | 无法将 provider 响应映射为 canonical 类型       |
 
 **中断语义验证：**
 
-| 场景 | 行为 | 测试 |
-|------|------|------|
-| 流正常结束（含 response.completed） | 正常聚合 | ✅ `aggregateEvents` 正常返回 |
-| 流提前中断（无 response.completed） | 抛错 | ✅ `aggregateEvents` throw, `collectStream` reject |
-| Provider 抛错 | warning + 空 completed | ✅ AdapterBase 捕获 |
-| Warning-only 事件流 | 正常聚合 | ✅ warning 出现在 `AIResponse.warnings` 中 |
+| 场景                                | 行为                   | 测试                                               |
+| ----------------------------------- | ---------------------- | -------------------------------------------------- |
+| 流正常结束（含 response.completed） | 正常聚合               | ✅ `aggregateEvents` 正常返回                      |
+| 流提前中断（无 response.completed） | 抛错                   | ✅ `aggregateEvents` throw, `collectStream` reject |
+| Provider 抛错                       | warning + 空 completed | ✅ AdapterBase 捕获                                |
+| Warning-only 事件流                 | 正常聚合               | ✅ warning 出现在 `AIResponse.warnings` 中         |
 
 **Warning 代码清单：**
 
@@ -851,10 +851,10 @@ v1 实现目标如下：
 
 **关键修改文件：**
 
-| 操作 | 文件 |
-|------|------|
+| 操作 | 文件                                                                                     |
+| ---- | ---------------------------------------------------------------------------------------- |
 | 新建 | `tests/fixtures.ts` — 共享 fixture 集（工厂、样本 item、golden 事件序列、样本 response） |
-| 新建 | `tests/scenarios.test.ts` — 19 个端到端场景测试 |
+| 新建 | `tests/scenarios.test.ts` — 19 个端到端场景测试                                          |
 
 **验证结果：**
 
@@ -869,18 +869,18 @@ v1 实现目标如下：
 
 **场景覆盖矩阵：**
 
-| 场景 | 测试 | 文件 |
-|------|------|------|
-| 单轮文本流 | `goldenTextOnlySequence` → aggregate | `scenarios.test.ts` |
-| Reasoning 流 | `goldenMessageReasoningToolCallSequence` → aggregate | `scenarios.test.ts` |
-| 工具调用流 | 纯 tool_call 序列 + delta 合并 | `scenarios.test.ts` |
-| Replay 回放 | `replayFromOutput` + opaque 保留 + round-trip | `scenarios.test.ts` |
-| 手动工具循环 | 两轮 `createAIClient` mock：tool_call → execute → tool_result → next | `scenarios.test.ts` |
-| Usage/billing 回填 | response.completed 携带 usage/billing | `scenarios.test.ts` |
-| 降级 warning | `goldenWarningSequence` → warning 出现在结果中 | `scenarios.test.ts` |
-| 中途断流 | `goldenInterruptedSequence` → aggregateEvents/collectStream 抛错 | `scenarios.test.ts` |
-| 跨 adapter 一致性 | golden 序列产出统一 AIResponse 形状 | `scenarios.test.ts` |
-| 稳定性 | 同一 golden 序列多次聚合结果一致 | `scenarios.test.ts` |
+| 场景               | 测试                                                                 | 文件                |
+| ------------------ | -------------------------------------------------------------------- | ------------------- |
+| 单轮文本流         | `goldenTextOnlySequence` → aggregate                                 | `scenarios.test.ts` |
+| Reasoning 流       | `goldenMessageReasoningToolCallSequence` → aggregate                 | `scenarios.test.ts` |
+| 工具调用流         | 纯 tool_call 序列 + delta 合并                                       | `scenarios.test.ts` |
+| Replay 回放        | `replayFromOutput` + opaque 保留 + round-trip                        | `scenarios.test.ts` |
+| 手动工具循环       | 两轮 `createAIClient` mock：tool_call → execute → tool_result → next | `scenarios.test.ts` |
+| Usage/billing 回填 | response.completed 携带 usage/billing                                | `scenarios.test.ts` |
+| 降级 warning       | `goldenWarningSequence` → warning 出现在结果中                       | `scenarios.test.ts` |
+| 中途断流           | `goldenInterruptedSequence` → aggregateEvents/collectStream 抛错     | `scenarios.test.ts` |
+| 跨 adapter 一致性  | golden 序列产出统一 AIResponse 形状                                  | `scenarios.test.ts` |
+| 稳定性             | 同一 golden 序列多次聚合结果一致                                     | `scenarios.test.ts` |
 
 ### Phase 12: 文档与示例
 
@@ -913,13 +913,13 @@ v1 实现目标如下：
 
 **关键修改文件：**
 
-| 操作 | 文件 |
-|------|------|
-| 修改 | `README.md` — 完整文档（核心概念、API 参考、adapter 对比、三类示例说明、开发命令） |
-| 修改 | `examples/basic.ts` — 单轮流式输出示例（逐事件消费 + collectStream） |
-| 新建 | `examples/multi-turn.ts` — 多轮 replay 示例（transcript 维护 + 三轮对话） |
+| 操作 | 文件                                                                                   |
+| ---- | -------------------------------------------------------------------------------------- |
+| 修改 | `README.md` — 完整文档（核心概念、API 参考、adapter 对比、三类示例说明、开发命令）     |
+| 修改 | `examples/basic.ts` — 单轮流式输出示例（逐事件消费 + collectStream）                   |
+| 新建 | `examples/multi-turn.ts` — 多轮 replay 示例（transcript 维护 + 三轮对话）              |
 | 新建 | `examples/tool-loop.ts` — 手动工具循环示例（tool_call → execute → tool_result → next） |
-| 修改 | `package.json` — 新增 `example:multi-turn`、`example:tool-loop` 脚本 |
+| 修改 | `package.json` — 新增 `example:multi-turn`、`example:tool-loop` 脚本                   |
 
 **验证结果：**
 
@@ -933,26 +933,26 @@ v1 实现目标如下：
 
 **文档覆盖内容：**
 
-| 章节 | 内容 |
-|------|------|
-| 快速开始 | `createAIClient` + `ResponsesAdapter` + `for await` 流式消费 |
-| 核心概念 | AIRequest / AIStreamEvent / AIResponse 模型说明 |
-| 统一请求模型 | InputItem 类型表 |
-| 统一事件流 | 事件时序图 + 类型表 |
-| 统一终结结果 | AIResponse 字段表 |
-| 后端 Adapter | 三类 adapter 类名 + 能力评级 + `capabilities` 字段说明 |
-| 多轮对话 | replay 保留 + transcript 维护 + 代码片段 |
-| 手动工具循环 | tool_call → execute → tool_result 流程 + 代码片段 |
-| 模拟流式 | syntheticStream 用法 |
-| 辅助信息采集 | AuxiliaryCollector 用法 |
+| 章节         | 内容                                                         |
+| ------------ | ------------------------------------------------------------ |
+| 快速开始     | `createAIClient` + `ResponsesAdapter` + `for await` 流式消费 |
+| 核心概念     | AIRequest / AIStreamEvent / AIResponse 模型说明              |
+| 统一请求模型 | InputItem 类型表                                             |
+| 统一事件流   | 事件时序图 + 类型表                                          |
+| 统一终结结果 | AIResponse 字段表                                            |
+| 后端 Adapter | 三类 adapter 类名 + 能力评级 + `capabilities` 字段说明       |
+| 多轮对话     | replay 保留 + transcript 维护 + 代码片段                     |
+| 手动工具循环 | tool_call → execute → tool_result 流程 + 代码片段            |
+| 模拟流式     | syntheticStream 用法                                         |
+| 辅助信息采集 | AuxiliaryCollector 用法                                      |
 
 **三组示例：**
 
-| 示例 | 文件 | 演示场景 |
-|------|------|---------|
-| 单轮流式输出 | `examples/basic.ts` | 逐事件 for-await + collectStream 聚合 |
-| 多轮 replay | `examples/multi-turn.ts` | transcript 维护、replay 追加、三轮对话 |
-| 手动工具循环 | `examples/tool-loop.ts` | tool_call 接收、工具执行、tool_result构造、轮次控制 |
+| 示例         | 文件                     | 演示场景                                            |
+| ------------ | ------------------------ | --------------------------------------------------- |
+| 单轮流式输出 | `examples/basic.ts`      | 逐事件 for-await + collectStream 聚合               |
+| 多轮 replay  | `examples/multi-turn.ts` | transcript 维护、replay 追加、三轮对话              |
+| 手动工具循环 | `examples/tool-loop.ts`  | tool_call 接收、工具执行、tool_result构造、轮次控制 |
 
 ## 建议里程碑
 

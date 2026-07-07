@@ -6,13 +6,7 @@
 
 import { createEventFactory, textBlock, messageItem, reasoningItem, toolCallItem, opaqueItem } from "../src/index.js";
 
-import type {
-  AIStreamEvent,
-  AIResponse,
-  MessageItem,
-  ReasoningItem,
-  ToolCallItem,
-} from "../src/index.js";
+import type { AIStreamEvent, AIResponse, MessageItem, ReasoningItem, ToolCallItem } from "../src/index.js";
 
 // ── 工厂辅助 ──────────────────────────────────────────────────
 
@@ -39,14 +33,11 @@ export const sampleItems = {
     content: [textBlock("Hello")],
   }),
 
-  assistantReply: (id = "m1"): MessageItem =>
-    messageItem([textBlock("Hi there!")], { id }),
+  assistantReply: (id = "m1"): MessageItem => messageItem([textBlock("Hi there!")], { id }),
 
-  reasoning: (id = "r1"): ReasoningItem =>
-    reasoningItem([textBlock("thinking step 1...")], "full", id),
+  reasoning: (id = "r1"): ReasoningItem => reasoningItem([textBlock("thinking step 1...")], "full", id),
 
-  toolCall: (id = "tc1"): ToolCallItem =>
-    toolCallItem(id, "get_weather", '{"city":"Hangzhou"}'),
+  toolCall: (id = "tc1"): ToolCallItem => toolCallItem(id, "get_weather", '{"city":"Hangzhou"}'),
 
   toolResult: () => ({
     type: "tool_result" as const,

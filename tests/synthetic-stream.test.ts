@@ -69,9 +69,11 @@ describe("syntheticStream - basic", () => {
 describe("syntheticStream - items", () => {
   it("should emit message events for a MessageItem", async () => {
     const events = await collect(
-      syntheticStream(makeOptions({
-        output: [messageItem([textBlock("Hello world")], { id: "m1" })],
-      })),
+      syntheticStream(
+        makeOptions({
+          output: [messageItem([textBlock("Hello world")], { id: "m1" })],
+        }),
+      ),
     );
 
     const types = events.map((e) => e.type);
@@ -87,9 +89,11 @@ describe("syntheticStream - items", () => {
 
   it("should emit reasoning events for a ReasoningItem", async () => {
     const events = await collect(
-      syntheticStream(makeOptions({
-        output: [reasoningItem([textBlock("thinking...")], "full", "r1")],
-      })),
+      syntheticStream(
+        makeOptions({
+          output: [reasoningItem([textBlock("thinking...")], "full", "r1")],
+        }),
+      ),
     );
 
     const types = events.map((e) => e.type);
@@ -100,9 +104,11 @@ describe("syntheticStream - items", () => {
 
   it("should emit tool_call events for a ToolCallItem", async () => {
     const events = await collect(
-      syntheticStream(makeOptions({
-        output: [toolCallItem("tc1", "get_weather", '{"city":"Hangzhou"}')],
-      })),
+      syntheticStream(
+        makeOptions({
+          output: [toolCallItem("tc1", "get_weather", '{"city":"Hangzhou"}')],
+        }),
+      ),
     );
 
     const types = events.map((e) => e.type);
@@ -118,13 +124,15 @@ describe("syntheticStream - items", () => {
 
   it("should preserve item order in output", async () => {
     const events = await collect(
-      syntheticStream(makeOptions({
-        output: [
-          reasoningItem([textBlock("think")], "full", "r1"),
-          messageItem([textBlock("Answer")], { id: "m1" }),
-          toolCallItem("tc1", "search", "{}"),
-        ],
-      })),
+      syntheticStream(
+        makeOptions({
+          output: [
+            reasoningItem([textBlock("think")], "full", "r1"),
+            messageItem([textBlock("Answer")], { id: "m1" }),
+            toolCallItem("tc1", "search", "{}"),
+          ],
+        }),
+      ),
     );
 
     // 提取 item completed 事件的顺序（排除 response.completed）
@@ -132,21 +140,19 @@ describe("syntheticStream - items", () => {
       .filter((e) => e.type !== "response.completed" && e.type.endsWith(".completed"))
       .map((e) => e.type);
 
-    expect(itemCompletedTypes).toEqual([
-      "reasoning.completed",
-      "message.completed",
-      "tool_call.completed",
-    ]);
+    expect(itemCompletedTypes).toEqual(["reasoning.completed", "message.completed", "tool_call.completed"]);
   });
 
   it("should skip opaque items without emitting events", async () => {
     const events = await collect(
-      syntheticStream(makeOptions({
-        output: [
-          messageItem([textBlock("hi")], { id: "m1" }),
-          opaqueItem("responses", "replay", { key: "val" }, "op1"),
-        ],
-      })),
+      syntheticStream(
+        makeOptions({
+          output: [
+            messageItem([textBlock("hi")], { id: "m1" }),
+            opaqueItem("responses", "replay", { key: "val" }, "op1"),
+          ],
+        }),
+      ),
     );
 
     const types = events.map((e) => e.type);
@@ -174,10 +180,12 @@ describe("syntheticStream - items", () => {
 describe("syntheticStream - metadata", () => {
   it("should emit response.auxiliary when usage is present", async () => {
     const events = await collect(
-      syntheticStream(makeOptions({
-        output: [messageItem([textBlock("hi")])],
-        usage: { inputTokens: 10, outputTokens: 2 },
-      })),
+      syntheticStream(
+        makeOptions({
+          output: [messageItem([textBlock("hi")])],
+          usage: { inputTokens: 10, outputTokens: 2 },
+        }),
+      ),
     );
 
     const aux = events.find((e) => e.type === "response.auxiliary");
@@ -189,10 +197,12 @@ describe("syntheticStream - metadata", () => {
 
   it("should populate stopReason in final response", async () => {
     const events = await collect(
-      syntheticStream(makeOptions({
-        output: [messageItem([textBlock("hi")])],
-        stopReason: "end_turn",
-      })),
+      syntheticStream(
+        makeOptions({
+          output: [messageItem([textBlock("hi")])],
+          stopReason: "end_turn",
+        }),
+      ),
     );
 
     const completed = events.find((e) => e.type === "response.completed");
@@ -212,9 +222,11 @@ describe("syntheticStream - metadata", () => {
 
   it("should merge extra warnings", async () => {
     const events = await collect(
-      syntheticStream(makeOptions({
-        warnings: ["Custom adapter warning"],
-      })),
+      syntheticStream(
+        makeOptions({
+          warnings: ["Custom adapter warning"],
+        }),
+      ),
     );
     const completed = events.find((e) => e.type === "response.completed");
     if (completed?.type === "response.completed") {
@@ -229,14 +241,16 @@ describe("syntheticStream - integration with aggregateEvents", () => {
   it("should produce a valid AIResponse through collect+aggregate", async () => {
     const result = await aggregateEvents(
       await collect(
-        syntheticStream(makeOptions({
-          output: [
-            reasoningItem([textBlock("thinking...")], "full", "r1"),
-            messageItem([textBlock("Hello world")], { id: "m1" }),
-          ],
-          stopReason: "end_turn",
-          usage: { inputTokens: 5, outputTokens: 3 },
-        })),
+        syntheticStream(
+          makeOptions({
+            output: [
+              reasoningItem([textBlock("thinking...")], "full", "r1"),
+              messageItem([textBlock("Hello world")], { id: "m1" }),
+            ],
+            stopReason: "end_turn",
+            usage: { inputTokens: 5, outputTokens: 3 },
+          }),
+        ),
       ),
     );
 
@@ -254,12 +268,12 @@ describe("syntheticStream - integration with aggregateEvents", () => {
   it("should correctly aggregate tool calls", async () => {
     const result = await aggregateEvents(
       await collect(
-        syntheticStream(makeOptions({
-          output: [
-            toolCallItem("tc1", "search", '{"q":"hello"}'),
-          ],
-          stopReason: "tool_call",
-        })),
+        syntheticStream(
+          makeOptions({
+            output: [toolCallItem("tc1", "search", '{"q":"hello"}')],
+            stopReason: "tool_call",
+          }),
+        ),
       ),
     );
 
@@ -277,12 +291,14 @@ describe("syntheticStream - integration with aggregateEvents", () => {
     ];
 
     const events = await collect(
-      syntheticStream(makeOptions({
-        output,
-        replay: output.map((o) => o as any),
-        stopReason: "tool_call",
-        usage: { inputTokens: 20, outputTokens: 15 },
-      })),
+      syntheticStream(
+        makeOptions({
+          output,
+          replay: output.map((o) => o as any),
+          stopReason: "tool_call",
+          usage: { inputTokens: 20, outputTokens: 15 },
+        }),
+      ),
     );
 
     const result = aggregateEvents(events);

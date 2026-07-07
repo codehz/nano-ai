@@ -66,9 +66,7 @@ export type SyntheticStreamOptions = {
  * });
  * ```
  */
-export async function* syntheticStream(
-  options: SyntheticStreamOptions,
-): AsyncIterable<AIStreamEvent> {
+export async function* syntheticStream(options: SyntheticStreamOptions): AsyncIterable<AIStreamEvent> {
   const {
     model,
     responseId,
@@ -106,9 +104,7 @@ export async function* syntheticStream(
 
   // 收集警告
   const allWarnings: string[] = [];
-  allWarnings.push(
-    "Response is synthetically streamed; delta granularity may differ from native streaming",
-  );
+  allWarnings.push("Response is synthetically streamed; delta granularity may differ from native streaming");
   if (extraWarnings) allWarnings.push(...extraWarnings);
 
   const response: AIResponse = {
@@ -135,10 +131,7 @@ export async function* syntheticStream(
 
 // ── Item 事件发射 ─────────────────────────────────────────────
 
-function* emitItemEvents(
-  item: OutputItem,
-  factory: ReturnType<typeof createEventFactory>,
-): Generator<AIStreamEvent> {
+function* emitItemEvents(item: OutputItem, factory: ReturnType<typeof createEventFactory>): Generator<AIStreamEvent> {
   switch (item.type) {
     case "message":
       yield* emitMessageEvents(item, factory);

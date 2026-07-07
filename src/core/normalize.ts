@@ -26,10 +26,7 @@ const DEFAULT_INCLUDE = {
  * 3. 生成 requestId
  * 4. 校验请求合法性
  */
-export function normalizeRequest(
-  request: AIRequest,
-  options: NormalizeOptions,
-): NormalizedRequest {
+export function normalizeRequest(request: AIRequest, options: NormalizeOptions): NormalizedRequest {
   const { model, defaults } = options;
 
   // 合并 defaults（浅合并，input/tools 由 request 完全覆盖）

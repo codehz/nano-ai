@@ -8,9 +8,7 @@
 import type { AIStreamEvent, AIResponse } from "../types/index.js";
 import { aggregateEvents } from "./aggregator.js";
 
-export async function collectStream(
-  stream: AsyncIterable<AIStreamEvent>,
-): Promise<AIResponse> {
+export async function collectStream(stream: AsyncIterable<AIStreamEvent>): Promise<AIResponse> {
   const events: AIStreamEvent[] = [];
 
   for await (const event of stream) {

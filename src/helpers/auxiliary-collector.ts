@@ -16,11 +16,7 @@
  *   - 不阻断主生成链路
  */
 
-import type {
-  Usage,
-  BillingInfo,
-  AuxiliaryInfo,
-} from "../types/index.js";
+import type { Usage, BillingInfo, AuxiliaryInfo } from "../types/index.js";
 
 // ── 来源类型 ──────────────────────────────────────────────────
 
@@ -93,10 +89,7 @@ export class AuxiliaryCollector {
    * 最多调用一次；后续调用被忽略。
    * lookup 失败（抛错）仅记录 warning，不传播异常。
    */
-  async tryLookup(
-    lookupFn: () => Promise<LookupResult>,
-    timeoutMs = 5_000,
-  ): Promise<void> {
+  async tryLookup(lookupFn: () => Promise<LookupResult>, timeoutMs = 5_000): Promise<void> {
     if (this.lookupAttempted) return;
     this.lookupAttempted = true;
 
@@ -116,9 +109,7 @@ export class AuxiliaryCollector {
         this.recordMetadata(result.providerMetadata);
       }
     } catch (err) {
-      this.recordWarning(
-        `Auxiliary lookup failed: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      this.recordWarning(`Auxiliary lookup failed: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
@@ -170,8 +161,6 @@ export class AuxiliaryCollector {
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   return Promise.race([
     promise,
-    new Promise<T>((_, reject) =>
-      setTimeout(() => reject(new Error(`Lookup timed out after ${ms}ms`)), ms),
-    ),
+    new Promise<T>((_, reject) => setTimeout(() => reject(new Error(`Lookup timed out after ${ms}ms`)), ms)),
   ]);
 }

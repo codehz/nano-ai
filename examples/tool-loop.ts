@@ -8,13 +8,7 @@
  * 4. 再次调用 client.stream()
  */
 
-import {
-  createAIClient,
-  collectStream,
-  ResponsesAdapter,
-  textBlock,
-  jsonBlock,
-} from "../src/index.js";
+import { createAIClient, collectStream, ResponsesAdapter, textBlock, jsonBlock } from "../src/index.js";
 
 import type { InputItem, ToolCallItem } from "../src/index.js";
 
@@ -85,9 +79,7 @@ async function main() {
     console.log(`\n--- Round ${5 - maxRounds} ---`);
     console.log(`Input items: ${input.length}`);
 
-    const response = await collectStream(
-      client.stream({ input, tools, toolChoice: "auto" }),
-    );
+    const response = await collectStream(client.stream({ input, tools, toolChoice: "auto" }));
 
     console.log(`Stop reason: ${response.stopReason}`);
 

@@ -127,10 +127,7 @@ describe("Scenario: tool call flow", () => {
 
 describe("Scenario: replay round-trip", () => {
   it("should produce replay from output via replayFromOutput", () => {
-    const output = [
-      sampleItems.assistantReply("m1"),
-      sampleItems.toolCall("tc1"),
-    ];
+    const output = [sampleItems.assistantReply("m1"), sampleItems.toolCall("tc1")];
     const replay = replayFromOutput(output);
     expect(replay).toHaveLength(2);
     expect(replay[0]!.type).toBe("message");
@@ -140,7 +137,12 @@ describe("Scenario: replay round-trip", () => {
   it("should preserve opaque items in replay", () => {
     const output = [
       sampleItems.assistantReply("m1"),
-      { type: "opaque" as const, source: "responses" as const, purpose: "replay" as const, payload: { id: "cont-123" } },
+      {
+        type: "opaque" as const,
+        source: "responses" as const,
+        purpose: "replay" as const,
+        payload: { id: "cont-123" },
+      },
     ];
     const replay = replayFromOutput(output);
     expect(replay).toHaveLength(2);
@@ -163,11 +165,7 @@ describe("Scenario: manual tool loop", () => {
     const toolResult = toolResultItem("tc1", "get_weather", "success", [textBlock("Sunny, 28°C")]);
 
     // Round 2: user + replay + tool_result → model responds
-    const round2Input = [
-      ...round1Input,
-      ...round1Replay,
-      toolResult,
-    ];
+    const round2Input = [...round1Input, ...round1Replay, toolResult];
 
     // Verify input assembly
     expect(round2Input).toHaveLength(3);
@@ -186,10 +184,16 @@ describe("Scenario: manual tool loop", () => {
     const mockAdapter: BackendAdapter = {
       kind: "responses",
       capabilities: {
-        nativeStreaming: true, messageStreaming: true,
-        reasoningStreaming: false, toolCallStreaming: true,
-        hiddenReasoningReplay: "none", replayFidelity: "high",
-        tools: true, usage: "none", billing: "none", providerMetadata: false,
+        nativeStreaming: true,
+        messageStreaming: true,
+        reasoningStreaming: false,
+        toolCallStreaming: true,
+        hiddenReasoningReplay: "none",
+        replayFidelity: "high",
+        tools: true,
+        usage: "none",
+        billing: "none",
+        providerMetadata: false,
       },
       stream(request: NormalizedRequest): AsyncIterable<AIStreamEvent> {
         const f = responsesFactory();
@@ -236,24 +240,26 @@ describe("Scenario: manual tool loop", () => {
     const client = createAIClient({ adapter: mockAdapter, model: "gpt-4o" });
 
     // Round 1
-    const r1 = await collectStream(client.stream({
-      input: [sampleItems.userHello()],
-      tools: [{ name: "get_weather", inputSchema: {} }],
-    }));
+    const r1 = await collectStream(
+      client.stream({
+        input: [sampleItems.userHello()],
+        tools: [{ name: "get_weather", inputSchema: {} }],
+      }),
+    );
     expect(r1.toolCalls).toHaveLength(1);
     expect(r1.stopReason).toBe("tool_call");
 
     // Execute tool (simulated)
-    const toolResult = toolResultItem(r1.toolCalls[0]!.id, r1.toolCalls[0]!.name, "success", [textBlock("Sunny, 28°C")]);
+    const toolResult = toolResultItem(r1.toolCalls[0]!.id, r1.toolCalls[0]!.name, "success", [
+      textBlock("Sunny, 28°C"),
+    ]);
 
     // Round 2
-    const r2 = await collectStream(client.stream({
-      input: [
-        sampleItems.userHello(),
-        ...r1.replay,
-        toolResult,
-      ],
-    }));
+    const r2 = await collectStream(
+      client.stream({
+        input: [sampleItems.userHello(), ...r1.replay, toolResult],
+      }),
+    );
     expect(r2.text).toBe("The weather is sunny and 28°C.");
     expect(r2.stopReason).toBe("end_turn");
     expect(r2.output).toHaveLength(1);

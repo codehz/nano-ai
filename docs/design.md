@@ -48,7 +48,7 @@
 const stream = client.stream({
   instructions: "...",
   input: [userText("What's the weather in Hangzhou?")],
-  tools: [weatherTool]
+  tools: [weatherTool],
 });
 
 for await (const event of stream) {
@@ -88,16 +88,12 @@ for await (const event of stream) {
 ```ts
 const first = await collectStream(
   client.stream({
-    input: [userText("Hello")]
-  })
+    input: [userText("Hello")],
+  }),
 );
 
 const second = client.stream({
-  input: [
-    userText("Hello"),
-    ...first.replay,
-    userText("Continue")
-  ]
+  input: [userText("Hello"), ...first.replay, userText("Continue")],
 });
 ```
 
@@ -161,9 +157,7 @@ type CreateAIClientOptions = {
   defaults?: Partial<AIRequest>;
 };
 
-declare function createAIClient(
-  options: CreateAIClientOptions
-): AIClient;
+declare function createAIClient(options: CreateAIClientOptions): AIClient;
 
 interface AIClient {
   stream(request: AIRequest): AsyncIterable<AIStreamEvent>;
@@ -219,12 +213,7 @@ type AIRequest = {
 - 由下游决定是否带回 `response.replay`
 
 ```ts
-type InputItem =
-  | MessageItem
-  | ReasoningItem
-  | ToolCallItem
-  | ToolResultItem
-  | OpaqueItem;
+type InputItem = MessageItem | ReasoningItem | ToolCallItem | ToolResultItem | OpaqueItem;
 ```
 
 ```ts
@@ -285,13 +274,7 @@ type ContentBlock =
 ```
 
 ```ts
-type StopReason =
-  | "end_turn"
-  | "tool_call"
-  | "max_output_tokens"
-  | "content_filter"
-  | "error"
-  | "unknown";
+type StopReason = "end_turn" | "tool_call" | "max_output_tokens" | "content_filter" | "error" | "unknown";
 
 type Usage = {
   inputTokens?: number;
@@ -351,11 +334,7 @@ type AIResponse = {
 ```
 
 ```ts
-type OutputItem =
-  | MessageItem
-  | ReasoningItem
-  | ToolCallItem
-  | OpaqueItem;
+type OutputItem = MessageItem | ReasoningItem | ToolCallItem | OpaqueItem;
 
 type ReplayItem = InputItem;
 ```
@@ -664,8 +643,8 @@ transcript.push(userText("What's the weather in Hangzhou?"));
 const first = await collectStream(
   client.stream({
     input: transcript,
-    tools: [weatherTool]
-  })
+    tools: [weatherTool],
+  }),
 );
 
 transcript.push(...first.replay);
@@ -680,12 +659,12 @@ for (const call of first.toolCalls) {
     callId: call.id,
     toolName: call.name,
     outcome: "success",
-    content: [{ type: "json", json: await runTool(call) }]
+    content: [{ type: "json", json: await runTool(call) }],
   });
 }
 
 const second = client.stream({
-  input: transcript
+  input: transcript,
 });
 ```
 
@@ -759,10 +738,7 @@ type ToolDefinition = {
 ```
 
 ```ts
-type ToolChoice =
-  | "auto"
-  | "none"
-  | { type: "tool"; name: string };
+type ToolChoice = "auto" | "none" | { type: "tool"; name: string };
 ```
 
 这里的 `ToolDefinition` 只描述“本轮暴露给模型的工具接口”，不绑定本地 handler。
@@ -812,7 +788,7 @@ const ok: ToolResultItem = {
   callId: toolCall.id,
   toolName: toolCall.name,
   outcome: "success",
-  content: [{ type: "json", json: weatherPayload }]
+  content: [{ type: "json", json: weatherPayload }],
 };
 
 const denied: ToolResultItem = {
@@ -820,7 +796,7 @@ const denied: ToolResultItem = {
   callId: toolCall.id,
   toolName: toolCall.name,
   outcome: "rejected",
-  content: [{ type: "text", text: "Tool execution was denied by the caller." }]
+  content: [{ type: "text", text: "Tool execution was denied by the caller." }],
 };
 ```
 
@@ -833,16 +809,12 @@ const denied: ToolResultItem = {
 下一轮仍然必须通过同一个 `client.stream()` 发起，只是由调用方自己组装下一轮 `input`：
 
 ```ts
-const transcript: InputItem[] = [
-  userText("What's the weather in Hangzhou?"),
-  ...first.replay,
-  toolResult
-];
+const transcript: InputItem[] = [userText("What's the weather in Hangzhou?"), ...first.replay, toolResult];
 
 const stream = client.stream({
   input: transcript,
   tools: nextTools,
-  toolChoice: "auto"
+  toolChoice: "auto",
 });
 ```
 
@@ -950,16 +922,16 @@ type AdapterCapabilities = {
 
 ## 能力矩阵
 
-| 能力 | responses | messages | chat.completions |
-|---|---|---|---|
-| 文本流 | 强 | 强 | 强 |
-| 工具调用流 | 强 | 强 | 中 |
-| 思维链流 | 强 | 条件支持 | 弱或无 |
-| hidden reasoning replay | 强 | 条件支持 | 不保证 |
-| replay fidelity | 高 | 中 | 低到中 |
-| usage / token 统计 | best-effort | best-effort | best-effort |
-| billing / cost 信息 | best-effort | best-effort | best-effort |
-| item 级统一映射 | 强 | 中 | 弱 |
+| 能力                    | responses   | messages    | chat.completions |
+| ----------------------- | ----------- | ----------- | ---------------- |
+| 文本流                  | 强          | 强          | 强               |
+| 工具调用流              | 强          | 强          | 中               |
+| 思维链流                | 强          | 条件支持    | 弱或无           |
+| hidden reasoning replay | 强          | 条件支持    | 不保证           |
+| replay fidelity         | 高          | 中          | 低到中           |
+| usage / token 统计      | best-effort | best-effort | best-effort      |
+| billing / cost 信息     | best-effort | best-effort | best-effort      |
+| item 级统一映射         | 强          | 中          | 弱               |
 
 这张表必须落在代码里，而不是只存在文档中。
 
@@ -974,10 +946,10 @@ const stream = client.stream({
     {
       type: "message",
       role: "user",
-      content: [{ type: "text", text: "What's the weather in Hangzhou?" }]
-    }
+      content: [{ type: "text", text: "What's the weather in Hangzhou?" }],
+    },
   ],
-  tools: [weatherTool]
+  tools: [weatherTool],
 });
 
 for await (const event of stream) {
@@ -1004,22 +976,20 @@ for await (const event of stream) {
 ## 二、下游自己做多轮
 
 ```ts
-const transcript: InputItem[] = [
-  userText("What's the weather in Hangzhou?")
-];
+const transcript: InputItem[] = [userText("What's the weather in Hangzhou?")];
 
 const first = await collectStream(
   client.stream({
     input: transcript,
-    tools: [weatherTool]
-  })
+    tools: [weatherTool],
+  }),
 );
 
 transcript.push(...first.replay);
 transcript.push(userText("Use celsius and answer in Chinese."));
 
 const second = client.stream({
-  input: transcript
+  input: transcript,
 });
 ```
 
@@ -1028,15 +998,13 @@ const second = client.stream({
 ## 三、工具循环
 
 ```ts
-const transcript: InputItem[] = [
-  userText("What's the weather in Hangzhou?")
-];
+const transcript: InputItem[] = [userText("What's the weather in Hangzhou?")];
 
 const first = await collectStream(
   client.stream({
     input: transcript,
-    tools: [weatherTool]
-  })
+    tools: [weatherTool],
+  }),
 );
 
 transcript.push(...first.replay);
@@ -1052,9 +1020,7 @@ for (const call of first.toolCalls) {
       callId: call.id,
       toolName: call.name,
       outcome: "rejected",
-      content: [
-        { type: "text", text: "The caller rejected this tool call." }
-      ]
+      content: [{ type: "text", text: "The caller rejected this tool call." }],
     });
     continue;
   }
@@ -1065,9 +1031,7 @@ for (const call of first.toolCalls) {
       callId: call.id,
       toolName: call.name,
       outcome: "success",
-      content: [
-        { type: "json", json: await runTool(call) }
-      ]
+      content: [{ type: "json", json: await runTool(call) }],
     });
   } catch (error) {
     transcript.push({
@@ -1075,16 +1039,14 @@ for (const call of first.toolCalls) {
       callId: call.id,
       toolName: call.name,
       outcome: "error",
-      content: [
-        { type: "text", text: String(error) }
-      ]
+      content: [{ type: "text", text: String(error) }],
     });
   }
 }
 
 const second = client.stream({
   input: transcript,
-  tools: pickToolsForSecondTurn(first)
+  tools: pickToolsForSecondTurn(first),
 });
 ```
 
