@@ -205,17 +205,28 @@ function validateToolChoice(toolChoice: unknown, issues: ValidationIssue[]): voi
 export function validateRequest(request: AIRequest): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
 
-  if (request.instructions !== undefined && Array.isArray(request.instructions)) {
-    validateContentArray(request.instructions, "instructions", issues, "INSTRUCTIONS_INVALID");
+  if (request.instructions !== undefined) {
+    if (typeof request.instructions === "string") {
+      // no-op
+    } else if (Array.isArray(request.instructions)) {
+      validateContentArray(request.instructions, "instructions", issues, "INSTRUCTIONS_INVALID");
+    } else {
+      pushIssue(
+        issues,
+        "instructions",
+        "INSTRUCTIONS_INVALID",
+        "instructions must be a string or ContentBlock[]",
+      );
+    }
   }
 
   // input 非空约束
-  if (!request.input || request.input.length === 0) {
+  if (!Array.isArray(request.input) || request.input.length === 0) {
     pushIssue(issues, "input", "INPUT_EMPTY", "input must be a non-empty array");
   }
 
   // input 元素类型检查
-  if (request.input) {
+  if (Array.isArray(request.input)) {
     for (let i = 0; i < request.input.length; i++) {
       validateInputItem(request.input[i], `input[${i}]`, issues);
     }
@@ -255,27 +266,35 @@ export function validateRequest(request: AIRequest): ValidationIssue[] {
     }
   }
 
-  if (request.include) {
-    if (request.include.usage !== undefined && !INCLUDE_MODES.has(request.include.usage)) {
-      pushIssue(issues, "include.usage", "INCLUDE_USAGE_INVALID", "include.usage must be off or best_effort");
-    }
-    if (request.include.billing !== undefined && !INCLUDE_MODES.has(request.include.billing)) {
-      pushIssue(issues, "include.billing", "INCLUDE_BILLING_INVALID", "include.billing must be off or best_effort");
-    }
-    if (request.include.providerMetadata !== undefined && !INCLUDE_MODES.has(request.include.providerMetadata)) {
-      pushIssue(
-        issues,
-        "include.providerMetadata",
-        "INCLUDE_PROVIDER_METADATA_INVALID",
-        "include.providerMetadata must be off or best_effort",
-      );
+  if (request.include !== undefined) {
+    if (!isRecord(request.include)) {
+      pushIssue(issues, "include", "INCLUDE_INVALID", "include must be an object");
+    } else {
+      if (request.include.usage !== undefined && !INCLUDE_MODES.has(request.include.usage)) {
+        pushIssue(issues, "include.usage", "INCLUDE_USAGE_INVALID", "include.usage must be off or best_effort");
+      }
+      if (request.include.billing !== undefined && !INCLUDE_MODES.has(request.include.billing)) {
+        pushIssue(issues, "include.billing", "INCLUDE_BILLING_INVALID", "include.billing must be off or best_effort");
+      }
+      if (request.include.providerMetadata !== undefined && !INCLUDE_MODES.has(request.include.providerMetadata)) {
+        pushIssue(
+          issues,
+          "include.providerMetadata",
+          "INCLUDE_PROVIDER_METADATA_INVALID",
+          "include.providerMetadata must be off or best_effort",
+        );
+      }
     }
   }
 
-  if (request.metadata) {
-    for (const [key, value] of Object.entries(request.metadata)) {
-      if (typeof value !== "string") {
-        pushIssue(issues, `metadata.${key}`, "METADATA_VALUE_INVALID", `metadata.${key} must be a string`);
+  if (request.metadata !== undefined) {
+    if (!isRecord(request.metadata)) {
+      pushIssue(issues, "metadata", "METADATA_INVALID", "metadata must be an object");
+    } else {
+      for (const [key, value] of Object.entries(request.metadata)) {
+        if (typeof value !== "string") {
+          pushIssue(issues, `metadata.${key}`, "METADATA_VALUE_INVALID", `metadata.${key} must be a string`);
+        }
       }
     }
   }

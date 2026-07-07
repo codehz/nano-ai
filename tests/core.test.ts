@@ -101,6 +101,26 @@ describe("validateRequest", () => {
     expect(issues.some((i) => i.code === "CONTENT_BLOCK_INVALID")).toBe(true);
   });
 
+  it("should detect invalid instructions type", () => {
+    const issues = validateRequest(validRequest({ instructions: 123 as unknown as AIRequest["instructions"] }));
+    expect(issues.some((i) => i.code === "INSTRUCTIONS_INVALID")).toBe(true);
+  });
+
+  it("should detect non-array input", () => {
+    const issues = validateRequest({ ...validRequest(), input: "bad" as unknown as AIRequest["input"] });
+    expect(issues.some((i) => i.code === "INPUT_EMPTY")).toBe(true);
+  });
+
+  it("should detect invalid include object", () => {
+    const issues = validateRequest(validRequest({ include: "bad" as unknown as AIRequest["include"] }));
+    expect(issues.some((i) => i.code === "INCLUDE_INVALID")).toBe(true);
+  });
+
+  it("should detect invalid metadata object", () => {
+    const issues = validateRequest(validRequest({ metadata: "bad" as unknown as AIRequest["metadata"] }));
+    expect(issues.some((i) => i.code === "METADATA_INVALID")).toBe(true);
+  });
+
   it("should detect temperature out of range (negative)", () => {
     const issues = validateRequest(validRequest({ temperature: -1 }));
     expect(issues.some((i) => i.code === "TEMPERATURE_OUT_OF_RANGE")).toBe(true);

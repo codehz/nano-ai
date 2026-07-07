@@ -352,6 +352,29 @@ describe("ChatCompletionsAdapter - request building", () => {
     expect(toolMsg?.tool_call_id).toBe("tc1");
   });
 
+  it("should reject non-success tool_result outcomes", async () => {
+    const { fetch } = captureRequest();
+    const adapter = new ChatCompletionsAdapter({ apiKey: "test-key", fetch });
+
+    await expect(
+      collectStream(
+        adapter.stream(
+          makeRequest({
+            input: [
+              {
+                type: "tool_result" as const,
+                callId: "tc1",
+                toolName: "get_weather",
+                outcome: "error" as const,
+                content: [{ type: "text" as const, text: "failed" }],
+              },
+            ],
+          }),
+        ),
+      ),
+    ).rejects.toBeInstanceOf(AIRequestError);
+  });
+
   it("should include tool_choice when provided", async () => {
     const { captured, fetch } = captureRequest();
     const adapter = new ChatCompletionsAdapter({ apiKey: "test-key", fetch });

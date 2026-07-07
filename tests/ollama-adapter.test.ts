@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect } from "bun:test";
-import { OllamaAdapter, collectStream } from "../src/index.js";
+import { AIRequestError, OllamaAdapter, collectStream } from "../src/index.js";
 
 import type { NormalizedRequest, FetchFn } from "../src/index.js";
 
@@ -250,6 +250,51 @@ describe("OllamaAdapter - request building", () => {
     const body = JSON.parse(capturedBody!);
     expect(body.options.temperature).toBe(0.5);
     expect(body.options.num_predict).toBe(200);
+  });
+
+  it("should reject explicit toolChoice", async () => {
+    const adapter = new OllamaAdapter({
+      fetch: async () =>
+        ndjsonResponse(
+          `{"model":"llama3.2","created_at":"2024-01-01T00:00:00Z","message":{"role":"assistant","content":"OK"},"done":true,"done_reason":"stop"}\n`,
+        ),
+    });
+
+    await expect(
+      collectStream(
+        adapter.stream(
+          makeRequest({
+            tools: [{ name: "get_weather", inputSchema: {} }],
+            toolChoice: { type: "tool" as const, name: "get_weather" },
+          }),
+        ),
+      ),
+    ).rejects.toBeInstanceOf(AIRequestError);
+  });
+
+  it("should reject unsupported image content instead of dropping it", async () => {
+    const adapter = new OllamaAdapter({
+      fetch: async () =>
+        ndjsonResponse(
+          `{"model":"llama3.2","created_at":"2024-01-01T00:00:00Z","message":{"role":"assistant","content":"OK"},"done":true,"done_reason":"stop"}\n`,
+        ),
+    });
+
+    await expect(
+      collectStream(
+        adapter.stream(
+          makeRequest({
+            input: [
+              {
+                type: "message" as const,
+                role: "user" as const,
+                content: [{ type: "image" as const, imageUrl: "https://example.com/cat.png" }],
+              },
+            ],
+          }),
+        ),
+      ),
+    ).rejects.toBeInstanceOf(AIRequestError);
   });
 
   it("should use custom baseUrl and apiKey", async () => {

@@ -16,6 +16,7 @@
  */
 
 import { AdapterBase } from "../helpers/adapter-base.js";
+import { AIRequestError } from "../core/errors.js";
 import {
   textBlock,
   messageItem,
@@ -23,7 +24,6 @@ import {
   opaqueItem,
   replayFromOutput,
   mapStopReason,
-  instructionsToText,
   contentBlocksToText,
 } from "../helpers/mapping.js";
 
@@ -76,6 +76,74 @@ type OllamaTool = {
     parameters: Record<string, unknown>;
   };
 };
+
+function ensureOllamaTextBlocks(
+  blocks: import("../index.js").ContentBlock[],
+  field: string,
+): import("../index.js").ContentBlock[] {
+  for (let i = 0; i < blocks.length; i++) {
+    const block = blocks[i];
+    if (block.type !== "text" && block.type !== "json") {
+      throw new AIRequestError(
+        `ollama does not support ${field}[${i}] of type "${block.type}"; only text/json blocks are supported`,
+        "UNSUPPORTED_CONTENT_BLOCK",
+      );
+    }
+  }
+
+  return blocks;
+}
+
+function ensureOllamaReasoningBlocks(
+  blocks: import("../index.js").ContentBlock[],
+  field: string,
+): Array<Extract<import("../index.js").ContentBlock, { type: "text" }>> {
+  return blocks.map((block, index) => {
+    if (block.type !== "text") {
+      throw new AIRequestError(
+        `ollama does not support ${field}[${index}] of type "${block.type}"; reasoning only supports text blocks`,
+        "UNSUPPORTED_CONTENT_BLOCK",
+      );
+    }
+
+    return block;
+  });
+}
+
+function instructionsToOllamaText(instructions: string | import("../index.js").ContentBlock[]): string {
+  return typeof instructions === "string"
+    ? instructions
+    : contentBlocksToText(ensureOllamaTextBlocks(instructions, "instructions"));
+}
+
+function parseOllamaToolArguments(item: import("../index.js").ToolCallItem): Record<string, unknown> {
+  if (item.argumentsJson && typeof item.argumentsJson === "object" && item.argumentsJson !== null) {
+    return item.argumentsJson as Record<string, unknown>;
+  }
+
+  try {
+    const parsed = JSON.parse(item.argumentsText);
+    if (parsed && typeof parsed === "object") {
+      return parsed as Record<string, unknown>;
+    }
+  } catch {
+    // fall through
+  }
+
+  throw new AIRequestError(
+    "ollama tool_call argumentsText must be valid JSON object when argumentsJson is absent",
+    "TOOL_CALL_ARGUMENTS_INVALID",
+  );
+}
+
+function assertOllamaToolResultOutcome(outcome: import("../index.js").ToolResultItem["outcome"]): void {
+  if (outcome !== "success") {
+    throw new AIRequestError(
+      `ollama does not preserve tool_result outcome "${outcome}"; only "success" is supported`,
+      "UNSUPPORTED_TOOL_RESULT_OUTCOME",
+    );
+  }
+}
 
 // ── Ollama 流式 chunk ─────────────────────────────────────────
 
@@ -180,11 +248,15 @@ export class OllamaAdapter extends AdapterBase {
   // ── buildRequest ──────────────────────────────────────────
 
   protected buildRequest(request: NormalizedRequest): OllamaChatRequest {
+    if (request.toolChoice && request.toolChoice !== "auto") {
+      throw new AIRequestError("ollama does not support explicit toolChoice", "UNSUPPORTED_TOOL_CHOICE");
+    }
+
     const messages: OllamaMessage[] = [];
 
     // handle instructions → system message
     if (request.instructions) {
-      messages.push({ role: "system", content: instructionsToText(request.instructions) });
+      messages.push({ role: "system", content: instructionsToOllamaText(request.instructions) });
     }
 
     for (const item of request.input) {
@@ -198,7 +270,7 @@ export class OllamaAdapter extends AdapterBase {
                 : item.role === "user"
                   ? "user"
                   : "assistant";
-          messages.push({ role, content: contentBlocksToText(item.content) });
+          messages.push({ role, content: contentBlocksToText(ensureOllamaTextBlocks(item.content, `input message (${item.role}) content`)) });
           break;
         }
         case "tool_call": {
@@ -207,7 +279,7 @@ export class OllamaAdapter extends AdapterBase {
           const tc: OllamaToolCall = {
             function: {
               name: item.name,
-              arguments: item.argumentsJson ?? JSON.parse(item.argumentsText),
+              arguments: parseOllamaToolArguments(item),
             },
           };
           if (lastAssistant) {
@@ -218,15 +290,19 @@ export class OllamaAdapter extends AdapterBase {
           break;
         }
         case "tool_result": {
+          assertOllamaToolResultOutcome(item.outcome);
           messages.push({
             role: "tool",
-            content: contentBlocksToText(item.content),
+            content: contentBlocksToText(ensureOllamaTextBlocks(item.content, `tool_result ${item.callId} content`)),
           });
           break;
         }
         case "reasoning": {
           // Ollama doesn't support reasoning in input; convert to text message
-          messages.push({ role: "assistant", content: contentBlocksToText(item.content) });
+          messages.push({
+            role: "assistant",
+            content: contentBlocksToText(ensureOllamaReasoningBlocks(item.content, "reasoning content")),
+          });
           break;
         }
         case "opaque": {
