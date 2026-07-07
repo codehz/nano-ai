@@ -3,22 +3,23 @@
  *
  * 接入 OpenAI Chat Completions API (chat/completions 端点)。
  * 弱能力兼容层：
- * - 无 reasoning 流
+ * - third-party reasoning 字段仅做 best-effort 提取
  * - 工具调用通常整块到达（非逐 token 流）
- * - replay fidelity 较低
+ * - replay fidelity 依赖 provider 是否暴露可回放的 assistant turn 字段
  */
 
 import { AdapterBase } from "../helpers/adapter-base.js";
 import {
   textBlock,
   messageItem,
+  reasoningItem,
   toolCallItem,
   opaqueItem,
   replayFromOutput,
   mapStopReason,
 } from "../helpers/mapping.js";
 
-import type { NormalizedRequest, AIStreamEvent, EventFactory, OutputItem, Usage } from "../index.js";
+import type { AdapterCapabilities, NormalizedRequest, AIStreamEvent, EventFactory, OutputItem, Usage } from "../index.js";
 
 // ── 类型 ──────────────────────────────────────────────────────
 
@@ -48,6 +49,7 @@ type ChatMessage = {
   tool_calls?: ChatToolCall[];
   tool_call_id?: string;
   name?: string;
+  [key: string]: unknown;
 };
 
 type ChatToolCall = {
@@ -76,9 +78,12 @@ type ChatChunkChoice = {
   index: number;
   delta: {
     role?: string;
-    content?: string;
+    content?: string | null;
+    reasoning?: unknown;
+    reasoning_content?: unknown;
     tool_calls?: ChatChunkToolCall[];
     function_call?: { name?: string; arguments?: string };
+    [key: string]: unknown;
   };
   finish_reason?: string | null;
 };
@@ -89,6 +94,16 @@ type ChatChunkToolCall = {
   type?: string;
   function?: { name?: string; arguments?: string };
 };
+
+type PendingToolCall = {
+  id: string;
+  name: string;
+  args: string;
+};
+
+type ReasoningFieldName = "reasoning" | "reasoning_content";
+
+const REASONING_FIELDS: readonly ReasoningFieldName[] = ["reasoning_content", "reasoning"];
 
 // ── SSE 解析 ──────────────────────────────────────────────────
 
@@ -118,11 +133,79 @@ function parseChatSSE(buffer: string): { chunks: ChatChunk[]; rest: string } {
   return { chunks, rest };
 }
 
+function extractReasoningText(value: unknown): string {
+  if (typeof value === "string") return value;
+
+  if (Array.isArray(value)) {
+    return value.map(extractReasoningText).join("");
+  }
+
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    for (const key of ["text", "content", "reasoning", "reasoning_content", "thinking", "value"]) {
+      const nested = extractReasoningText(record[key]);
+      if (nested) return nested;
+    }
+  }
+
+  return "";
+}
+
+function extractReasoningDeltas(delta: ChatChunkChoice["delta"]): Array<{ field: ReasoningFieldName; text: string }> {
+  const deltas: Array<{ field: ReasoningFieldName; text: string }> = [];
+
+  for (const field of REASONING_FIELDS) {
+    const text = extractReasoningText(delta[field]);
+    if (text) {
+      deltas.push({ field, text });
+    }
+  }
+
+  return deltas;
+}
+
+function rollbackTrailingAssistantMessages(messages: ChatMessage[]): void {
+  while (messages.length > 0 && messages[messages.length - 1]?.role === "assistant") {
+    messages.pop();
+  }
+}
+
+function buildAssistantReplayMessage(params: {
+  content: string;
+  reasoningByField: ReadonlyMap<ReasoningFieldName, string>;
+  toolCalls: readonly PendingToolCall[];
+}): ChatMessage | null {
+  const { content, reasoningByField, toolCalls } = params;
+  if (!content && reasoningByField.size === 0 && toolCalls.length === 0) return null;
+
+  const replayMessage: ChatMessage = {
+    role: "assistant",
+    content: content || null,
+  };
+
+  for (const [field, text] of reasoningByField) {
+    replayMessage[field] = text;
+  }
+
+  if (toolCalls.length > 0) {
+    replayMessage.tool_calls = toolCalls.map((toolCall) => ({
+      id: toolCall.id,
+      type: "function",
+      function: {
+        name: toolCall.name,
+        arguments: toolCall.args,
+      },
+    }));
+  }
+
+  return replayMessage;
+}
+
 // ── Adapter ───────────────────────────────────────────────────
 
 export class ChatCompletionsAdapter extends AdapterBase {
   readonly kind = "chat-completions" as const;
-  readonly capabilities = {
+  readonly capabilities: AdapterCapabilities = {
     nativeStreaming: true,
     messageStreaming: true,
     reasoningStreaming: false,
@@ -138,6 +221,12 @@ export class ChatCompletionsAdapter extends AdapterBase {
   private apiKey: string;
   private baseUrl: string;
   private fetchFn: FetchFn;
+
+  private markReasoningCompatibility(): void {
+    this.capabilities.reasoningStreaming = true;
+    this.capabilities.hiddenReasoningReplay = "partial";
+    this.capabilities.replayFidelity = "medium";
+  }
 
   constructor(options: ChatCompletionsAdapterOptions) {
     super();
@@ -221,6 +310,11 @@ export class ChatCompletionsAdapter extends AdapterBase {
             const payload = item.payload as Record<string, unknown>;
             if (payload.role === "assistant" && typeof payload.content === "string") {
               messages.push({ role: "assistant", content: payload.content as string });
+            } else if (payload.replaceCanonical === true && Array.isArray(payload.messages)) {
+              rollbackTrailingAssistantMessages(messages);
+              for (const m of payload.messages as ChatMessage[]) {
+                messages.push(m);
+              }
             } else if (Array.isArray(payload.messages)) {
               for (const m of payload.messages as ChatMessage[]) {
                 messages.push(m);
@@ -298,14 +392,60 @@ export class ChatCompletionsAdapter extends AdapterBase {
     // 累积状态 — 支持多 choice，此处只取 index 0
     let responseId: string | undefined;
     let accumulatedContent = "";
+    let accumulatedReasoning = "";
     let currentMessageId = "";
+    let currentReasoningId = "";
     let hasMessageStarted = false;
+    let hasReasoningStarted = false;
+    let hasStreamedReasoning = false;
 
     // tool_calls 累积: tool call index → { id, name, args }
-    const pendingToolCalls = new Map<number, { id: string; name: string; args: string }>();
+    const pendingToolCalls = new Map<number, PendingToolCall>();
+    const reasoningByField = new Map<ReasoningFieldName, string>();
 
     // usage
     let usage: Usage | undefined;
+
+    const finalizePendingTurn = (): { events: AIStreamEvent[]; assistantReplayMessage: ChatMessage | null } => {
+      const events: AIStreamEvent[] = [];
+      const finalizedToolCalls = [...pendingToolCalls.values()];
+      const finalizedReasoningByField = new Map(reasoningByField);
+
+      if (hasReasoningStarted && accumulatedReasoning) {
+        const reasoning = reasoningItem([textBlock(accumulatedReasoning)], "full", currentReasoningId);
+        events.push(factory.reasoningCompleted(reasoning));
+        output.push(reasoning);
+      }
+
+      if (hasMessageStarted && accumulatedContent) {
+        const message = messageItem([textBlock(accumulatedContent)], { id: currentMessageId });
+        events.push(factory.messageCompleted(message));
+        output.push(message);
+      }
+
+      for (const pending of finalizedToolCalls) {
+        const toolCall = toolCallItem(pending.id, pending.name, pending.args);
+        events.push(factory.toolCallCompleted(toolCall));
+        output.push(toolCall);
+      }
+
+      const assistantReplayMessage = buildAssistantReplayMessage({
+        content: accumulatedContent,
+        reasoningByField: finalizedReasoningByField,
+        toolCalls: finalizedToolCalls,
+      });
+
+      accumulatedContent = "";
+      accumulatedReasoning = "";
+      currentMessageId = "";
+      currentReasoningId = "";
+      hasMessageStarted = false;
+      hasReasoningStarted = false;
+      pendingToolCalls.clear();
+      reasoningByField.clear();
+
+      return { events, assistantReplayMessage };
+    };
 
     try {
       while (true) {
@@ -331,13 +471,34 @@ export class ChatCompletionsAdapter extends AdapterBase {
           for (const choice of chunk.choices) {
             const delta = choice.delta;
             const finishReason = choice.finish_reason;
+            const reasoningDeltas = extractReasoningDeltas(delta);
 
             // 处理 role: assistant (首块标识)
-            if (delta.role === "assistant" && delta.content !== undefined && !hasMessageStarted) {
+            if (delta.role === "assistant" && typeof delta.content === "string" && !hasMessageStarted) {
               currentMessageId = `msg-${chunk.id}`;
               hasMessageStarted = true;
               accumulatedContent = "";
               yield factory.messageStarted(currentMessageId);
+            }
+
+            // 处理 third-party reasoning delta
+            if (reasoningDeltas.length > 0) {
+              if (!hasReasoningStarted) {
+                currentReasoningId = `reason-${chunk.id}`;
+                hasReasoningStarted = true;
+                hasStreamedReasoning = true;
+                accumulatedReasoning = "";
+                yield factory.reasoningStarted(currentReasoningId, "full");
+              }
+
+              for (const reasoningDelta of reasoningDeltas) {
+                accumulatedReasoning += reasoningDelta.text;
+                reasoningByField.set(
+                  reasoningDelta.field,
+                  (reasoningByField.get(reasoningDelta.field) ?? "") + reasoningDelta.text,
+                );
+                yield factory.reasoningDelta(currentReasoningId, textBlock(reasoningDelta.text));
+              }
             }
 
             // 处理 content delta
@@ -389,20 +550,12 @@ export class ChatCompletionsAdapter extends AdapterBase {
 
             // 处理 finish_reason
             if (finishReason && finishReason !== null) {
-              // 关闭还未 close 的消息
-              if (hasMessageStarted && accumulatedContent) {
-                yield factory.messageCompleted(messageItem([textBlock(accumulatedContent)], { id: currentMessageId }));
-                output.push(messageItem([textBlock(accumulatedContent)], { id: currentMessageId }));
-                hasMessageStarted = false;
+              const { events, assistantReplayMessage } = finalizePendingTurn();
+              for (const event of events) {
+                yield event;
               }
 
-              // 关闭未 close 的 tool calls
-              for (const [, pending] of pendingToolCalls) {
-                const tcItem = toolCallItem(pending.id, pending.name, pending.args);
-                yield factory.toolCallCompleted(tcItem);
-                output.push(tcItem);
-              }
-              pendingToolCalls.clear();
+              if (hasStreamedReasoning) this.markReasoningCompatibility();
 
               // 构建 stop reason
               const stopReason = mapStopReason(finishReason);
@@ -411,18 +564,18 @@ export class ChatCompletionsAdapter extends AdapterBase {
               const replay = [...replayFromOutput(output)];
 
               // 附加 opaque replay
-              replay.push(
-                opaqueItem("chat.completions", "replay", {
-                  role: "assistant",
-                  content: accumulatedContent,
-                }),
-              );
+              if (assistantReplayMessage) {
+                replay.push(
+                  opaqueItem("chat.completions", "replay", {
+                    replaceCanonical: true,
+                    messages: [assistantReplayMessage],
+                  }),
+                );
+              }
 
               yield factory.responseCompleted(
                 this.buildResponse(request, { output, replay, stopReason, usage, rawResponseId: chunk.id }, factory),
               );
-
-              hasMessageStarted = false;
             }
           }
         }
@@ -432,21 +585,28 @@ export class ChatCompletionsAdapter extends AdapterBase {
     }
 
     // 如果流结束时没有 finish_reason（断流），也尝试关闭
-    if (hasMessageStarted || pendingToolCalls.size > 0) {
+    if (hasMessageStarted || hasReasoningStarted || pendingToolCalls.size > 0) {
       yield factory.responseWarning("Stream ended without a finish_reason", "INCOMPLETE_STREAM");
 
-      if (hasMessageStarted && accumulatedContent) {
-        yield factory.messageCompleted(messageItem([textBlock(accumulatedContent)], { id: currentMessageId }));
-        output.push(messageItem([textBlock(accumulatedContent)], { id: currentMessageId }));
+      if (hasStreamedReasoning) this.markReasoningCompatibility();
+
+      const { events, assistantReplayMessage } = finalizePendingTurn();
+      for (const event of events) {
+        yield event;
       }
-      for (const [, pending] of pendingToolCalls) {
-        const tcItem = toolCallItem(pending.id, pending.name, pending.args);
-        yield factory.toolCallCompleted(tcItem);
-        output.push(tcItem);
+
+      const replay = [...replayFromOutput(output)];
+      if (assistantReplayMessage) {
+        replay.push(
+          opaqueItem("chat.completions", "replay", {
+            replaceCanonical: true,
+            messages: [assistantReplayMessage],
+          }),
+        );
       }
 
       yield factory.responseCompleted(
-        this.buildResponse(request, { output, replay: replayFromOutput(output), rawResponseId: responseId }, factory),
+        this.buildResponse(request, { output, replay, rawResponseId: responseId }, factory),
       );
     }
   }
