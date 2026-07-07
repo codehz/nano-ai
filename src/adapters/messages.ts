@@ -119,7 +119,7 @@ function canonicalToMessagesBlock(b: import("../index.js").ContentBlock): Messag
 
 export class MessagesAdapter extends AdapterBase {
   readonly kind = "messages" as const;
-  readonly capabilities: AdapterCapabilities = { ...CAPABILITY_MATRIX.messages };
+  readonly capabilities = CAPABILITY_MATRIX.messages;
 
   private apiKey: string;
   private apiVersion: string;
