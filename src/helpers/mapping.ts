@@ -158,3 +158,43 @@ export function replayFromOutput(output: readonly OutputItem[]): ReplayItem[] {
     }
   });
 }
+
+// ── Content block 提取 helper ──────────────────────────────────
+
+/**
+ * 将单个 ContentBlock 转为纯文本。
+ * text 块直接返回文本，json 块序列化，其余返回空串。
+ */
+export function blockToText(b: ContentBlock): string {
+  if (b.type === "text") return b.text;
+  if (b.type === "json") return JSON.stringify(b.json);
+  return "";
+}
+
+/**
+ * 将 ContentBlock 数组拼接为纯文本，块间以换行符分隔。
+ */
+export function contentBlocksToText(blocks: ContentBlock[]): string {
+  return blocks.map(blockToText).join("\n");
+}
+
+/**
+ * 将 instructions（string | ContentBlock[]）归一化为纯文本。
+ */
+export function instructionsToText(instructions: string | ContentBlock[]): string {
+  return typeof instructions === "string" ? instructions : contentBlocksToText(instructions);
+}
+
+// ── Output 文本提取 ───────────────────────────────────────────
+
+/**
+ * 从 OutputItem 数组中提取所有 message 类型 item 的文本内容。
+ */
+export function extractText(output: OutputItem[]): string {
+  return output
+    .filter((item): item is MessageItem => item.type === "message")
+    .flatMap((m) => m.content)
+    .filter((b): b is ContentBlock & { type: "text" } => b.type === "text")
+    .map((b) => b.text)
+    .join("");
+}

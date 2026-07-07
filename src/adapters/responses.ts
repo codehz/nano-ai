@@ -17,8 +17,14 @@ import {
   toolCallItem,
   opaqueItem,
   replayFromOutput,
+  blockToText,
+  instructionsToText,
+  contentBlocksToText,
 } from "../helpers/mapping.js";
 
+import { parseSSEEvents } from "../helpers/sse-parser.js";
+
+import { CAPABILITY_MATRIX } from "../index.js";
 import type { NormalizedRequest, AIStreamEvent, EventFactory, OutputItem, Usage, FetchFn } from "../index.js";
 
 // ── 类型 ──────────────────────────────────────────────────────
@@ -101,33 +107,7 @@ type ResponsesAPIOutputItem = {
 // ── SSE 解析 ──────────────────────────────────────────────────
 
 function parseSSE(chunk: string): ResponsesSSEEvent[] {
-  const events: ResponsesSSEEvent[] = [];
-  let eventType = "";
-  let dataLines: string[] = [];
-
-  for (const line of chunk.split("\n")) {
-    if (line.startsWith("event: ")) {
-      eventType = line.slice(7).trim();
-    } else if (line.startsWith("data: ")) {
-      dataLines.push(line.slice(6));
-    } else if (line === "" && eventType && dataLines.length > 0) {
-      const dataStr = dataLines.join("\n");
-      if (dataStr === "[DONE]") {
-        eventType = "";
-        dataLines = [];
-        continue;
-      }
-      try {
-        const data = JSON.parse(dataStr);
-        events.push({ type: eventType as ResponsesSSEEvent["type"], data });
-      } catch {
-        // skip malformed JSON
-      }
-      eventType = "";
-      dataLines = [];
-    }
-  }
-  return events;
+  return parseSSEEvents(chunk) as ResponsesSSEEvent[];
 }
 
 // ── Content block 映射 ─────────────────────────────────────────
@@ -138,28 +118,11 @@ function canonicalToResponsesBlock(b: import("../index.js").ContentBlock): Respo
   return { type: "text", text: "" };
 }
 
-function blockToText(b: import("../index.js").ContentBlock): string {
-  if (b.type === "text") return b.text;
-  if (b.type === "json") return JSON.stringify(b.json);
-  return "";
-}
-
 // ── Adapter ───────────────────────────────────────────────────
 
 export class ResponsesAdapter extends AdapterBase {
   readonly kind = "responses" as const;
-  readonly capabilities = {
-    nativeStreaming: true,
-    messageStreaming: true,
-    reasoningStreaming: true,
-    toolCallStreaming: true,
-    hiddenReasoningReplay: "full" as const,
-    replayFidelity: "high" as const,
-    tools: true,
-    usage: "full" as const,
-    billing: "lookup" as const,
-    providerMetadata: true,
-  };
+  readonly capabilities = CAPABILITY_MATRIX.responses;
 
   private apiKey: string;
   private baseUrl: string;
@@ -185,8 +148,7 @@ export class ResponsesAdapter extends AdapterBase {
             const blocks = item.content.map(canonicalToResponsesBlock);
             input.push({ type: "message", role: item.role, content: blocks });
           } else {
-            const text = item.content.map((b) => (b.type === "text" ? b.text : "")).join("\n");
-            input.push({ type: "message", role: item.role, content: text });
+            input.push({ type: "message", role: item.role, content: contentBlocksToText(item.content) });
           }
           break;
         }
@@ -241,10 +203,7 @@ export class ResponsesAdapter extends AdapterBase {
     };
 
     if (request.instructions) {
-      body.instructions =
-        typeof request.instructions === "string"
-          ? request.instructions
-          : request.instructions.map((b) => (b.type === "text" ? b.text : "")).join("\n");
+      body.instructions = instructionsToText(request.instructions);
     }
 
     if (request.tools && request.tools.length > 0) {

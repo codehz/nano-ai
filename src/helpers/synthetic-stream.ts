@@ -14,7 +14,7 @@
  */
 
 import { createEventFactory } from "../core/event-factory.js";
-import { replayFromOutput } from "./mapping.js";
+import { replayFromOutput, extractText } from "./mapping.js";
 
 import type {
   OutputItem,
@@ -194,12 +194,3 @@ function* emitToolCallEvents(
 }
 
 // ── Helper ────────────────────────────────────────────────────
-
-function extractText(output: OutputItem[]): string {
-  return output
-    .filter((item): item is MessageItem => item.type === "message")
-    .flatMap((m) => m.content)
-    .filter((b): b is { type: "text"; text: string } => b.type === "text")
-    .map((b) => b.text)
-    .join("");
-}
