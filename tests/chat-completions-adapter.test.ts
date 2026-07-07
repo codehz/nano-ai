@@ -97,6 +97,53 @@ describe("ChatCompletionsAdapter - text streaming", () => {
     expect(result.stopReason).toBe("max_output_tokens");
     expect(result.text).toBe("Long text");
   });
+
+  it("should extract reasoning_content as reasoning stream and preserve raw replay", async () => {
+    const chunks = [
+      'data: {"id":"chatcmpl-r1","choices":[{"index":0,"delta":{"role":"assistant","reasoning_content":"先分析问题。"},"finish_reason":null}]}\n',
+      'data: {"id":"chatcmpl-r1","choices":[{"index":0,"delta":{"reasoning_content":"再给出结论。"},"finish_reason":null}]}\n',
+      'data: {"id":"chatcmpl-r1","choices":[{"index":0,"delta":{"content":"最终答案"},"finish_reason":null}]}\n',
+      'data: {"id":"chatcmpl-r1","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n',
+      "data: [DONE]\n",
+    ];
+
+    const adapter = new ChatCompletionsAdapter({
+      apiKey: "test-key",
+      fetch: async () => sseResponse(...chunks),
+    });
+
+    const eventTypes: string[] = [];
+    for await (const event of adapter.stream(makeRequest())) {
+      eventTypes.push(event.type);
+    }
+
+    const result = await collectStream(adapter.stream(makeRequest()));
+    expect(eventTypes).toContain("reasoning.started");
+    expect(eventTypes).toContain("reasoning.delta");
+    expect(eventTypes).toContain("reasoning.completed");
+    expect(result.output).toHaveLength(2);
+    expect(result.output[0]!.type).toBe("reasoning");
+    expect(result.output[1]!.type).toBe("message");
+    expect(result.text).toBe("最终答案");
+    expect(adapter.capabilities.reasoningStreaming).toBe(true);
+    expect(adapter.capabilities.hiddenReasoningReplay).toBe("partial");
+    expect(adapter.capabilities.replayFidelity).toBe("medium");
+
+    const opaqueReplay = result.replay.find((item) => item.type === "opaque");
+    expect(opaqueReplay).toBeDefined();
+    if (opaqueReplay?.type === "opaque") {
+      expect(opaqueReplay.payload).toEqual({
+        replaceCanonical: true,
+        messages: [
+          {
+            role: "assistant",
+            content: "最终答案",
+            reasoning_content: "先分析问题。再给出结论。",
+          },
+        ],
+      });
+    }
+  });
 });
 
 // ── 工具调用流 ────────────────────────────────────────────────
@@ -283,6 +330,43 @@ describe("ChatCompletionsAdapter - request building", () => {
     const body = captured.current as Record<string, unknown> | null;
     expect(body?.temperature).toBe(0.3);
     expect(body?.max_tokens).toBe(200);
+  });
+
+  it("should replace canonical replay with raw assistant turn when opaque replay is present", async () => {
+    const { captured, fetch } = captureRequest();
+    const adapter = new ChatCompletionsAdapter({ apiKey: "test-key", fetch });
+
+    await collectStream(
+      adapter.stream(
+        makeRequest({
+          input: [
+            {
+              type: "reasoning" as const,
+              content: [{ type: "text" as const, text: "先思考" }],
+              visibility: "full" as const,
+            },
+            {
+              type: "message" as const,
+              role: "assistant" as const,
+              content: [{ type: "text" as const, text: "答案" }],
+            },
+            {
+              type: "opaque" as const,
+              source: "chat.completions" as const,
+              purpose: "replay" as const,
+              payload: {
+                replaceCanonical: true,
+                messages: [{ role: "assistant", content: "答案", reasoning_content: "先思考" }],
+              },
+            },
+          ],
+        }),
+      ),
+    );
+
+    const body = captured.current as Record<string, unknown> | null;
+    const messages = body?.messages as Array<Record<string, unknown>>;
+    expect(messages).toEqual([{ role: "assistant", content: "答案", reasoning_content: "先思考" }]);
   });
 });
 
