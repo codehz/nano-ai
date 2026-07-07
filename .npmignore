@@ -1,0 +1,35 @@
+.git/
+.gitignore
+.gitattributes
+.vscode/
+.hg/
+.hgignore
+.lock
+*.tsbuildinfo
+
+# 测试
+tests/
+e2e/
+
+# 示例
+examples/
+
+# 文档
+docs/
+
+# 本地环境
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# 配置和工具链
+tsconfig.json
+oxlint.json
+.prettierrc*
+.eslintrc*
+.node-version
+.nvmrc
+.env
+.env.*
