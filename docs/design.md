@@ -834,7 +834,7 @@ adapter 对前台只暴露一个统一适配点：
 ```ts
 interface BackendAdapter {
   readonly kind: "chat-completions" | "messages" | "responses";
-  readonly capabilities: AdapterCapabilities;
+  readonly nativeStreaming: boolean;
   stream(request: NormalizedRequest): AsyncIterable<AIStreamEvent>;
 }
 ```
@@ -843,19 +843,6 @@ interface BackendAdapter {
 type NormalizedRequest = AIRequest & {
   model: string;
   requestId: string;
-};
-
-type AdapterCapabilities = {
-  nativeStreaming: boolean;
-  messageStreaming: boolean;
-  reasoningStreaming: boolean;
-  toolCallStreaming: boolean;
-  hiddenReasoningReplay: "full" | "partial" | "none";
-  replayFidelity: "high" | "medium" | "low";
-  tools: boolean;
-  usage: "full" | "partial" | "none";
-  billing: "direct" | "lookup" | "derived" | "none";
-  providerMetadata: boolean;
 };
 ```
 

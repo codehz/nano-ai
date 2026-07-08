@@ -16,7 +16,7 @@ import {
   AdapterBase,
 } from "../src/index.js";
 
-import type { NormalizedRequest, AIStreamEvent, EventFactory, AdapterCapabilities } from "../src/index.js";
+import type { NormalizedRequest, AIStreamEvent, EventFactory } from "../src/index.js";
 
 // ── mapStopReason ─────────────────────────────────────────────
 
@@ -164,18 +164,7 @@ describe("AdapterBase", () => {
   // 创建一个最小 adapter 实现用于测试
   class TestAdapter extends AdapterBase {
     readonly kind = "responses" as const;
-    readonly capabilities: AdapterCapabilities = {
-      nativeStreaming: false,
-      messageStreaming: true,
-      reasoningStreaming: false,
-      toolCallStreaming: false,
-      hiddenReasoningReplay: "none",
-      replayFidelity: "low",
-      tools: false,
-      usage: "none",
-      billing: "none",
-      providerMetadata: false,
-    };
+    readonly nativeStreaming = false;
 
     protected buildRequest(request: NormalizedRequest): string {
       return JSON.stringify(request);
@@ -229,10 +218,10 @@ describe("AdapterBase", () => {
     expect(events[events.length - 1]!.type).toBe("response.completed");
   });
 
-  it("should have correct kind and capabilities from instance", () => {
+  it("should have correct kind and native streaming marker from instance", () => {
     const adapter = new TestAdapter();
     expect(adapter.kind).toBe("responses");
-    expect(adapter.capabilities.nativeStreaming).toBe(false);
+    expect(adapter.nativeStreaming).toBe(false);
   });
 
   it("should build response with correct text", async () => {
@@ -260,18 +249,7 @@ describe("AdapterBase", () => {
   it("should include provider request error as warning and still complete", async () => {
     class ErrorAdapter extends AdapterBase {
       readonly kind = "responses" as const;
-      readonly capabilities: AdapterCapabilities = {
-        nativeStreaming: false,
-        messageStreaming: true,
-        reasoningStreaming: false,
-        toolCallStreaming: false,
-        hiddenReasoningReplay: "none",
-        replayFidelity: "low",
-        tools: false,
-        usage: "none",
-        billing: "none",
-        providerMetadata: false,
-      };
+      readonly nativeStreaming = false;
       protected buildRequest(): never {
         throw new Error("API connection failed");
       }
@@ -299,18 +277,7 @@ describe("AdapterBase", () => {
   it("should carry emitted warnings into the final completed response", async () => {
     class WarningAdapter extends AdapterBase {
       readonly kind = "responses" as const;
-      readonly capabilities: AdapterCapabilities = {
-        nativeStreaming: false,
-        messageStreaming: true,
-        reasoningStreaming: false,
-        toolCallStreaming: false,
-        hiddenReasoningReplay: "none",
-        replayFidelity: "low",
-        tools: false,
-        usage: "none",
-        billing: "none",
-        providerMetadata: false,
-      };
+      readonly nativeStreaming = false;
 
       protected buildRequest(): never {
         throw new Error("provider exploded");
@@ -375,18 +342,7 @@ describe("AdapterBase", () => {
   it("should handle empty output gracefully", async () => {
     class EmptyAdapter extends AdapterBase {
       readonly kind = "responses" as const;
-      readonly capabilities: AdapterCapabilities = {
-        nativeStreaming: true,
-        messageStreaming: true,
-        reasoningStreaming: false,
-        toolCallStreaming: false,
-        hiddenReasoningReplay: "none",
-        replayFidelity: "low",
-        tools: false,
-        usage: "none",
-        billing: "none",
-        providerMetadata: false,
-      };
+      readonly nativeStreaming = true;
       protected buildRequest(r: NormalizedRequest) {
         return r;
       }

@@ -175,18 +175,7 @@ describe("Scenario: manual tool loop", () => {
     let round = 0;
     const mockAdapter: BackendAdapter = {
       kind: "responses",
-      capabilities: {
-        nativeStreaming: true,
-        messageStreaming: true,
-        reasoningStreaming: false,
-        toolCallStreaming: true,
-        hiddenReasoningReplay: "none",
-        replayFidelity: "high",
-        tools: true,
-        usage: "none",
-        billing: "none",
-        providerMetadata: false,
-      },
+      nativeStreaming: true,
       stream(_request: NormalizedRequest): AsyncIterable<AIStreamEvent> {
         const f = responsesFactory();
         round++;

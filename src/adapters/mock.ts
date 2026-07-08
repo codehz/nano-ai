@@ -15,7 +15,6 @@ import { messageItem, reasoningItem, replayFromOutput, textBlock } from "../help
 
 import type {
   AIStreamEvent,
-  AdapterCapabilities,
   AuxiliaryInfo,
   BillingInfo,
   ContentBlock,
@@ -205,18 +204,7 @@ type ResolvedMockTextStreamOptions = {
 
 export class MockAdapter extends AdapterBase {
   readonly kind = "mock" as const;
-  readonly capabilities: AdapterCapabilities = {
-    nativeStreaming: false,
-    messageStreaming: true,
-    reasoningStreaming: false,
-    toolCallStreaming: true,
-    hiddenReasoningReplay: "none" as const,
-    replayFidelity: "high" as const,
-    tools: true,
-    usage: "none" as const,
-    billing: "none" as const,
-    providerMetadata: true,
-  };
+  readonly nativeStreaming = false;
 
   private readonly turns: MockTurn[];
   private readonly onExhausted: NonNullable<MockAdapterOptions["onExhausted"]>;

@@ -171,9 +171,6 @@ describe("ChatCompletionsAdapter - text streaming", () => {
     expect(result.output[0]!.type).toBe("reasoning");
     expect(result.output[1]!.type).toBe("message");
     expect(result.text).toBe("最终答案");
-    expect(adapter.capabilities.reasoningStreaming).toBe(true);
-    expect(adapter.capabilities.hiddenReasoningReplay).toBe("partial");
-    expect(adapter.capabilities.replayFidelity).toBe("medium");
 
     const opaqueReplay = result.replay.find((item) => item.type === "opaque");
     expect(opaqueReplay).toBeDefined();

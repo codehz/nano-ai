@@ -19,26 +19,11 @@ export type NormalizedRequest = AIRequest & {
   requestId: string;
 };
 
-// ── 能力矩阵 ──────────────────────────────────────────────────
-
-export type AdapterCapabilities = {
-  nativeStreaming: boolean;
-  messageStreaming: boolean;
-  reasoningStreaming: boolean;
-  toolCallStreaming: boolean;
-  hiddenReasoningReplay: "full" | "partial" | "none";
-  replayFidelity: "high" | "medium" | "low";
-  tools: boolean;
-  usage: "full" | "partial" | "none";
-  billing: "direct" | "lookup" | "derived" | "none";
-  providerMetadata: boolean;
-};
-
 // ── Adapter 接口 ──────────────────────────────────────────────
 
 export interface BackendAdapter {
   readonly kind: "chat-completions" | "messages" | "responses" | "ollama" | "mock";
-  readonly capabilities: AdapterCapabilities;
+  readonly nativeStreaming: boolean;
   stream(request: NormalizedRequest): AsyncIterable<AIStreamEvent>;
 }
 

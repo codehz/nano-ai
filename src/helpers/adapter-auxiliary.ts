@@ -1,7 +1,6 @@
 import { WarningCode } from "../core/errors.js";
 import type { EventFactory } from "../core/event-factory.js";
 import type {
-  AdapterCapabilities,
   AIStreamEvent,
   BillingInfo,
   NormalizedRequest,
@@ -18,7 +17,6 @@ export type BillingPostprocessHook = (context: {
   usage?: Usage;
   billing?: BillingInfo;
   auxiliary?: AuxiliaryInfo;
-  capabilities: AdapterCapabilities;
 }) => MaybePromise<Partial<BillingInfo> | undefined>;
 
 export type AuxiliaryFinalizeOptions = {
@@ -41,10 +39,7 @@ export class AdapterAuxiliaryState {
   private readonly collector = new AuxiliaryCollector();
   private readonly metadataSources = new Set<string>();
 
-  constructor(
-    private readonly request: NormalizedRequest,
-    private readonly capabilities: AdapterCapabilities,
-  ) {}
+  constructor(private readonly request: NormalizedRequest) {}
 
   recordUsage(usage: Partial<Usage>, source: UsageSource, raw?: unknown): void {
     if (this.request.include?.usage === "off" || isEmptyRecord(usage)) return;
@@ -75,7 +70,6 @@ export class AdapterAuxiliaryState {
           usage: snapshot.usage,
           billing: snapshot.billing,
           auxiliary: snapshot.auxiliary,
-          capabilities: this.capabilities,
         });
         if (derived && !isEmptyRecord(derived)) {
           this.collector.recordBilling(

@@ -48,7 +48,6 @@ export type {
 // Adapter 协议和 client 类型
 export type {
   BackendAdapter,
-  AdapterCapabilities,
   FetchFn,
   NormalizedRequest,
   CreateAIClientOptions,
