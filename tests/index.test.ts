@@ -28,6 +28,7 @@ import {
   CAPABILITY_MATRIX,
   // Client
   createAIClient,
+  MockAdapter,
 } from "../src/index.js";
 
 // ── ContentBlock ──────────────────────────────────────────────
@@ -289,10 +290,11 @@ describe("AIStreamEvent", () => {
 // ── Capability Matrix ─────────────────────────────────────────
 
 describe("CAPABILITY_MATRIX", () => {
-  it("should contain all three backends", () => {
+  it("should contain all core backends", () => {
     expect(CAPABILITY_MATRIX.responses).toBeDefined();
     expect(CAPABILITY_MATRIX.messages).toBeDefined();
     expect(CAPABILITY_MATRIX["chat.completions"]).toBeDefined();
+    expect(CAPABILITY_MATRIX.mock).toBeDefined();
   });
 
   it("should mark responses as highest capability", () => {
@@ -306,6 +308,12 @@ describe("CAPABILITY_MATRIX", () => {
     expect(CAPABILITY_MATRIX["chat.completions"].hiddenReasoningReplay).toBe("none");
     expect(CAPABILITY_MATRIX["chat.completions"].replayFidelity).toBe("low");
   });
+
+  it("should mark mock as synthetic text-only backend", () => {
+    expect(CAPABILITY_MATRIX.mock.nativeStreaming).toBe(false);
+    expect(CAPABILITY_MATRIX.mock.messageStreaming).toBe(true);
+    expect(CAPABILITY_MATRIX.mock.tools).toBe(false);
+  });
 });
 
 // ── Export sanity ─────────────────────────────────────────────
@@ -313,5 +321,9 @@ describe("CAPABILITY_MATRIX", () => {
 describe("exports", () => {
   it("should export createAIClient (stub)", () => {
     expect(createAIClient).toBeFunction();
+  });
+
+  it("should export MockAdapter", () => {
+    expect(MockAdapter).toBeFunction();
   });
 });

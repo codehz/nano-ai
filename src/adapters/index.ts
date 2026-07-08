@@ -6,6 +6,7 @@
  * - messages
  * - chat.completions
  * - ollama
+ * - mock
  *
  * 每个 adapter 实现 BackendAdapter 内部协议。
  */
@@ -18,3 +19,5 @@ export { ChatCompletionsAdapter } from "./chat-completions.js";
 export type { ChatCompletionsAdapterOptions } from "./chat-completions.js";
 export { OllamaAdapter } from "./ollama.js";
 export type { OllamaAdapterOptions } from "./ollama.js";
+export { MockAdapter } from "./mock.js";
+export type { MockAdapterOptions, MockKeywordRule, MockResponseTemplate } from "./mock.js";

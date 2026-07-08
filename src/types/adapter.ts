@@ -86,12 +86,24 @@ export const CAPABILITY_MATRIX = {
     billing: "none" as const,
     providerMetadata: false,
   },
+  mock: {
+    nativeStreaming: false,
+    messageStreaming: true,
+    reasoningStreaming: false,
+    toolCallStreaming: false,
+    hiddenReasoningReplay: "none" as const,
+    replayFidelity: "high" as const,
+    tools: false,
+    usage: "none" as const,
+    billing: "none" as const,
+    providerMetadata: true,
+  },
 } as const satisfies Record<string, AdapterCapabilities>;
 
 // ── Adapter 接口 ──────────────────────────────────────────────
 
 export interface BackendAdapter {
-  readonly kind: "chat-completions" | "messages" | "responses" | "ollama";
+  readonly kind: "chat-completions" | "messages" | "responses" | "ollama" | "mock";
   readonly capabilities: AdapterCapabilities;
   stream(request: NormalizedRequest): AsyncIterable<AIStreamEvent>;
 }

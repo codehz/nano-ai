@@ -1,7 +1,7 @@
 import { describe, it, expect } from "bun:test";
 import { createAIClient, normalizeRequest, validateRequest, assertValidRequest, AIRequestError } from "../src/index.js";
 
-import type { AIRequest, NormalizedRequest, AIStreamEvent, BackendAdapter } from "../src/index.js";
+import type { AIRequest, NormalizedRequest, AIStreamEvent, BackendAdapter, ContentBlock } from "../src/index.js";
 
 // ── Helpers ───────────────────────────────────────────────────
 
@@ -93,7 +93,7 @@ describe("validateRequest", () => {
           {
             type: "message",
             role: "user",
-            content: [{ type: "image" } as unknown as AIRequest["input"][number]["content"][number]],
+            content: [{ type: "image" } as unknown as ContentBlock],
           },
         ],
       }),

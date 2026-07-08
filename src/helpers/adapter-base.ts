@@ -55,7 +55,7 @@ export type StreamResult = {
 // ── 抽象基类 ──────────────────────────────────────────────────
 
 export abstract class AdapterBase implements BackendAdapter {
-  abstract readonly kind: "chat-completions" | "messages" | "responses" | "ollama";
+  abstract readonly kind: "chat-completions" | "messages" | "responses" | "ollama" | "mock";
   abstract readonly capabilities: AdapterCapabilities;
 
   /**

@@ -161,6 +161,7 @@ function ensureTextCompatibleBlocks(
 ): import("../index.js").ContentBlock[] {
   for (let i = 0; i < blocks.length; i++) {
     const block = blocks[i];
+    if (!block) continue;
     if (block.type !== "text" && block.type !== "json") {
       throw new AIRequestError(
         `chat-completions does not support ${field}[${i}] of type "${block.type}"; only text/json blocks are supported`,
