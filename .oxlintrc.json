@@ -11,6 +11,7 @@
     "import/no-duplicates": "error",
     "import/named": "error",
     "import/namespace": "error",
+    "no-await-in-loop": "off",
     "typescript/no-non-null-assertion": "warn",
     "unicorn/no-null": "off",
     "unicorn/no-array-for-each": "off",
@@ -23,22 +24,6 @@
       "rules": {
         "typescript/no-non-null-assertion": "off",
         "unicorn/no-array-reverse": "off"
-      }
-    },
-    {
-      "files": ["examples/**/*.ts"],
-      "rules": {
-        "no-await-in-loop": "off"
-      }
-    },
-    {
-      "files": [
-        "src/adapters/chat-completions.ts",
-        "src/adapters/messages.ts",
-        "src/adapters/responses.ts"
-      ],
-      "rules": {
-        "no-await-in-loop": "off"
       }
     }
   ],
