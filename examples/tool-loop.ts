@@ -6,19 +6,68 @@
  * 2. 调用方执行工具
  * 3. 调用方将 tool_result 放入下一轮 input
  * 4. 再次调用 client.stream()
+ *
+ * 该示例使用 MockAdapter，直接演示 tools / toolChoice / replay / tool_result 接口。
  */
 
-import { createAIClient, collectStream, ResponsesAdapter, textBlock, jsonBlock } from "../src/index.js";
+import { MockAdapter, collectStream, createAIClient, jsonBlock, textBlock } from "../src/index.js";
 
 import type { InputItem, ToolCallItem } from "../src/index.js";
 
-const adapter = new ResponsesAdapter({
-  apiKey: process.env.OPENAI_API_KEY ?? "sk-your-key-here",
+const adapter = new MockAdapter({
+  turns: [
+    {
+      name: "request-weather-tool",
+      expect: {
+        ordered: true,
+        items: [{ type: "message", role: "user", textIncludes: "weather in Hangzhou" }],
+        tools: "present",
+        toolChoice: "present",
+      },
+      steps: [
+        { type: "message", content: "Checking live weather now." },
+        {
+          type: "tool_call",
+          id: "call-weather-1",
+          name: "get_weather",
+          argumentsText: '{"city":"Hangzhou"}',
+          argumentsJson: { city: "Hangzhou" },
+        },
+      ],
+    },
+    {
+      name: "consume-weather-tool-result",
+      expect: {
+        ordered: true,
+        requireReplayFromPreviousTurn: true,
+        requireToolResultsForPendingCalls: true,
+        items: [
+          { type: "message", role: "assistant", textIncludes: "Checking live weather now." },
+          { type: "tool_call", name: "get_weather", textIncludes: "Hangzhou" },
+          {
+            type: "tool_result",
+            callId: "call-weather-1",
+            toolName: "get_weather",
+            outcome: "success",
+            textIncludes: "sunny",
+          },
+        ],
+      },
+      steps: [
+        { type: "message", content: "Hangzhou is 28C and sunny." },
+        {
+          type: "complete",
+          usage: { inputTokens: 30, outputTokens: 10, totalTokens: 40 },
+          providerMetadata: { scenario: "tool-loop-example" },
+        },
+      ],
+    },
+  ],
 });
 
 const client = createAIClient({
   adapter,
-  model: "gpt-4o",
+  model: "mock-model",
 });
 
 // ── 模拟工具执行 ──────────────────────────────────────────
@@ -84,7 +133,6 @@ async function main() {
     console.log(`Stop reason: ${response.stopReason}`);
 
     if (response.stopReason === "tool_call") {
-      // 模型请求调用工具 → 执行工具 → 构造 tool_result
       input.push(...response.replay);
 
       for (const call of response.toolCalls) {
@@ -97,9 +145,7 @@ async function main() {
           content: [jsonBlock(result)],
         });
       }
-      // 继续下一轮
     } else {
-      // 模型正常结束
       console.log(`\nFinal response: ${response.text}`);
       console.log(`Usage: ${JSON.stringify(response.usage)}`);
       break;

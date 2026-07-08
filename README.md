@@ -317,6 +317,8 @@ const { usage, billing, auxiliary, warnings } = collector.build();
 
 ## 开发命令
 
+`examples/` 下的三个示例默认都基于 `MockAdapter`，可直接运行，无需配置真实模型或 API key。
+
 ```bash
 bun run typecheck    # TypeScript 类型检查
 bun run test         # 运行全部测试（228+）

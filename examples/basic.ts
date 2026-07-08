@@ -6,20 +6,49 @@
  * 2. 发起流式请求
  * 3. 逐事件消费（消息 delta 实时打印）
  * 4. 用 collectStream() 收尾聚合
+ *
+ * 该示例使用 MockAdapter，便于直接运行并观察 canonical API 的事件形态。
  */
 
-import { createAIClient, collectStream, ResponsesAdapter } from "../src/index.js";
+import { MockAdapter, collectStream, createAIClient, textBlock } from "../src/index.js";
 
 // ── 1. 创建 adapter ────────────────────────────────────────
-// 注意：生产环境请在环境变量中配置 API key
-const adapter = new ResponsesAdapter({
-  apiKey: process.env.OPENAI_API_KEY ?? "sk-your-key-here",
+const adapter = new MockAdapter({
+  turns: [
+    {
+      name: "stream-capital-answer",
+      expect: {
+        ordered: true,
+        items: [{ type: "message", role: "user", textIncludes: "capital of France" }],
+      },
+      steps: [
+        { type: "message", content: "Paris is the capital of France." },
+        { type: "warning", message: "mock backend: scripted response", code: "MOCK_DEMO" },
+        { type: "auxiliary", usage: { inputTokens: 12, outputTokens: 7, totalTokens: 19 } },
+      ],
+    },
+    {
+      name: "collect-math-answer",
+      expect: {
+        ordered: true,
+        items: [{ type: "message", role: "user", textIncludes: "What is 2+2?" }],
+      },
+      steps: [
+        { type: "message", content: "2 + 2 = 4." },
+        {
+          type: "complete",
+          usage: { inputTokens: 10, outputTokens: 6, totalTokens: 16 },
+          providerMetadata: { scenario: "basic-example" },
+        },
+      ],
+    },
+  ],
 });
 
 // ── 2. 创建 client ─────────────────────────────────────────
 const client = createAIClient({
   adapter,
-  model: "gpt-4o",
+  model: "mock-model",
   defaults: {
     maxOutputTokens: 500,
   },
@@ -33,7 +62,7 @@ async function main() {
       {
         type: "message",
         role: "user",
-        content: [{ type: "text", text: "What is the capital of France?" }],
+        content: [textBlock("What is the capital of France?")],
       },
     ],
   });
@@ -47,7 +76,6 @@ async function main() {
         console.log(`[started] model: ${event.model}`);
         break;
       case "message.delta":
-        // 实时输出文本
         process.stdout.write(event.delta.text);
         break;
       case "response.warning":
@@ -66,7 +94,6 @@ async function main() {
   }
 
   // ── 4. 或用 collectStream 直接拿最终结果 ──────────────
-  // 重新发起相同请求（演示用）
   const response = await collectStream(
     client.stream({
       instructions: "You are a helpful assistant.",
@@ -74,7 +101,7 @@ async function main() {
         {
           type: "message",
           role: "user",
-          content: [{ type: "text", text: "What is 2+2?" }],
+          content: [textBlock("What is 2+2?")],
         },
       ],
     }),
