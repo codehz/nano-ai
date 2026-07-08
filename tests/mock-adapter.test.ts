@@ -90,4 +90,76 @@ describe("MockAdapter", () => {
 
     expect(result.text).toBe("这里是帮助中心模板回复。");
   });
+
+  it("should support tool call templates for automation tests", async () => {
+    const adapter = new MockAdapter({
+      rules: [
+        {
+          keywords: ["查天气"],
+          response: {
+            type: "tool_call",
+            id: "mock-call-weather",
+            name: "get_weather",
+            argumentsText: '{"city":"Hangzhou"}',
+            argumentsJson: { city: "Hangzhou" },
+          },
+        },
+      ],
+    });
+
+    const result = await collectStream(
+      adapter.stream({
+        model: "mock-model",
+        requestId: "mock-tool-1",
+        input: [{ type: "message", role: "user", content: [{ type: "text", text: "请帮我查天气" }] }],
+      }),
+    );
+
+    expect(result.text).toBe("");
+    expect(result.stopReason).toBe("tool_call");
+    expect(result.toolCalls).toHaveLength(1);
+    expect(result.toolCalls[0]).toMatchObject({
+      id: "mock-call-weather",
+      name: "get_weather",
+      argumentsText: '{"city":"Hangzhou"}',
+    });
+  });
+
+  it("should support mixed message and tool call templates", async () => {
+    const adapter = new MockAdapter({
+      rules: [
+        {
+          keywords: ["下单"],
+          response: [
+            {
+              type: "message",
+              role: "assistant",
+              content: [{ type: "text", text: "我先帮你调用下单工具。" }],
+            },
+            {
+              type: "tool_call",
+              id: "mock-call-order",
+              name: "create_order",
+              argumentsText: '{"sku":"SKU-1","count":2}',
+              argumentsJson: { sku: "SKU-1", count: 2 },
+            },
+          ],
+        },
+      ],
+    });
+
+    const result = await collectStream(
+      adapter.stream({
+        model: "mock-model",
+        requestId: "mock-tool-2",
+        input: [{ type: "message", role: "user", content: [{ type: "text", text: "帮我下单" }] }],
+      }),
+    );
+
+    expect(result.text).toBe("我先帮你调用下单工具。");
+    expect(result.stopReason).toBe("tool_call");
+    expect(result.output.map((item) => item.type)).toEqual(["message", "tool_call"]);
+    expect(result.toolCalls).toHaveLength(1);
+    expect(result.replay.map((item) => item.type)).toEqual(["message", "tool_call"]);
+  });
 });

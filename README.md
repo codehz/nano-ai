@@ -152,9 +152,9 @@ adapter.capabilities.replayFidelity; // "high" | "medium" | "low"
 
 ## Mock 后端
 
-适合前端联调、客服话术演示、离线测试。
+适合前端联调、客服话术演示、离线测试，以及自动化工具调用回路测试。
 
-`MockAdapter` 会提取请求中的消息文本，按 `rules` 顺序匹配关键词；命中后返回对应模板，未命中则返回 `defaultResponse`。
+`MockAdapter` 会提取请求中的消息文本，按 `rules` 顺序匹配关键词；命中后返回对应模板，未命中则返回 `defaultResponse`。模板既可以是普通消息，也可以直接返回 `tool_call`，或者返回“消息 + 工具调用”的组合输出。
 
 ```ts
 import { createAIClient, MockAdapter } from "nano-ai";
@@ -164,6 +164,16 @@ const client = createAIClient({
     rules: [
       { keywords: ["退款", "refund"], response: "退款申请已收到，我们会在 1 个工作日内处理。" },
       { keywords: ["VIP"], response: "已为你转接 VIP 专属客服。", caseSensitive: true },
+      {
+        keywords: ["查天气"],
+        response: {
+          type: "tool_call",
+          id: "mock-call-weather",
+          name: "get_weather",
+          argumentsText: '{"city":"Hangzhou"}',
+          argumentsJson: { city: "Hangzhou" },
+        },
+      },
     ],
     defaultResponse: "你好，这里是默认 mock 回复。",
   }),
@@ -176,9 +186,31 @@ const client = createAIClient({
 ```ts
 type MockKeywordRule = {
   keywords: string[]; // 任一关键词命中即触发
-  response: string | ContentBlock[] | MessageItem; // 返回模板
+  response: string | ContentBlock[] | OutputItem | OutputItem[]; // 返回模板
   caseSensitive?: boolean; // 默认 false
 };
+```
+
+例如返回“先说一句话，再发起工具调用”：
+
+```ts
+{
+  keywords: ["下单"],
+  response: [
+    {
+      type: "message",
+      role: "assistant",
+      content: [{ type: "text", text: "我先帮你调用下单工具。" }],
+    },
+    {
+      type: "tool_call",
+      id: "mock-call-order",
+      name: "create_order",
+      argumentsText: '{"sku":"SKU-1","count":2}',
+      argumentsJson: { sku: "SKU-1", count: 2 },
+    },
+  ],
+}
 ```
 
 ## 多轮对话

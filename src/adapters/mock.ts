@@ -2,7 +2,7 @@
  * Mock Adapter
  *
  * 用于本地调试 / UI 联调。
- * 按规则匹配请求中的关键词，命中后返回配置好的回复模板。
+ * 按规则匹配请求中的关键词，命中后返回配置好的输出模板。
  */
 
 import { AdapterBase } from "../helpers/adapter-base.js";
@@ -15,9 +15,12 @@ import type {
   EventFactory,
   MessageItem,
   NormalizedRequest,
+  OutputItem,
+  StopReason,
+  ToolCallItem,
 } from "../index.js";
 
-export type MockResponseTemplate = string | ContentBlock[] | MessageItem;
+export type MockResponseTemplate = string | ContentBlock[] | OutputItem | OutputItem[];
 
 export type MockKeywordRule = {
   keywords: string[];
@@ -38,7 +41,7 @@ type MockProviderRequest = {
   extractedText: string;
 };
 
-function normalizeTemplate(template: MockResponseTemplate): MessageItem {
+function normalizeMessageTemplate(template: string | ContentBlock[] | MessageItem): MessageItem {
   if (typeof template === "string") {
     return messageItem([textBlock(template)]);
   }
@@ -51,6 +54,49 @@ function normalizeTemplate(template: MockResponseTemplate): MessageItem {
     ...template,
     role: "assistant",
   };
+}
+
+function isContentBlock(value: unknown): value is ContentBlock {
+  return typeof value === "object" && value !== null && "type" in value;
+}
+
+function isContentBlockArray(value: MockResponseTemplate): value is ContentBlock[] {
+  return Array.isArray(value) && value.every((item) => isContentBlock(item) && !isOutputItemType(item.type));
+}
+
+function isOutputItemType(type: string): type is OutputItem["type"] {
+  return type === "message" || type === "reasoning" || type === "tool_call" || type === "opaque";
+}
+
+function normalizeTemplate(template: MockResponseTemplate): OutputItem[] {
+  if (typeof template === "string" || isContentBlockArray(template)) {
+    return [normalizeMessageTemplate(template)];
+  }
+
+  if (Array.isArray(template)) {
+    return template.map(normalizeOutputItem);
+  }
+
+  return [normalizeOutputItem(template)];
+}
+
+function normalizeOutputItem(item: OutputItem): OutputItem {
+  if (item.type === "message") {
+    return {
+      ...item,
+      role: "assistant",
+    };
+  }
+
+  return item;
+}
+
+function isToolCallItem(item: OutputItem): item is ToolCallItem {
+  return item.type === "tool_call";
+}
+
+function resolveStopReason(output: OutputItem[]): StopReason {
+  return output.some(isToolCallItem) ? "tool_call" : "end_turn";
 }
 
 function extractRequestText(request: NormalizedRequest): string {
@@ -113,23 +159,11 @@ export class MockAdapter extends AdapterBase {
     request: NormalizedRequest,
   ): AsyncIterable<AIStreamEvent> {
     const mockRequest = providerRequest as MockProviderRequest;
-    const id = `mock-msg-${request.requestId}`;
-    const completedMessage: MessageItem = {
-      ...normalizeTemplate(mockRequest.responseTemplate),
-      type: "message",
-      id,
-      role: "assistant",
-    };
+    const output = normalizeTemplate(mockRequest.responseTemplate).map((item, index) => attachSyntheticId(item, request, index));
 
-    yield factory.messageStarted(id);
-
-    for (const block of completedMessage.content) {
-      if (block.type === "text") {
-        yield factory.messageDelta(id, block.text);
-      }
+    for (const item of output) {
+      yield* this.emitOutputItem(factory, item);
     }
-
-    yield factory.messageCompleted(completedMessage);
 
     const providerMetadata = {
       requestText: mockRequest.extractedText,
@@ -143,9 +177,9 @@ export class MockAdapter extends AdapterBase {
       this.buildResponse(
         request,
         {
-          output: [completedMessage],
-          replay: replayFromOutput([completedMessage]),
-          stopReason: "end_turn",
+          output,
+          replay: replayFromOutput(output),
+          stopReason: resolveStopReason(output),
           providerMetadata,
           metadataSources: ["mock"],
         },
@@ -153,4 +187,53 @@ export class MockAdapter extends AdapterBase {
       ),
     );
   }
+
+  private async *emitOutputItem(factory: EventFactory, item: OutputItem): AsyncIterable<AIStreamEvent> {
+    if (item.type === "message") {
+      yield factory.messageStarted(item.id!);
+
+      for (const block of item.content) {
+        if (block.type === "text") {
+          yield factory.messageDelta(item.id!, block.text);
+        }
+      }
+
+      yield factory.messageCompleted(item);
+      return;
+    }
+
+    if (item.type === "tool_call") {
+      yield factory.toolCallStarted(item.id, item.name);
+      if (item.argumentsText) {
+        yield factory.toolCallDelta(item.id, { argumentsText: item.argumentsText });
+      }
+      yield factory.toolCallCompleted(item);
+    }
+  }
+}
+
+function attachSyntheticId(item: OutputItem, request: NormalizedRequest, index: number): OutputItem {
+  if (item.type === "message") {
+    return {
+      ...item,
+      id: item.id ?? `mock-msg-${request.requestId}-${index}`,
+      role: "assistant",
+    };
+  }
+
+  if (item.type === "reasoning") {
+    return {
+      ...item,
+      id: item.id ?? `mock-reason-${request.requestId}-${index}`,
+    };
+  }
+
+  if (item.type === "opaque") {
+    return {
+      ...item,
+      id: item.id ?? `mock-opaque-${request.requestId}-${index}`,
+    };
+  }
+
+  return item;
 }
