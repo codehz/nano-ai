@@ -112,7 +112,10 @@ export abstract class AdapterBase implements BackendAdapter {
   protected buildResponse(request: NormalizedRequest, result: StreamResult, _factory: EventFactory): AIResponse {
     const text = this.extractText(result.output);
     const warnings = mergeWarnings(result.warnings, _factory.warnings);
-    const auxiliary = mergeAuxiliary(result.auxiliary, result.providerMetadata ? { providerMetadata: result.providerMetadata } : undefined);
+    const auxiliary = mergeAuxiliary(
+      result.auxiliary,
+      result.providerMetadata ? { providerMetadata: result.providerMetadata } : undefined,
+    );
 
     return {
       id: request.requestId,
@@ -146,10 +149,7 @@ export abstract class AdapterBase implements BackendAdapter {
   }
 }
 
-function mergeAuxiliary(
-  base?: Partial<AuxiliaryInfo>,
-  patch?: Partial<AuxiliaryInfo>,
-): AuxiliaryInfo | undefined {
+function mergeAuxiliary(base?: Partial<AuxiliaryInfo>, patch?: Partial<AuxiliaryInfo>): AuxiliaryInfo | undefined {
   if (!base && !patch) return undefined;
 
   const merged: AuxiliaryInfo = {

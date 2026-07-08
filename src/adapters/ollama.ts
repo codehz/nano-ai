@@ -207,19 +207,22 @@ function rollbackTrailingAssistantMessages(messages: OllamaMessage[]): void {
 }
 
 function isOllamaToolCalls(value: unknown): value is OllamaToolCall[] {
-  return Array.isArray(value) && value.every((entry) => {
-    if (!entry || typeof entry !== "object" || !("function" in entry)) return false;
-    const fn = (entry as { function?: unknown }).function;
-    return (
-      !!fn &&
-      typeof fn === "object" &&
-      "name" in fn &&
-      typeof (fn as { name?: unknown }).name === "string" &&
-      "arguments" in fn &&
-      typeof (fn as { arguments?: unknown }).arguments === "object" &&
-      (fn as { arguments?: unknown }).arguments !== null
-    );
-  });
+  return (
+    Array.isArray(value) &&
+    value.every((entry) => {
+      if (!entry || typeof entry !== "object" || !("function" in entry)) return false;
+      const fn = (entry as { function?: unknown }).function;
+      return (
+        !!fn &&
+        typeof fn === "object" &&
+        "name" in fn &&
+        typeof (fn as { name?: unknown }).name === "string" &&
+        "arguments" in fn &&
+        typeof (fn as { arguments?: unknown }).arguments === "object" &&
+        (fn as { arguments?: unknown }).arguments !== null
+      );
+    })
+  );
 }
 
 // ── Adapter ───────────────────────────────────────────────────
@@ -264,7 +267,10 @@ export class OllamaAdapter extends AdapterBase {
                 : item.role === "user"
                   ? "user"
                   : "assistant";
-          messages.push({ role, content: contentBlocksToText(ensureOllamaTextBlocks(item.content, `input message (${item.role}) content`)) });
+          messages.push({
+            role,
+            content: contentBlocksToText(ensureOllamaTextBlocks(item.content, `input message (${item.role}) content`)),
+          });
           break;
         }
         case "tool_call": {
@@ -301,7 +307,12 @@ export class OllamaAdapter extends AdapterBase {
         }
         case "opaque": {
           // Best-effort restore from opaque replay
-          if (item.source === "ollama" && item.purpose === "replay" && typeof item.payload === "object" && item.payload !== null) {
+          if (
+            item.source === "ollama" &&
+            item.purpose === "replay" &&
+            typeof item.payload === "object" &&
+            item.payload !== null
+          ) {
             const payload = item.payload as Record<string, unknown>;
             if (payload.role === "assistant" && typeof payload.content === "string") {
               rollbackTrailingAssistantMessages(messages);
@@ -477,9 +488,10 @@ export class OllamaAdapter extends AdapterBase {
                 {
                   inputTokens: chunk.prompt_eval_count,
                   outputTokens: chunk.eval_count,
-                  totalTokens: chunk.prompt_eval_count !== undefined && chunk.eval_count !== undefined
-                    ? chunk.prompt_eval_count + chunk.eval_count
-                    : undefined,
+                  totalTokens:
+                    chunk.prompt_eval_count !== undefined && chunk.eval_count !== undefined
+                      ? chunk.prompt_eval_count + chunk.eval_count
+                      : undefined,
                 },
                 "final",
                 {

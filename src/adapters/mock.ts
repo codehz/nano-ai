@@ -1,8 +1,9 @@
 /**
  * Mock Adapter
  *
- * 面向测试的脚本化 adapter：
- * - 按 turn 顺序消费请求，验证调用方是否正确续接 replay / tool_result
+ * 面向测试的回调驱动 adapter：
+ * - 每次请求执行用户提供的 handler
+ * - 验证调用方是否正确续接 replay / tool_result
  * - 发出可控的 message / reasoning / tool_call 流
  * - 注入 warning / auxiliary / content_filter / 中断 / provider error
  *
@@ -55,17 +56,19 @@ export type MockRequestExpectation = {
   items?: MockInputExpectation[];
 };
 
-export type MockTurnContext = {
+export type MockHistoryRecord = {
+  turnIndex: number;
+  requestId: string;
+  replay: ReplayItem[];
+  toolCalls: ToolCallItem[];
+};
+
+export type MockHandlerContext = {
   turnIndex: number;
   previousReplay: ReplayItem[];
   pendingToolCalls: readonly ToolCallItem[];
-  history: readonly MockTurnRecord[];
+  history: readonly MockHistoryRecord[];
 };
-
-export type MockTurnValidator = (
-  request: NormalizedRequest,
-  context: MockTurnContext,
-) => void | Promise<void>;
 
 export type MockWarningStep = {
   type: "warning";
@@ -167,32 +170,24 @@ export type MockStep =
   | MockInterruptStep
   | MockThrowStep;
 
-export type MockTurn = {
-  name?: string;
-  expect?: MockRequestExpectation | MockTurnValidator;
-  steps: MockStep[];
-};
+export type MockHandler = (request: NormalizedRequest, context: MockHandlerContext) => AsyncIterable<MockStep>;
+
+type MockHandlerSource = Iterable<MockStep> | AsyncIterable<MockStep>;
+
+export type MockStaticHandler = (
+  request: NormalizedRequest,
+  context: MockHandlerContext,
+) => MockHandlerSource | Promise<MockHandlerSource>;
 
 export type MockAdapterOptions = {
-  turns: MockTurn[];
-  onExhausted?: "throw" | "repeat-last" | "complete-empty";
+  handler: MockHandler;
   providerMetadata?: Record<string, unknown>;
-  stream?: MockTextStreamOptions;
-};
-
-type MockTurnRecord = {
-  turnIndex: number;
-  turnName?: string;
-  requestId: string;
-  replay: ReplayItem[];
-  toolCalls: ToolCallItem[];
 };
 
 type MockProviderRequest = {
   request: NormalizedRequest;
-  turn: MockTurn;
+  handlerResult: AsyncIterable<MockStep>;
   turnIndex: number;
-  turnName?: string;
   remainingPendingToolCalls: ToolCallItem[];
 };
 
@@ -202,52 +197,102 @@ type ResolvedMockTextStreamOptions = {
   initialDelayMs: number;
 };
 
+export function assertMockRequest(
+  request: NormalizedRequest,
+  expectation: MockRequestExpectation,
+  context: MockHandlerContext,
+): void {
+  const prefix = `MockAdapter turn ${context.turnIndex + 1} expectation failed`;
+
+  if (expectation.minItems !== undefined && request.input.length < expectation.minItems) {
+    throw new AIRequestError(
+      `${prefix}: expected at least ${expectation.minItems} input item(s)`,
+      "MOCK_EXPECTATION_FAILED",
+    );
+  }
+
+  if (expectation.maxItems !== undefined && request.input.length > expectation.maxItems) {
+    throw new AIRequestError(
+      `${prefix}: expected at most ${expectation.maxItems} input item(s)`,
+      "MOCK_EXPECTATION_FAILED",
+    );
+  }
+
+  if (expectation.tools === "present" && (!request.tools || request.tools.length === 0)) {
+    throw new AIRequestError(`${prefix}: expected tools to be present`, "MOCK_EXPECTATION_FAILED");
+  }
+
+  if (expectation.tools === "absent" && request.tools && request.tools.length > 0) {
+    throw new AIRequestError(`${prefix}: expected tools to be absent`, "MOCK_EXPECTATION_FAILED");
+  }
+
+  if (expectation.toolChoice === "present" && request.toolChoice === undefined) {
+    throw new AIRequestError(`${prefix}: expected toolChoice to be present`, "MOCK_EXPECTATION_FAILED");
+  }
+
+  if (expectation.toolChoice === "absent" && request.toolChoice !== undefined) {
+    throw new AIRequestError(`${prefix}: expected toolChoice to be absent`, "MOCK_EXPECTATION_FAILED");
+  }
+
+  if (expectation.requireReplayFromPreviousTurn && context.previousReplay.length > 0) {
+    assertReplayIncluded(request.input, context.previousReplay, prefix);
+  }
+
+  if (expectation.requireToolResultsForPendingCalls && context.pendingToolCalls.length > 0) {
+    const toolResultIds = new Set(
+      request.input.filter((item): item is ToolResultItem => item.type === "tool_result").map((item) => item.callId),
+    );
+
+    for (const call of context.pendingToolCalls) {
+      if (!toolResultIds.has(call.id)) {
+        throw new AIRequestError(
+          `${prefix}: expected tool_result for pending tool call "${call.id}"`,
+          "MOCK_EXPECTATION_FAILED",
+        );
+      }
+    }
+  }
+
+  if (expectation.items && expectation.items.length > 0) {
+    if (expectation.ordered) {
+      assertOrderedItems(request.input, expectation.items, prefix);
+    } else {
+      assertUnorderedItems(request.input, expectation.items, prefix);
+    }
+  }
+}
+
 export class MockAdapter extends AdapterBase {
   readonly kind = "mock" as const;
   readonly nativeStreaming = false;
 
-  private readonly turns: MockTurn[];
-  private readonly onExhausted: NonNullable<MockAdapterOptions["onExhausted"]>;
+  private readonly handler: MockHandler;
   private readonly providerMetadata?: Record<string, unknown>;
-  private readonly defaultStream?: ResolvedMockTextStreamOptions;
 
   private cursor = 0;
   private previousReplay: ReplayItem[] = [];
   private pendingToolCalls: ToolCallItem[] = [];
-  private history: MockTurnRecord[] = [];
+  private history: MockHistoryRecord[] = [];
   private activeStream = false;
 
   constructor(options: MockAdapterOptions) {
     super();
-    this.turns = options.turns;
-    this.onExhausted = options.onExhausted ?? "throw";
+    this.handler = options.handler;
     this.providerMetadata = options.providerMetadata;
-    this.defaultStream = resolveMockTextStreamOptions(options.stream, "adapter stream");
   }
 
   protected async buildRequest(request: NormalizedRequest): Promise<MockProviderRequest> {
     const turnIndex = this.cursor;
-    const turn = this.resolveTurn(turnIndex);
-    const turnName = turn.name;
-    const context = this.buildTurnContext(turnIndex);
-
-    if (turn.expect) {
-      if (typeof turn.expect === "function") {
-        await turn.expect(request, context);
-      } else {
-        assertRequestMatchesExpectation(request, turn.expect, context);
-      }
-    }
-
+    const context = this.buildHandlerContext(turnIndex);
     const remainingPendingToolCalls = consumePendingToolCalls(this.pendingToolCalls, request.input);
+    const handlerResult = this.handler(request, context);
 
     this.cursor += 1;
 
     return {
       request,
-      turn,
+      handlerResult,
       turnIndex,
-      turnName,
       remainingPendingToolCalls,
     };
   }
@@ -266,8 +311,11 @@ export class MockAdapter extends AdapterBase {
     try {
       const mockRequest = providerRequest as MockProviderRequest;
       const output: OutputItem[] = [];
+      let stepCount = 0;
 
-      for (const [stepIndex, step] of mockRequest.turn.steps.entries()) {
+      for await (const step of mockRequest.handlerResult) {
+        stepCount += 1;
+
         switch (step.type) {
           case "warning":
             yield factory.responseWarning(step.message, step.code);
@@ -280,14 +328,14 @@ export class MockAdapter extends AdapterBase {
             });
             break;
           case "message": {
-            const item = createMessageFromStep(step, request, mockRequest.turnIndex, stepIndex);
-            yield* emitMessage(factory, item, resolveStepStreamOptions(this.defaultStream, step.stream, "message"));
+            const item = createMessageFromStep(step, request, mockRequest.turnIndex, stepCount - 1);
+            yield* emitMessage(factory, item, resolveStepStreamOptions(undefined, step.stream, "message"));
             output.push(item);
             break;
           }
           case "reasoning": {
-            const item = createReasoningFromStep(step, request, mockRequest.turnIndex, stepIndex);
-            yield* emitReasoning(factory, item, resolveStepStreamOptions(this.defaultStream, step.stream, "reasoning"));
+            const item = createReasoningFromStep(step, request, mockRequest.turnIndex, stepCount - 1);
+            yield* emitReasoning(factory, item, resolveStepStreamOptions(undefined, step.stream, "reasoning"));
             output.push(item);
             break;
           }
@@ -297,30 +345,37 @@ export class MockAdapter extends AdapterBase {
               factory,
               item,
               step.streamArguments ?? true,
-              resolveStepStreamOptions(this.defaultStream, step.stream, "tool_call"),
+              resolveStepStreamOptions(undefined, step.stream, "tool_call"),
             );
             output.push(item);
             break;
           }
           case "output": {
             assertSupportedOutputItem(step.item);
-            const item = attachSyntheticId(step.item, request, mockRequest.turnIndex, stepIndex);
-            yield* emitOutputItem(factory, item, resolveStepStreamOptions(this.defaultStream, step.stream, "output"));
+            const item = attachSyntheticId(step.item, request, mockRequest.turnIndex, stepCount - 1);
+            yield* emitOutputItem(factory, item, resolveStepStreamOptions(undefined, step.stream, "output"));
             output.push(item);
             break;
           }
           case "complete": {
-            const response = this.finalizeTurn(request, factory, mockRequest, output, step);
+            const response = this.finalizeTurn(request, factory, mockRequest, output, step, stepCount);
             yield factory.responseCompleted(response);
             return;
           }
           case "error": {
             yield factory.responseWarning(step.message, step.code);
-            const response = this.finalizeTurn(request, factory, mockRequest, output, {
-              type: "complete",
-              stopReason: step.stopReason ?? "error",
-              providerMetadata: step.providerMetadata,
-            });
+            const response = this.finalizeTurn(
+              request,
+              factory,
+              mockRequest,
+              output,
+              {
+                type: "complete",
+                stopReason: step.stopReason ?? "error",
+                providerMetadata: step.providerMetadata,
+              },
+              stepCount,
+            );
             yield factory.responseCompleted(response);
             return;
           }
@@ -332,9 +387,16 @@ export class MockAdapter extends AdapterBase {
         }
       }
 
-      const response = this.finalizeTurn(request, factory, mockRequest, output, {
-        type: "complete",
-      });
+      const response = this.finalizeTurn(
+        request,
+        factory,
+        mockRequest,
+        output,
+        {
+          type: "complete",
+        },
+        stepCount,
+      );
       yield factory.responseCompleted(response);
     } finally {
       this.activeStream = false;
@@ -347,6 +409,7 @@ export class MockAdapter extends AdapterBase {
     mockRequest: MockProviderRequest,
     output: OutputItem[],
     completion: MockCompleteStep,
+    stepCount: number,
   ) {
     const replay = completion.replay ?? replayFromOutput(output);
     const toolCalls = output.filter((item): item is ToolCallItem => item.type === "tool_call");
@@ -355,7 +418,6 @@ export class MockAdapter extends AdapterBase {
     this.pendingToolCalls = [...mockRequest.remainingPendingToolCalls, ...toolCalls];
     this.history.push({
       turnIndex: mockRequest.turnIndex,
-      turnName: mockRequest.turnName,
       requestId: request.requestId,
       replay,
       toolCalls,
@@ -372,8 +434,7 @@ export class MockAdapter extends AdapterBase {
         auxiliary: completion.auxiliary,
         providerMetadata: {
           turnIndex: mockRequest.turnIndex,
-          turnName: mockRequest.turnName,
-          scriptedSteps: mockRequest.turn.steps.length,
+          stepCount,
           pendingToolCallIds: this.pendingToolCalls.map((item) => item.id),
           historyLength: this.history.length,
           ...this.providerMetadata,
@@ -387,28 +448,7 @@ export class MockAdapter extends AdapterBase {
     );
   }
 
-  private resolveTurn(turnIndex: number): MockTurn {
-    const turn = this.turns[turnIndex];
-    if (turn !== undefined) {
-      return turn;
-    }
-
-    const lastTurn = this.turns.at(-1);
-    if (this.onExhausted === "repeat-last" && lastTurn !== undefined) {
-      return lastTurn;
-    }
-
-    if (this.onExhausted === "complete-empty") {
-      return { name: "exhausted", steps: [] };
-    }
-
-    throw new AIRequestError(
-      `MockAdapter turn ${turnIndex + 1} requested, but only ${this.turns.length} turn(s) were scripted`,
-      "MOCK_TURN_EXHAUSTED",
-    );
-  }
-
-  private buildTurnContext(turnIndex: number): MockTurnContext {
+  private buildHandlerContext(turnIndex: number): MockHandlerContext {
     return {
       turnIndex,
       previousReplay: this.previousReplay.map(cloneItem),
@@ -419,6 +459,46 @@ export class MockAdapter extends AdapterBase {
         toolCalls: record.toolCalls.map(cloneItem),
       })),
     };
+  }
+}
+
+export function withMockStreaming(handler: MockStaticHandler, options: MockTextStreamOptions): MockHandler {
+  const defaults = resolveMockTextStreamOptions(options, "mock stream wrapper");
+  if (!defaults) {
+    throw new AIRequestError("mock stream wrapper requires streaming options", "MOCK_STREAM_CONFIG_INVALID");
+  }
+
+  return async function* streamWrappedHandler(
+    request: NormalizedRequest,
+    context: MockHandlerContext,
+  ): AsyncIterable<MockStep> {
+    const source = await handler(request, context);
+
+    for await (const step of source) {
+      yield applyDefaultStreaming(step, defaults);
+    }
+  };
+}
+
+function applyDefaultStreaming(step: MockStep, defaults: ResolvedMockTextStreamOptions): MockStep {
+  switch (step.type) {
+    case "message":
+    case "reasoning":
+    case "tool_call":
+    case "output":
+      if (step.stream !== undefined) {
+        return step;
+      }
+      return {
+        ...step,
+        stream: {
+          charsPerSecond: defaults.charsPerSecond,
+          chunkSize: defaults.chunkSize,
+          initialDelayMs: defaults.initialDelayMs,
+        },
+      };
+    default:
+      return step;
   }
 }
 
@@ -465,7 +545,10 @@ function normalizeBlocks(content: string | ContentBlock[]): ContentBlock[] {
 
 function assertSupportedOutputItem(item: OutputItem): void {
   if (item.type === "opaque") {
-    throw new AIRequestError("MockAdapter does not stream opaque output items; use complete.replay if needed", "MOCK_OPAQUE_OUTPUT");
+    throw new AIRequestError(
+      "MockAdapter does not stream opaque output items; use complete.replay if needed",
+      "MOCK_OPAQUE_OUTPUT",
+    );
   }
 }
 
@@ -680,73 +763,10 @@ function resolveStopReason(output: OutputItem[]): StopReason {
 
 function consumePendingToolCalls(pending: readonly ToolCallItem[], input: readonly InputItem[]): ToolCallItem[] {
   const fulfilledIds = new Set(
-    input
-      .filter((item): item is ToolResultItem => item.type === "tool_result")
-      .map((item) => item.callId),
+    input.filter((item): item is ToolResultItem => item.type === "tool_result").map((item) => item.callId),
   );
 
   return pending.filter((item) => !fulfilledIds.has(item.id)).map(cloneItem);
-}
-
-function assertRequestMatchesExpectation(
-  request: NormalizedRequest,
-  expectation: MockRequestExpectation,
-  context: MockTurnContext,
-): void {
-  const prefix = `MockAdapter turn ${context.turnIndex + 1} expectation failed`;
-
-  if (expectation.minItems !== undefined && request.input.length < expectation.minItems) {
-    throw new AIRequestError(`${prefix}: expected at least ${expectation.minItems} input item(s)`, "MOCK_EXPECTATION_FAILED");
-  }
-
-  if (expectation.maxItems !== undefined && request.input.length > expectation.maxItems) {
-    throw new AIRequestError(`${prefix}: expected at most ${expectation.maxItems} input item(s)`, "MOCK_EXPECTATION_FAILED");
-  }
-
-  if (expectation.tools === "present" && (!request.tools || request.tools.length === 0)) {
-    throw new AIRequestError(`${prefix}: expected tools to be present`, "MOCK_EXPECTATION_FAILED");
-  }
-
-  if (expectation.tools === "absent" && request.tools && request.tools.length > 0) {
-    throw new AIRequestError(`${prefix}: expected tools to be absent`, "MOCK_EXPECTATION_FAILED");
-  }
-
-  if (expectation.toolChoice === "present" && request.toolChoice === undefined) {
-    throw new AIRequestError(`${prefix}: expected toolChoice to be present`, "MOCK_EXPECTATION_FAILED");
-  }
-
-  if (expectation.toolChoice === "absent" && request.toolChoice !== undefined) {
-    throw new AIRequestError(`${prefix}: expected toolChoice to be absent`, "MOCK_EXPECTATION_FAILED");
-  }
-
-  if (expectation.requireReplayFromPreviousTurn && context.previousReplay.length > 0) {
-    assertReplayIncluded(request.input, context.previousReplay, prefix);
-  }
-
-  if (expectation.requireToolResultsForPendingCalls && context.pendingToolCalls.length > 0) {
-    const toolResultIds = new Set(
-      request.input
-        .filter((item): item is ToolResultItem => item.type === "tool_result")
-        .map((item) => item.callId),
-    );
-
-    for (const call of context.pendingToolCalls) {
-      if (!toolResultIds.has(call.id)) {
-        throw new AIRequestError(
-          `${prefix}: expected tool_result for pending tool call "${call.id}"`,
-          "MOCK_EXPECTATION_FAILED",
-        );
-      }
-    }
-  }
-
-  if (expectation.items && expectation.items.length > 0) {
-    if (expectation.ordered) {
-      assertOrderedItems(request.input, expectation.items, prefix);
-    } else {
-      assertUnorderedItems(request.input, expectation.items, prefix);
-    }
-  }
 }
 
 function assertReplayIncluded(input: readonly InputItem[], replay: readonly ReplayItem[], prefix: string): void {
@@ -757,13 +777,20 @@ function assertReplayIncluded(input: readonly InputItem[], replay: readonly Repl
     const target = fingerprintItem(replayItem);
     const foundIndex = fingerprints.indexOf(target, cursor);
     if (foundIndex === -1) {
-      throw new AIRequestError(`${prefix}: previous replay item was not carried into the next request`, "MOCK_EXPECTATION_FAILED");
+      throw new AIRequestError(
+        `${prefix}: previous replay item was not carried into the next request`,
+        "MOCK_EXPECTATION_FAILED",
+      );
     }
     cursor = foundIndex + 1;
   }
 }
 
-function assertOrderedItems(input: readonly InputItem[], expectations: readonly MockInputExpectation[], prefix: string): void {
+function assertOrderedItems(
+  input: readonly InputItem[],
+  expectations: readonly MockInputExpectation[],
+  prefix: string,
+): void {
   let cursor = 0;
 
   for (const expected of expectations) {
@@ -787,7 +814,11 @@ function assertOrderedItems(input: readonly InputItem[], expectations: readonly 
   }
 }
 
-function assertUnorderedItems(input: readonly InputItem[], expectations: readonly MockInputExpectation[], prefix: string): void {
+function assertUnorderedItems(
+  input: readonly InputItem[],
+  expectations: readonly MockInputExpectation[],
+  prefix: string,
+): void {
   for (const expected of expectations) {
     const matched = input.some((item) => matchesItemExpectation(item, expected));
     if (!matched) {
@@ -811,8 +842,7 @@ function matchesItemExpectation(item: InputItem, expected: MockInputExpectation)
   switch (item.type) {
     case "message":
       return (
-        (expected.role === undefined || item.role === expected.role) &&
-        matchesText(item.content, expected.textIncludes)
+        (expected.role === undefined || item.role === expected.role) && matchesText(item.content, expected.textIncludes)
       );
     case "reasoning":
       return (

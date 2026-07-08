@@ -185,9 +185,7 @@ describe("OllamaAdapter - request building", () => {
       },
     });
 
-    await collectStream(
-      adapter.stream(makeRequest({ instructions: "Be helpful" })),
-    );
+    await collectStream(adapter.stream(makeRequest({ instructions: "Be helpful" })));
 
     expect(capturedBody).toBeDefined();
     const body = JSON.parse(capturedBody!);
@@ -241,11 +239,7 @@ describe("OllamaAdapter - request building", () => {
       },
     });
 
-    await collectStream(
-      adapter.stream(
-        makeRequest({ temperature: 0.5, maxOutputTokens: 200 }),
-      ),
-    );
+    await collectStream(adapter.stream(makeRequest({ temperature: 0.5, maxOutputTokens: 200 })));
 
     const body = JSON.parse(capturedBody!);
     expect(body.options.temperature).toBe(0.5);
@@ -342,7 +336,9 @@ describe("OllamaAdapter - request building", () => {
     const round1 = await collectStream(
       round1Adapter.stream(
         makeRequest({
-          input: [{ type: "message" as const, role: "user" as const, content: [{ type: "text" as const, text: "weather?" }] }],
+          input: [
+            { type: "message" as const, role: "user" as const, content: [{ type: "text" as const, text: "weather?" }] },
+          ],
         }),
       ),
     );

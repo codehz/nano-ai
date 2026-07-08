@@ -322,7 +322,9 @@ describe("ResponsesAdapter - request building", () => {
     const round1 = await collectStream(
       round1Adapter.stream(
         makeRequest({
-          input: [{ type: "message" as const, role: "user" as const, content: [{ type: "text" as const, text: "Hello" }] }],
+          input: [
+            { type: "message" as const, role: "user" as const, content: [{ type: "text" as const, text: "Hello" }] },
+          ],
         }),
       ),
     );
@@ -428,7 +430,7 @@ describe("ResponsesAdapter - error handling", () => {
 
   it("should emit warning for malformed SSE data", async () => {
     const sse = [
-      'event: response.output_item.added\ndata: {bad json}\n\n',
+      "event: response.output_item.added\ndata: {bad json}\n\n",
       'event: response.output_item.added\ndata: {"item":{"id":"m1","type":"message"}}\n\n',
       'event: response.output_text.done\ndata: {"item_id":"m1","text":"Hi"}\n\n',
       `event: response.completed\ndata: ${JSON.stringify({

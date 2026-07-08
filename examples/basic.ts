@@ -10,39 +10,31 @@
  * 该示例使用 MockAdapter，便于直接运行并观察 canonical API 的事件形态。
  */
 
-import { MockAdapter, collectStream, createAIClient, textBlock } from "../src/index.js";
+import { MockAdapter, collectStream, createAIClient, textBlock, withMockStreaming } from "../src/index.js";
 
 // ── 1. 创建 adapter ────────────────────────────────────────
 const adapter = new MockAdapter({
-  turns: [
-    {
-      name: "stream-capital-answer",
-      expect: {
-        ordered: true,
-        items: [{ type: "message", role: "user", textIncludes: "capital of France" }],
-      },
-      steps: [
-        { type: "message", content: "Paris is the capital of France." },
-        { type: "warning", message: "mock backend: scripted response", code: "MOCK_DEMO" },
-        { type: "auxiliary", usage: { inputTokens: 12, outputTokens: 7, totalTokens: 19 } },
-      ],
+  handler: withMockStreaming(
+    async function* (_request, context) {
+      if (context.turnIndex === 0) {
+        yield { type: "message", content: "Paris is the capital of France." };
+        yield { type: "warning", message: "mock backend: scripted response", code: "MOCK_DEMO" };
+        yield { type: "auxiliary", usage: { inputTokens: 12, outputTokens: 7, totalTokens: 19 } };
+        return;
+      }
+
+      yield { type: "message", content: "2 + 2 = 4." };
+      yield {
+        type: "complete",
+        usage: { inputTokens: 10, outputTokens: 6, totalTokens: 16 },
+        providerMetadata: { scenario: "basic-example" },
+      };
     },
     {
-      name: "collect-math-answer",
-      expect: {
-        ordered: true,
-        items: [{ type: "message", role: "user", textIncludes: "What is 2+2?" }],
-      },
-      steps: [
-        { type: "message", content: "2 + 2 = 4." },
-        {
-          type: "complete",
-          usage: { inputTokens: 10, outputTokens: 6, totalTokens: 16 },
-          providerMetadata: { scenario: "basic-example" },
-        },
-      ],
+      chunkSize: 1,
+      charsPerSecond: 24,
     },
-  ],
+  ),
 });
 
 // ── 2. 创建 client ─────────────────────────────────────────
@@ -69,7 +61,6 @@ async function main() {
 
   console.log("\n--- Streaming events ---\n");
 
-  // 逐事件消费（适用于实时 UI 更新）
   for await (const event of stream) {
     switch (event.type) {
       case "response.started":
@@ -93,7 +84,6 @@ async function main() {
     }
   }
 
-  // ── 4. 或用 collectStream 直接拿最终结果 ──────────────
   const response = await collectStream(
     client.stream({
       instructions: "You are a helpful assistant.",
