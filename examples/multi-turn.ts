@@ -3,19 +3,58 @@
  *
  * 展示调用方如何保留 response.replay 并在下一轮带回。
  * 这是唯一推荐的多轮方式 — 库不托管会话状态。
+ *
+ * 该示例使用 MockAdapter，直接验证 replay 续接是否正确。
  */
 
-import { createAIClient, collectStream, ResponsesAdapter, textBlock } from "../src/index.js";
+import { MockAdapter, collectStream, createAIClient, textBlock } from "../src/index.js";
 
 import type { InputItem } from "../src/index.js";
 
-const adapter = new ResponsesAdapter({
-  apiKey: process.env.OPENAI_API_KEY ?? "sk-your-key-here",
+const adapter = new MockAdapter({
+  turns: [
+    {
+      name: "introduce-name",
+      expect: {
+        ordered: true,
+        items: [{ type: "message", role: "user", textIncludes: "My name is Alice." }],
+      },
+      steps: [{ type: "message", content: "Nice to meet you, Alice." }],
+    },
+    {
+      name: "recall-name",
+      expect: {
+        ordered: true,
+        requireReplayFromPreviousTurn: true,
+        items: [
+          { type: "message", role: "user", textIncludes: "My name is Alice." },
+          { type: "message", role: "assistant", textIncludes: "Nice to meet you, Alice." },
+          { type: "message", role: "user", textIncludes: "What's my name?" },
+        ],
+      },
+      steps: [{ type: "message", content: "Your name is Alice." }],
+    },
+    {
+      name: "tell-joke",
+      expect: {
+        ordered: true,
+        requireReplayFromPreviousTurn: true,
+        items: [
+          { type: "message", role: "user", textIncludes: "My name is Alice." },
+          { type: "message", role: "assistant", textIncludes: "Nice to meet you, Alice." },
+          { type: "message", role: "user", textIncludes: "What's my name?" },
+          { type: "message", role: "assistant", textIncludes: "Your name is Alice." },
+          { type: "message", role: "user", textIncludes: "Tell me a joke." },
+        ],
+      },
+      steps: [{ type: "message", content: "Why do programmers confuse Halloween and Christmas? Because OCT 31 === DEC 25." }],
+    },
+  ],
 });
 
 const client = createAIClient({
   adapter,
-  model: "gpt-4o",
+  model: "mock-model",
 });
 
 async function main() {
