@@ -14,7 +14,7 @@ export type ValidationIssue = {
   message: string;
 };
 
-const MESSAGE_ROLES = new Set(["user", "assistant", "system", "developer"]);
+const MESSAGE_ROLES = new Set(["user", "assistant"]);
 const REASONING_VISIBILITIES = new Set(["full", "summary", "redacted", "opaque"]);
 const TOOL_RESULT_OUTCOMES = new Set(["success", "error", "rejected"]);
 const INCLUDE_MODES = new Set(["off", "best_effort"]);
@@ -72,6 +72,24 @@ function validateContentArray(content: unknown, field: string, issues: Validatio
 
   for (let i = 0; i < content.length; i++) {
     validateContentBlock(content[i], `${field}[${i}]`, issues);
+  }
+}
+
+function validateInstructionArray(content: unknown, field: string, issues: ValidationIssue[]): void {
+  if (!Array.isArray(content)) {
+    pushIssue(issues, field, "INSTRUCTIONS_INVALID", `${field} must be an InstructionBlock[]`);
+    return;
+  }
+
+  for (let i = 0; i < content.length; i++) {
+    const block = content[i];
+    const blockField = `${field}[${i}]`;
+    validateContentBlock(block, blockField, issues);
+
+    if (!isRecord(block) || typeof block.type !== "string") continue;
+    if (block.type !== "text" && block.type !== "json") {
+      pushIssue(issues, blockField, "INSTRUCTIONS_INVALID", `${blockField} only supports text/json blocks`);
+    }
   }
 }
 
@@ -219,9 +237,9 @@ export function validateRequest(request: AIRequest): ValidationIssue[] {
     if (typeof request.instructions === "string") {
       // no-op
     } else if (Array.isArray(request.instructions)) {
-      validateContentArray(request.instructions, "instructions", issues, "INSTRUCTIONS_INVALID");
+      validateInstructionArray(request.instructions, "instructions", issues);
     } else {
-      pushIssue(issues, "instructions", "INSTRUCTIONS_INVALID", "instructions must be a string or ContentBlock[]");
+      pushIssue(issues, "instructions", "INSTRUCTIONS_INVALID", "instructions must be a string or InstructionBlock[]");
     }
   }
 

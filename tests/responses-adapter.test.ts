@@ -229,6 +229,24 @@ describe("ResponsesAdapter - request building", () => {
     expect(body?.instructions).toBe("Be helpful.");
   });
 
+  it("should serialize instruction blocks when provided", async () => {
+    const { captured, fetch } = captureRequest();
+    const adapter = new ResponsesAdapter({ apiKey: "test-key", fetch });
+
+    await collectStream(
+      adapter.stream(
+        makeRequest({
+          instructions: [
+            { type: "text", text: "Be helpful." },
+            { type: "json", json: { format: "json" } },
+          ],
+        }),
+      ),
+    );
+    const body = captured.current as Record<string, unknown> | null;
+    expect(body?.instructions).toBe('Be helpful.\n{"format":"json"}');
+  });
+
   it("should include metadata when provided", async () => {
     const { captured, fetch } = captureRequest();
     const adapter = new ResponsesAdapter({ apiKey: "test-key", fetch });

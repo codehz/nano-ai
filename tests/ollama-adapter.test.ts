@@ -193,6 +193,33 @@ describe("OllamaAdapter - request building", () => {
     expect(body.messages[0]!.content).toBe("Be helpful");
   });
 
+  it("should serialize instruction blocks as a system message", async () => {
+    let capturedBody: string | undefined;
+
+    const adapter = new OllamaAdapter({
+      fetch: async (_url, init) => {
+        capturedBody = init.body as string;
+        return ndjsonResponse(
+          `{"model":"llama3.2","created_at":"2024-01-01T00:00:00Z","message":{"role":"assistant","content":"OK"},"done":true,"done_reason":"stop"}\n`,
+        );
+      },
+    });
+
+    await collectStream(
+      adapter.stream(
+        makeRequest({
+          instructions: [
+            { type: "text", text: "Be helpful" },
+            { type: "json", json: { format: "json" } },
+          ],
+        }),
+      ),
+    );
+
+    const body = JSON.parse(capturedBody!);
+    expect(body.messages[0]!.content).toBe('Be helpful\n{"format":"json"}');
+  });
+
   it("should include tools in request", async () => {
     let capturedBody: string | undefined;
 

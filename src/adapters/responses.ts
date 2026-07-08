@@ -51,7 +51,7 @@ type ResponsesAPIRequest = {
 };
 
 type ResponsesInputItem =
-  | { type: "message"; role: "user" | "assistant" | "system" | "developer"; content: string }
+  | { type: "message"; role: "user" | "assistant"; content: string }
   | { type: "message"; role: "assistant"; content: ResponsesContentBlock[] }
   | { type: "function_call"; id: string; name: string; arguments: string; call_id?: string }
   | { type: "function_call_output"; call_id: string; output: string }
@@ -104,7 +104,7 @@ function ensureResponsesReasoningBlocks(
   });
 }
 
-function instructionsToResponsesText(instructions: string | import("../index.js").ContentBlock[]): string {
+function instructionsToResponsesText(instructions: string | import("../index.js").InstructionBlock[]): string {
   return typeof instructions === "string"
     ? instructions
     : contentBlocksToText(ensureResponsesTextBlocks(instructions, "instructions"));

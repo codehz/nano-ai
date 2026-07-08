@@ -279,14 +279,7 @@ export class ChatCompletionsAdapter extends AdapterBase {
     for (const item of request.input) {
       switch (item.type) {
         case "message": {
-          const role =
-            item.role === "developer"
-              ? "system"
-              : item.role === "system"
-                ? "system"
-                : item.role === "user"
-                  ? "user"
-                  : "assistant";
+          const role = item.role;
           const text = contentBlocksToChatText(item.content, `input message (${item.role}) content`);
           messages.push({ role, content: text || null });
           break;
