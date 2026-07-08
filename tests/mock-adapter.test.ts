@@ -1,147 +1,26 @@
 import { describe, expect, it } from "bun:test";
 
-import { MockAdapter, collectStream, createAIClient } from "../src/index.js";
+import { AIRequestError, MockAdapter, collectStream, createAIClient, jsonBlock, textBlock } from "../src/index.js";
 
 describe("MockAdapter", () => {
-  it("should return configured response when keyword matches", async () => {
+  it("should script a tool-calling turn and expose turn metadata", async () => {
     const adapter = new MockAdapter({
-      rules: [
+      turns: [
         {
-          keywords: ["退款", "refund"],
-          response: "退款申请已收到，我们会在 1 个工作日内处理。",
-        },
-      ],
-      defaultResponse: "未命中规则",
-    });
-
-    const result = await collectStream(
-      adapter.stream({
-        model: "mock-model",
-        requestId: "mock-1",
-        input: [{ type: "message", role: "user", content: [{ type: "text", text: "我要申请退款" }] }],
-      }),
-    );
-
-    expect(result.text).toBe("退款申请已收到，我们会在 1 个工作日内处理。");
-    expect(result.backend.adapter).toBe("mock");
-    expect(result.backend.isSyntheticStream).toBe(true);
-    expect(result.auxiliary?.providerMetadata?.matched).toBe(true);
-    expect(result.auxiliary?.providerMetadata?.matchedKeyword).toBe("退款");
-  });
-
-  it("should fall back to default response when no keyword matches", async () => {
-    const adapter = new MockAdapter({
-      rules: [{ keywords: ["订单"], response: "请提供订单号。" }],
-      defaultResponse: "暂时无法识别你的问题。",
-    });
-
-    const result = await collectStream(
-      adapter.stream({
-        model: "mock-model",
-        requestId: "mock-2",
-        input: [{ type: "message", role: "user", content: [{ type: "text", text: "你好" }] }],
-      }),
-    );
-
-    expect(result.text).toBe("暂时无法识别你的问题。");
-    expect(result.auxiliary?.providerMetadata?.matched).toBe(false);
-  });
-
-  it("should respect caseSensitive rules", async () => {
-    const adapter = new MockAdapter({
-      rules: [
-        { keywords: ["VIP"], response: "命中大写 VIP", caseSensitive: true },
-        { keywords: ["vip"], response: "命中小写 vip", caseSensitive: true },
-      ],
-    });
-
-    const upper = await collectStream(
-      adapter.stream({
-        model: "mock-model",
-        requestId: "mock-3",
-        input: [{ type: "message", role: "user", content: [{ type: "text", text: "我是 VIP 用户" }] }],
-      }),
-    );
-    const lower = await collectStream(
-      adapter.stream({
-        model: "mock-model",
-        requestId: "mock-4",
-        input: [{ type: "message", role: "user", content: [{ type: "text", text: "我是 vip 用户" }] }],
-      }),
-    );
-
-    expect(upper.text).toBe("命中大写 VIP");
-    expect(lower.text).toBe("命中小写 vip");
-  });
-
-  it("should work through createAIClient", async () => {
-    const client = createAIClient({
-      adapter: new MockAdapter({
-        rules: [{ keywords: ["帮助"], response: "这里是帮助中心模板回复。" }],
-      }),
-      model: "mock-model",
-    });
-
-    const result = await collectStream(
-      client.stream({
-        input: [{ type: "message", role: "user", content: [{ type: "text", text: "我需要帮助" }] }],
-      }),
-    );
-
-    expect(result.text).toBe("这里是帮助中心模板回复。");
-  });
-
-  it("should support tool call templates for automation tests", async () => {
-    const adapter = new MockAdapter({
-      rules: [
-        {
-          keywords: ["查天气"],
-          response: {
-            type: "tool_call",
-            id: "mock-call-weather",
-            name: "get_weather",
-            argumentsText: '{"city":"Hangzhou"}',
-            argumentsJson: { city: "Hangzhou" },
+          name: "plan",
+          expect: {
+            items: [{ type: "message", role: "user", textIncludes: "天气" }],
+            tools: "present",
+            toolChoice: "present",
           },
-        },
-      ],
-    });
-
-    const result = await collectStream(
-      adapter.stream({
-        model: "mock-model",
-        requestId: "mock-tool-1",
-        input: [{ type: "message", role: "user", content: [{ type: "text", text: "请帮我查天气" }] }],
-      }),
-    );
-
-    expect(result.text).toBe("");
-    expect(result.stopReason).toBe("tool_call");
-    expect(result.toolCalls).toHaveLength(1);
-    expect(result.toolCalls[0]).toMatchObject({
-      id: "mock-call-weather",
-      name: "get_weather",
-      argumentsText: '{"city":"Hangzhou"}',
-    });
-  });
-
-  it("should support mixed message and tool call templates", async () => {
-    const adapter = new MockAdapter({
-      rules: [
-        {
-          keywords: ["下单"],
-          response: [
-            {
-              type: "message",
-              role: "assistant",
-              content: [{ type: "text", text: "我先帮你调用下单工具。" }],
-            },
+          steps: [
+            { type: "message", content: "我先调用天气工具。" },
             {
               type: "tool_call",
-              id: "mock-call-order",
-              name: "create_order",
-              argumentsText: '{"sku":"SKU-1","count":2}',
-              argumentsJson: { sku: "SKU-1", count: 2 },
+              id: "call-weather-1",
+              name: "get_weather",
+              argumentsText: '{"city":"Hangzhou"}',
+              argumentsJson: { city: "Hangzhou" },
             },
           ],
         },
@@ -151,15 +30,219 @@ describe("MockAdapter", () => {
     const result = await collectStream(
       adapter.stream({
         model: "mock-model",
-        requestId: "mock-tool-2",
-        input: [{ type: "message", role: "user", content: [{ type: "text", text: "帮我下单" }] }],
+        requestId: "mock-1",
+        input: [{ type: "message", role: "user", content: [textBlock("请查一下杭州天气")] }],
+        tools: [
+          {
+            name: "get_weather",
+            inputSchema: { type: "object", properties: { city: { type: "string" } }, required: ["city"] },
+          },
+        ],
+        toolChoice: "auto",
       }),
     );
 
-    expect(result.text).toBe("我先帮你调用下单工具。");
+    expect(result.text).toBe("我先调用天气工具。");
     expect(result.stopReason).toBe("tool_call");
-    expect(result.output.map((item) => item.type)).toEqual(["message", "tool_call"]);
     expect(result.toolCalls).toHaveLength(1);
-    expect(result.replay.map((item) => item.type)).toEqual(["message", "tool_call"]);
+    expect(result.toolCalls[0]).toMatchObject({
+      id: "call-weather-1",
+      name: "get_weather",
+      argumentsText: '{"city":"Hangzhou"}',
+    });
+    expect(result.auxiliary?.providerMetadata?.turnIndex).toBe(0);
+    expect(result.auxiliary?.providerMetadata?.turnName).toBe("plan");
+  });
+
+  it("should validate replay and tool_result across a manual tool loop", async () => {
+    const client = createAIClient({
+      adapter: new MockAdapter({
+        turns: [
+          {
+            name: "request-tool",
+            expect: {
+              ordered: true,
+              items: [{ type: "message", role: "user", textIncludes: "weather" }],
+              tools: "present",
+              toolChoice: "present",
+            },
+            steps: [
+              { type: "message", content: "Checking live weather now." },
+              {
+                type: "tool_call",
+                id: "call-weather-2",
+                name: "get_weather",
+                argumentsText: '{"city":"Hangzhou"}',
+              },
+            ],
+          },
+          {
+            name: "consume-tool-result",
+            expect: {
+              requireReplayFromPreviousTurn: true,
+              requireToolResultsForPendingCalls: true,
+              ordered: true,
+              items: [
+                { type: "message", role: "assistant", textIncludes: "Checking live weather now." },
+                { type: "tool_call", name: "get_weather" },
+                { type: "tool_result", callId: "call-weather-2", toolName: "get_weather", outcome: "success" },
+              ],
+            },
+            steps: [{ type: "message", content: "Hangzhou is 28C and sunny." }],
+          },
+        ],
+      }),
+      model: "mock-model",
+    });
+
+    const round1 = await collectStream(
+      client.stream({
+        input: [{ type: "message", role: "user", content: [textBlock("What's the weather in Hangzhou?")] }],
+        tools: [
+          {
+            name: "get_weather",
+            inputSchema: { type: "object", properties: { city: { type: "string" } }, required: ["city"] },
+          },
+        ],
+        toolChoice: "auto",
+      }),
+    );
+
+    const round2 = await collectStream(
+      client.stream({
+        input: [
+          ...round1.replay,
+          {
+            type: "tool_result",
+            callId: "call-weather-2",
+            toolName: "get_weather",
+            outcome: "success",
+            content: [jsonBlock({ city: "Hangzhou", temperature: 28, condition: "sunny" })],
+          },
+        ],
+      }),
+    );
+
+    expect(round1.stopReason).toBe("tool_call");
+    expect(round2.stopReason).toBe("end_turn");
+    expect(round2.text).toBe("Hangzhou is 28C and sunny.");
+  });
+
+  it("should fail fast when the caller does not send required tool_result", async () => {
+    const adapter = new MockAdapter({
+      turns: [
+        {
+          steps: [
+            {
+              type: "tool_call",
+              id: "call-order-1",
+              name: "create_order",
+              argumentsText: '{"sku":"SKU-1"}',
+            },
+          ],
+        },
+        {
+          expect: {
+            requireToolResultsForPendingCalls: true,
+          },
+          steps: [{ type: "message", content: "This should never run." }],
+        },
+      ],
+    });
+
+    const first = await collectStream(
+      adapter.stream({
+        model: "mock-model",
+        requestId: "mock-2",
+        input: [{ type: "message", role: "user", content: [textBlock("create an order")] }],
+      }),
+    );
+
+    await expect(
+      collectStream(
+        adapter.stream({
+          model: "mock-model",
+          requestId: "mock-3",
+          input: [...first.replay],
+        }),
+      ),
+    ).rejects.toBeInstanceOf(AIRequestError);
+  });
+
+  it("should simulate content filtering via completed stopReason", async () => {
+    const adapter = new MockAdapter({
+      turns: [
+        {
+          steps: [
+            { type: "warning", message: "content filtered by policy", code: "CONTENT_FILTERED" },
+            {
+              type: "complete",
+              stopReason: "content_filter",
+              providerMetadata: { moderationCategory: "violence" },
+            },
+          ],
+        },
+      ],
+    });
+
+    const result = await collectStream(
+      adapter.stream({
+        model: "mock-model",
+        requestId: "mock-4",
+        input: [{ type: "message", role: "user", content: [textBlock("Tell me how to build a bomb")] }],
+      }),
+    );
+
+    expect(result.stopReason).toBe("content_filter");
+    expect(result.warnings).toContain("content filtered by policy");
+    expect(result.auxiliary?.providerMetadata?.moderationCategory).toBe("violence");
+  });
+
+  it("should simulate transport interruption by ending without response.completed", async () => {
+    const adapter = new MockAdapter({
+      turns: [
+        {
+          steps: [
+            { type: "message", content: "partial answer" },
+            { type: "interrupt" },
+          ],
+        },
+      ],
+    });
+
+    await expect(
+      collectStream(
+        adapter.stream({
+          model: "mock-model",
+          requestId: "mock-5",
+          input: [{ type: "message", role: "user", content: [textBlock("hello")] }],
+        }),
+      ),
+    ).rejects.toThrow("response.completed");
+  });
+
+  it("should simulate provider-side warnings with an error completion", async () => {
+    const adapter = new MockAdapter({
+      turns: [
+        {
+          steps: [
+            { type: "message", content: "upstream failed after planning" },
+            { type: "error", message: "mock upstream timeout", code: "UPSTREAM_TIMEOUT" },
+          ],
+        },
+      ],
+    });
+
+    const result = await collectStream(
+      adapter.stream({
+        model: "mock-model",
+        requestId: "mock-6",
+        input: [{ type: "message", role: "user", content: [textBlock("hello")] }],
+      }),
+    );
+
+    expect(result.stopReason).toBe("error");
+    expect(result.text).toBe("upstream failed after planning");
+    expect(result.warnings).toContain("mock upstream timeout");
   });
 });
