@@ -17,9 +17,7 @@
 import type {
   AIStreamEvent,
   AIResponse,
-  ContentBlock,
   MessageItem,
-  ReasoningItem,
   ToolCallItem,
   OutputItem,
   Usage,
@@ -29,26 +27,9 @@ import type {
   StopReason,
 } from "../types/index.js";
 
-// ── 内部 pending item 状态 ────────────────────────────────────
-
-interface PendingMessage {
-  role: "assistant";
-  texts: string[];
-}
-
-interface PendingReasoning {
-  visibility: ReasoningItem["visibility"];
-  blocks: ContentBlock[];
-}
-
-interface PendingToolCall {
-  name: string;
-  argsParts: string[];
-}
-
 // ── 聚合器状态 ────────────────────────────────────────────────
 
-interface AggregatorState {
+export interface AggregatorState {
   responseId?: string;
   model?: string;
   backendInfo?: { kind: BackendTrace["adapter"]; isSynthetic: boolean };
@@ -57,16 +38,11 @@ interface AggregatorState {
   billing?: BillingInfo;
   auxiliary: AuxiliaryInfo;
   warnings: string[];
-
-  pendingMessages: Map<string, PendingMessage>;
-  pendingReasonings: Map<string, PendingReasoning>;
-  pendingToolCalls: Map<string, PendingToolCall>;
-
-  /** 已完成 item 的 id 列表，保持输出顺序 */
-  outputOrder: string[];
-  completedMessages: Map<string, MessageItem>;
-  completedReasonings: Map<string, ReasoningItem>;
-  completedToolCalls: Map<string, ToolCallItem>;
+  warningSet: Set<string>;
+  output: OutputItem[];
+  textParts: string[];
+  toolCalls: ToolCallItem[];
+  lastEventType?: AIStreamEvent["type"];
 
   /** adapter 在 response.completed 中提供的 replay */
   replayFromAdapter?: import("../types/index.js").ReplayItem[];
@@ -75,17 +51,14 @@ interface AggregatorState {
   backendFromAdapter?: BackendTrace;
 }
 
-function createInitialState(): AggregatorState {
+export function createAggregatorState(): AggregatorState {
   return {
-    pendingMessages: new Map(),
-    pendingReasonings: new Map(),
-    pendingToolCalls: new Map(),
-    outputOrder: [],
-    completedMessages: new Map(),
-    completedReasonings: new Map(),
-    completedToolCalls: new Map(),
     auxiliary: {},
     warnings: [],
+    warningSet: new Set(),
+    output: [],
+    textParts: [],
+    toolCalls: [],
   };
 }
 
@@ -113,72 +86,21 @@ function handleResponseAuxiliary(state: AggregatorState, event: AIStreamEvent & 
   }
 }
 
-function handleMessageStarted(state: AggregatorState, event: AIStreamEvent & { type: "message.started" }): void {
-  state.pendingMessages.set(event.item.id, {
-    role: event.item.role,
-    texts: [],
-  });
-}
-
-function handleMessageDelta(state: AggregatorState, event: AIStreamEvent & { type: "message.delta" }): void {
-  const pending = state.pendingMessages.get(event.itemId);
-  if (pending) {
-    pending.texts.push(event.delta.text);
-  }
-}
-
 function handleMessageCompleted(state: AggregatorState, event: AIStreamEvent & { type: "message.completed" }): void {
-  const item = event.item;
-  const itemId = item.id ?? `msg-${state.outputOrder.length}`;
-  state.completedMessages.set(itemId, item);
-  state.outputOrder.push(itemId);
-  state.pendingMessages.delete(itemId);
-}
-
-function handleReasoningStarted(state: AggregatorState, event: AIStreamEvent & { type: "reasoning.started" }): void {
-  state.pendingReasonings.set(event.item.id, {
-    visibility: event.item.visibility,
-    blocks: [],
-  });
-}
-
-function handleReasoningDelta(state: AggregatorState, event: AIStreamEvent & { type: "reasoning.delta" }): void {
-  const pending = state.pendingReasonings.get(event.itemId);
-  if (pending) {
-    pending.blocks.push(event.delta);
-  }
+  state.output.push(event.item);
+  pushMessageText(state, event.item);
 }
 
 function handleReasoningCompleted(
   state: AggregatorState,
   event: AIStreamEvent & { type: "reasoning.completed" },
 ): void {
-  const item = event.item;
-  const stableId = item.id ?? `reason-${state.outputOrder.length}-${Date.now()}`;
-  state.completedReasonings.set(stableId, item);
-  state.outputOrder.push(stableId);
-  state.pendingReasonings.delete(item.id ?? "");
-}
-
-function handleToolCallStarted(state: AggregatorState, event: AIStreamEvent & { type: "tool_call.started" }): void {
-  state.pendingToolCalls.set(event.item.id, {
-    name: event.item.name,
-    argsParts: [],
-  });
-}
-
-function handleToolCallDelta(state: AggregatorState, event: AIStreamEvent & { type: "tool_call.delta" }): void {
-  const pending = state.pendingToolCalls.get(event.itemId);
-  if (pending && event.delta.argumentsText) {
-    pending.argsParts.push(event.delta.argumentsText);
-  }
+  state.output.push(event.item);
 }
 
 function handleToolCallCompleted(state: AggregatorState, event: AIStreamEvent & { type: "tool_call.completed" }): void {
-  const item = event.item;
-  state.completedToolCalls.set(item.id, item);
-  state.outputOrder.push(item.id);
-  state.pendingToolCalls.delete(item.id);
+  state.output.push(event.item);
+  state.toolCalls.push(event.item);
 }
 
 function handleResponseCompleted(state: AggregatorState, event: AIStreamEvent & { type: "response.completed" }): void {
@@ -205,37 +127,6 @@ function handleResponseCompleted(state: AggregatorState, event: AIStreamEvent & 
 // ── 从聚合状态构建最终 AIResponse ─────────────────────────────
 
 function buildResponse(state: AggregatorState): AIResponse {
-  // 按 outputOrder 组装 output
-  const output: OutputItem[] = [];
-  for (const id of state.outputOrder) {
-    const msg = state.completedMessages.get(id);
-    if (msg) {
-      output.push(msg);
-      continue;
-    }
-    const reason = state.completedReasonings.get(id);
-    if (reason) {
-      output.push(reason);
-      continue;
-    }
-    const tc = state.completedToolCalls.get(id);
-    if (tc) {
-      output.push(tc);
-      continue;
-    }
-  }
-
-  // 汇总 text
-  const text = output
-    .filter((item): item is MessageItem => item.type === "message")
-    .flatMap((m) => m.content)
-    .filter((b): b is ContentBlock & { type: "text" } => b.type === "text")
-    .map((b) => b.text)
-    .join("");
-
-  // toolCalls
-  const toolCalls = output.filter((item): item is ToolCallItem => item.type === "tool_call");
-
   // 合并 backend trace
   const backendFromResponse = state.backendFromAdapter;
   const backend: BackendTrace = {
@@ -249,10 +140,10 @@ function buildResponse(state: AggregatorState): AIResponse {
 
   return {
     id: state.responseIdFromAdapter ?? state.responseId,
-    output,
+    output: state.output,
     replay: state.replayFromAdapter ?? [],
-    text,
-    toolCalls,
+    text: state.textParts.join(""),
+    toolCalls: state.toolCalls,
     stopReason: state.stopReasonFromAdapter,
     usage: state.usage,
     billing: state.billing,
@@ -269,55 +160,50 @@ function buildResponse(state: AggregatorState): AIResponse {
  * 适用于测试和离线处理场景。
  */
 export function aggregateEvents(events: AIStreamEvent[]): AIResponse {
-  const state = createInitialState();
-
+  const state = createAggregatorState();
   for (const event of events) {
-    switch (event.type) {
-      case "response.started":
-        handleResponseStarted(state, event);
-        break;
-      case "response.warning":
-        handleResponseWarning(state, event);
-        break;
-      case "response.auxiliary":
-        handleResponseAuxiliary(state, event);
-        break;
-      case "message.started":
-        handleMessageStarted(state, event);
-        break;
-      case "message.delta":
-        handleMessageDelta(state, event);
-        break;
-      case "message.completed":
-        handleMessageCompleted(state, event);
-        break;
-      case "reasoning.started":
-        handleReasoningStarted(state, event);
-        break;
-      case "reasoning.delta":
-        handleReasoningDelta(state, event);
-        break;
-      case "reasoning.completed":
-        handleReasoningCompleted(state, event);
-        break;
-      case "tool_call.started":
-        handleToolCallStarted(state, event);
-        break;
-      case "tool_call.delta":
-        handleToolCallDelta(state, event);
-        break;
-      case "tool_call.completed":
-        handleToolCallCompleted(state, event);
-        break;
-      case "response.completed":
-        handleResponseCompleted(state, event);
-        break;
-    }
+    aggregateEvent(state, event);
   }
+  return finalizeAggregation(state);
+}
 
-  // 用 response.completed 中的 response 做最终构建
-  const lastEvent = events[events.length - 1];
-  if (!lastEvent || lastEvent.type !== "response.completed") {
+export function aggregateEvent(state: AggregatorState, event: AIStreamEvent): void {
+  state.lastEventType = event.type;
+
+  switch (event.type) {
+    case "response.started":
+      handleResponseStarted(state, event);
+      break;
+    case "response.warning":
+      handleResponseWarning(state, event);
+      break;
+    case "response.auxiliary":
+      handleResponseAuxiliary(state, event);
+      break;
+    case "message.started":
+    case "message.delta":
+    case "reasoning.started":
+    case "reasoning.delta":
+    case "tool_call.started":
+    case "tool_call.delta":
+      break;
+    case "message.completed":
+      handleMessageCompleted(state, event);
+      break;
+    case "reasoning.completed":
+      handleReasoningCompleted(state, event);
+      break;
+    case "tool_call.completed":
+      handleToolCallCompleted(state, event);
+      break;
+    case "response.completed":
+      handleResponseCompleted(state, event);
+      break;
+  }
+}
+
+export function finalizeAggregation(state: AggregatorState): AIResponse {
+  if (state.lastEventType !== "response.completed") {
     throw new Error("Stream must end with response.completed event to produce a valid AIResponse");
   }
 
@@ -342,8 +228,17 @@ function mergeAuxiliary(base: AuxiliaryInfo, patch: Partial<AuxiliaryInfo>): Aux
 
 function pushWarnings(state: AggregatorState, warnings: readonly string[]): void {
   for (const warning of warnings) {
-    if (!state.warnings.includes(warning)) {
+    if (!state.warningSet.has(warning)) {
+      state.warningSet.add(warning);
       state.warnings.push(warning);
+    }
+  }
+}
+
+function pushMessageText(state: AggregatorState, item: MessageItem): void {
+  for (const block of item.content) {
+    if (block.type === "text") {
+      state.textParts.push(block.text);
     }
   }
 }

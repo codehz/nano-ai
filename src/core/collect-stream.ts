@@ -6,14 +6,14 @@
  */
 
 import type { AIStreamEvent, AIResponse } from "../types/index.js";
-import { aggregateEvents } from "./aggregator.js";
+import { aggregateEvent, createAggregatorState, finalizeAggregation } from "./aggregator.js";
 
 export async function collectStream(stream: AsyncIterable<AIStreamEvent>): Promise<AIResponse> {
-  const events: AIStreamEvent[] = [];
+  const state = createAggregatorState();
 
   for await (const event of stream) {
-    events.push(event);
+    aggregateEvent(state, event);
   }
 
-  return aggregateEvents(events);
+  return finalizeAggregation(state);
 }
