@@ -406,7 +406,6 @@ export class OllamaAdapter extends AdapterBase {
 
     try {
       while (true) {
-        // oxlint-disable-next-line no-await-in-loop
         const { done, value } = await reader.read();
         if (done) break;
 
@@ -520,7 +519,6 @@ export class OllamaAdapter extends AdapterBase {
               );
             }
 
-            // oxlint-disable-next-line no-await-in-loop
             const auxiliaryResult = await auxiliary.finalize(factory);
             for (const event of auxiliaryResult.events) {
               yield event;
