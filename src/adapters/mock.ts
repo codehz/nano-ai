@@ -81,10 +81,26 @@ export type MockAuxiliaryStep = {
   auxiliary?: Partial<AuxiliaryInfo>;
 };
 
+export type MockTextStreamOptions = {
+  /**
+   * 每秒吐出的字符数。未设置时仍会按 chunk 拆分，但不会额外等待。
+   */
+  charsPerSecond?: number;
+  /**
+   * 每个 delta 最多包含多少个字符，默认 1。
+   */
+  chunkSize?: number;
+  /**
+   * 首个 delta 发出前的延迟。
+   */
+  initialDelayMs?: number;
+};
+
 export type MockMessageStep = {
   type: "message";
   id?: string;
   content: string | ContentBlock[];
+  stream?: MockTextStreamOptions | false;
 };
 
 export type MockReasoningStep = {
@@ -92,6 +108,7 @@ export type MockReasoningStep = {
   id?: string;
   visibility?: Extract<OutputItem, { type: "reasoning" }>["visibility"];
   content: string | ContentBlock[];
+  stream?: MockTextStreamOptions | false;
 };
 
 export type MockToolCallStep = {
@@ -101,11 +118,13 @@ export type MockToolCallStep = {
   argumentsText: string;
   argumentsJson?: unknown;
   streamArguments?: boolean;
+  stream?: MockTextStreamOptions | false;
 };
 
 export type MockOutputStep = {
   type: "output";
   item: Extract<OutputItem, { type: "message" | "reasoning" | "tool_call" }>;
+  stream?: MockTextStreamOptions | false;
 };
 
 export type MockCompleteStep = {
@@ -159,6 +178,7 @@ export type MockAdapterOptions = {
   turns: MockTurn[];
   onExhausted?: "throw" | "repeat-last" | "complete-empty";
   providerMetadata?: Record<string, unknown>;
+  stream?: MockTextStreamOptions;
 };
 
 type MockTurnRecord = {
@@ -177,6 +197,12 @@ type MockProviderRequest = {
   remainingPendingToolCalls: ToolCallItem[];
 };
 
+type ResolvedMockTextStreamOptions = {
+  charsPerSecond?: number;
+  chunkSize: number;
+  initialDelayMs: number;
+};
+
 export class MockAdapter extends AdapterBase {
   readonly kind = "mock" as const;
   readonly capabilities = CAPABILITY_MATRIX.mock;
@@ -184,6 +210,7 @@ export class MockAdapter extends AdapterBase {
   private readonly turns: MockTurn[];
   private readonly onExhausted: NonNullable<MockAdapterOptions["onExhausted"]>;
   private readonly providerMetadata?: Record<string, unknown>;
+  private readonly defaultStream?: ResolvedMockTextStreamOptions;
 
   private cursor = 0;
   private previousReplay: ReplayItem[] = [];
@@ -196,6 +223,7 @@ export class MockAdapter extends AdapterBase {
     this.turns = options.turns;
     this.onExhausted = options.onExhausted ?? "throw";
     this.providerMetadata = options.providerMetadata;
+    this.defaultStream = resolveMockTextStreamOptions(options.stream, "adapter stream");
   }
 
   protected async buildRequest(request: NormalizedRequest): Promise<MockProviderRequest> {
@@ -254,26 +282,31 @@ export class MockAdapter extends AdapterBase {
             break;
           case "message": {
             const item = createMessageFromStep(step, request, mockRequest.turnIndex, stepIndex);
-            yield* emitMessage(factory, item);
+            yield* emitMessage(factory, item, resolveStepStreamOptions(this.defaultStream, step.stream, "message"));
             output.push(item);
             break;
           }
           case "reasoning": {
             const item = createReasoningFromStep(step, request, mockRequest.turnIndex, stepIndex);
-            yield* emitReasoning(factory, item);
+            yield* emitReasoning(factory, item, resolveStepStreamOptions(this.defaultStream, step.stream, "reasoning"));
             output.push(item);
             break;
           }
           case "tool_call": {
             const item = createToolCallFromStep(step);
-            yield* emitToolCall(factory, item, step.streamArguments ?? true);
+            yield* emitToolCall(
+              factory,
+              item,
+              step.streamArguments ?? true,
+              resolveStepStreamOptions(this.defaultStream, step.stream, "tool_call"),
+            );
             output.push(item);
             break;
           }
           case "output": {
             assertSupportedOutputItem(step.item);
             const item = attachSyntheticId(step.item, request, mockRequest.turnIndex, stepIndex);
-            yield* emitOutputItem(factory, item);
+            yield* emitOutputItem(factory, item, resolveStepStreamOptions(this.defaultStream, step.stream, "output"));
             output.push(item);
             break;
           }
@@ -464,30 +497,40 @@ function attachSyntheticId(
 async function* emitOutputItem(
   factory: EventFactory,
   item: Extract<OutputItem, { type: "message" | "reasoning" | "tool_call" }>,
+  stream?: ResolvedMockTextStreamOptions,
 ): AsyncIterable<AIStreamEvent> {
   if (item.type === "message") {
-    yield* emitMessage(factory, item);
+    yield* emitMessage(factory, item, stream);
     return;
   }
 
   if (item.type === "reasoning") {
-    yield* emitReasoning(factory, item);
+    yield* emitReasoning(factory, item, stream);
     return;
   }
 
-  yield* emitToolCall(factory, item, true);
+  yield* emitToolCall(factory, item, true, stream);
 }
 
-async function* emitMessage(factory: EventFactory, item: MessageItem): AsyncIterable<AIStreamEvent> {
+async function* emitMessage(
+  factory: EventFactory,
+  item: MessageItem,
+  stream?: ResolvedMockTextStreamOptions,
+): AsyncIterable<AIStreamEvent> {
   if (!item.id) {
     throw new AIRequestError("Mock message output requires an id after normalization", "MOCK_MESSAGE_ID_MISSING");
   }
 
   yield factory.messageStarted(item.id);
 
+  let chunkIndex = 0;
   for (const block of item.content) {
     if (block.type === "text") {
-      yield factory.messageDelta(item.id, block.text);
+      for (const chunk of chunkText(block.text, stream)) {
+        await delayForChunk(stream, chunkIndex, chunk.length);
+        yield factory.messageDelta(item.id, chunk);
+        chunkIndex += 1;
+      }
     }
   }
 
@@ -497,6 +540,7 @@ async function* emitMessage(factory: EventFactory, item: MessageItem): AsyncIter
 async function* emitReasoning(
   factory: EventFactory,
   item: Extract<OutputItem, { type: "reasoning" }>,
+  stream?: ResolvedMockTextStreamOptions,
 ): AsyncIterable<AIStreamEvent> {
   if (!item.id) {
     throw new AIRequestError("Mock reasoning output requires an id after normalization", "MOCK_REASONING_ID_MISSING");
@@ -504,8 +548,18 @@ async function* emitReasoning(
 
   yield factory.reasoningStarted(item.id, item.visibility);
 
+  let chunkIndex = 0;
   for (const block of item.content) {
-    yield factory.reasoningDelta(item.id, block);
+    if (block.type !== "text") {
+      yield factory.reasoningDelta(item.id, block);
+      continue;
+    }
+
+    for (const chunk of chunkText(block.text, stream)) {
+      await delayForChunk(stream, chunkIndex, chunk.length);
+      yield factory.reasoningDelta(item.id, textBlock(chunk));
+      chunkIndex += 1;
+    }
   }
 
   yield factory.reasoningCompleted(item);
@@ -515,14 +569,110 @@ async function* emitToolCall(
   factory: EventFactory,
   item: ToolCallItem,
   streamArguments: boolean,
+  stream?: ResolvedMockTextStreamOptions,
 ): AsyncIterable<AIStreamEvent> {
   yield factory.toolCallStarted(item.id, item.name);
 
   if (streamArguments && item.argumentsText) {
-    yield factory.toolCallDelta(item.id, { argumentsText: item.argumentsText });
+    let chunkIndex = 0;
+    for (const chunk of chunkText(item.argumentsText, stream)) {
+      await delayForChunk(stream, chunkIndex, chunk.length);
+      yield factory.toolCallDelta(item.id, { argumentsText: chunk });
+      chunkIndex += 1;
+    }
   }
 
   yield factory.toolCallCompleted(item);
+}
+
+function resolveStepStreamOptions(
+  defaults: ResolvedMockTextStreamOptions | undefined,
+  override: MockTextStreamOptions | false | undefined,
+  label: string,
+): ResolvedMockTextStreamOptions | undefined {
+  if (override === false) {
+    return undefined;
+  }
+
+  return resolveMockTextStreamOptions(override, `${label} stream`, defaults);
+}
+
+function resolveMockTextStreamOptions(
+  options: MockTextStreamOptions | undefined,
+  label: string,
+  defaults?: ResolvedMockTextStreamOptions,
+): ResolvedMockTextStreamOptions | undefined {
+  if (options === undefined) {
+    return defaults;
+  }
+
+  const chunkSize = options.chunkSize ?? defaults?.chunkSize ?? 1;
+  const initialDelayMs = options.initialDelayMs ?? defaults?.initialDelayMs ?? 0;
+  const charsPerSecond = options.charsPerSecond ?? defaults?.charsPerSecond;
+
+  if (!Number.isInteger(chunkSize) || chunkSize < 1) {
+    throw new AIRequestError(`${label}: chunkSize must be a positive integer`, "MOCK_STREAM_CONFIG_INVALID");
+  }
+
+  if (!Number.isFinite(initialDelayMs) || initialDelayMs < 0) {
+    throw new AIRequestError(`${label}: initialDelayMs must be a non-negative number`, "MOCK_STREAM_CONFIG_INVALID");
+  }
+
+  if (charsPerSecond !== undefined && (!Number.isFinite(charsPerSecond) || charsPerSecond <= 0)) {
+    throw new AIRequestError(`${label}: charsPerSecond must be a positive number`, "MOCK_STREAM_CONFIG_INVALID");
+  }
+
+  return {
+    chunkSize,
+    initialDelayMs,
+    charsPerSecond,
+  };
+}
+
+function chunkText(text: string, stream?: ResolvedMockTextStreamOptions): string[] {
+  if (!text) {
+    return [];
+  }
+
+  if (!stream) {
+    return [text];
+  }
+
+  const chars = Array.from(text);
+  const chunks: string[] = [];
+
+  for (let index = 0; index < chars.length; index += stream.chunkSize) {
+    chunks.push(chars.slice(index, index + stream.chunkSize).join(""));
+  }
+
+  return chunks;
+}
+
+async function delayForChunk(
+  stream: ResolvedMockTextStreamOptions | undefined,
+  chunkIndex: number,
+  chunkLength: number,
+): Promise<void> {
+  if (!stream) {
+    return;
+  }
+
+  if (chunkIndex === 0 && stream.initialDelayMs > 0) {
+    await sleep(stream.initialDelayMs);
+    return;
+  }
+
+  if (chunkIndex > 0 && stream.charsPerSecond !== undefined) {
+    await sleep((chunkLength / stream.charsPerSecond) * 1000);
+  }
+}
+
+async function sleep(ms: number): Promise<void> {
+  if (ms <= 0) {
+    return;
+  }
+
+  await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function resolveStopReason(output: OutputItem[]): StopReason {

@@ -134,6 +134,10 @@ const ollama = new OllamaAdapter({ baseUrl: "http://localhost:11434" });
 
 // 面向测试的脚本化 mock backend
 const mock = new MockAdapter({
+  stream: {
+    charsPerSecond: 24,
+    chunkSize: 1,
+  },
   turns: [
     {
       steps: [
@@ -161,6 +165,25 @@ adapter.capabilities.replayFidelity; // "high" | "medium" | "low"
 ## Mock 后端
 
 `MockAdapter` 现在不是“按关键词回文本”的通用假后端，而是专门用于测试长流程工具调用、`replay` 续接、以及异常路径的脚本化测试夹具。
+
+如果你要调试前端逐字渲染效果，可以给 `MockAdapter` 打开分片流：
+
+```ts
+const mock = new MockAdapter({
+  stream: {
+    charsPerSecond: 20, // 每秒约 20 个字符
+    chunkSize: 1, // 默认 1，即逐字输出
+    initialDelayMs: 150, // 可选：首字前停顿
+  },
+  turns: [
+    {
+      steps: [{ type: "message", content: "Streaming preview for the frontend." }],
+    },
+  ],
+});
+```
+
+默认仍是一条完整 `message.delta`。只有显式配置 `stream` 时，`message` / `reasoning` / `tool_call` 参数才会被拆成多个 delta。单个 step 也可用 `stream: false` 关闭全局流速配置。
 
 核心思路是按 turn 写脚本：
 

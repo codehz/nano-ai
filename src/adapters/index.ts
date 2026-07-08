@@ -22,6 +22,7 @@ export type { OllamaAdapterOptions } from "./ollama.js";
 export { MockAdapter } from "./mock.js";
 export type {
   MockAdapterOptions,
+  MockTextStreamOptions,
   MockInputExpectation,
   MockRequestExpectation,
   MockTurnContext,

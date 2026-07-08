@@ -245,4 +245,75 @@ describe("MockAdapter", () => {
     expect(result.text).toBe("upstream failed after planning");
     expect(result.warnings).toContain("mock upstream timeout");
   });
+
+  it("should stream message deltas in chunks with configurable character speed", async () => {
+    const adapter = new MockAdapter({
+      stream: {
+        chunkSize: 2,
+        charsPerSecond: 100,
+      },
+      turns: [
+        {
+          steps: [{ type: "message", content: "abcdef" }],
+        },
+      ],
+    });
+
+    const startedAt = performance.now();
+    const events = [];
+
+    for await (const event of adapter.stream({
+      model: "mock-model",
+      requestId: "mock-7",
+      input: [{ type: "message", role: "user", content: [textBlock("hello")] }],
+    })) {
+      events.push(event);
+    }
+
+    const elapsedMs = performance.now() - startedAt;
+    const deltas = events.filter((event) => event.type === "message.delta");
+
+    expect(deltas).toHaveLength(3);
+    expect(
+      deltas.map((event) => (event.type === "message.delta" ? event.delta.text : undefined)),
+    ).toEqual(["ab", "cd", "ef"]);
+    expect(elapsedMs).toBeGreaterThanOrEqual(35);
+
+    const completed = events.at(-1);
+    expect(completed?.type).toBe("response.completed");
+    if (completed?.type === "response.completed") {
+      expect(completed.response.text).toBe("abcdef");
+    }
+  });
+
+  it("should allow a step to disable adapter-level chunked streaming", async () => {
+    const adapter = new MockAdapter({
+      stream: {
+        chunkSize: 1,
+        charsPerSecond: 100,
+      },
+      turns: [
+        {
+          steps: [{ type: "message", content: "frontend preview", stream: false }],
+        },
+      ],
+    });
+
+    const events = [];
+
+    for await (const event of adapter.stream({
+      model: "mock-model",
+      requestId: "mock-8",
+      input: [{ type: "message", role: "user", content: [textBlock("hello")] }],
+    })) {
+      events.push(event);
+    }
+
+    const deltas = events.filter((event) => event.type === "message.delta");
+    expect(deltas).toHaveLength(1);
+    expect(deltas[0]).toMatchObject({
+      type: "message.delta",
+      delta: { text: "frontend preview" },
+    });
+  });
 });
