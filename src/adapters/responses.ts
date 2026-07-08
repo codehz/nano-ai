@@ -25,7 +25,7 @@ import { emitMalformedStreamWarning } from "../helpers/adapter-auxiliary.js";
 
 import { parseSSEEvents } from "../helpers/sse-parser.js";
 
-import type { AdapterCapabilities, NormalizedRequest, AIStreamEvent, EventFactory, OutputItem, FetchFn } from "../index.js";
+import type { NormalizedRequest, AIStreamEvent, EventFactory, OutputItem, FetchFn } from "../index.js";
 
 // ── 类型 ──────────────────────────────────────────────────────
 
@@ -193,18 +193,7 @@ function canonicalToResponsesBlock(b: import("../index.js").ContentBlock): Respo
 
 export class ResponsesAdapter extends AdapterBase {
   readonly kind = "responses" as const;
-  readonly capabilities: AdapterCapabilities = {
-    nativeStreaming: true,
-    messageStreaming: true,
-    reasoningStreaming: true,
-    toolCallStreaming: true,
-    hiddenReasoningReplay: "full" as const,
-    replayFidelity: "high" as const,
-    tools: true,
-    usage: "full" as const,
-    billing: "lookup" as const,
-    providerMetadata: true,
-  };
+  readonly nativeStreaming = true;
 
   private apiKey: string;
   private baseUrl: string;

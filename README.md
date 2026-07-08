@@ -1,6 +1,6 @@
 # nano-ai
 
-统一流式 AI 客户端 — 一套 canonical API，支持真实模型后端与面向测试的脚本化 `MockAdapter`（`responses` / `messages` / `chat.completions` / `ollama` / `mock`）。
+统一流式 AI 客户端，提供一套 canonical API，对接真实模型后端与面向测试的脚本化 `MockAdapter`（`responses` / `messages` / `chat.completions` / `ollama` / `mock`）。
 
 ## 安装
 
@@ -109,24 +109,24 @@ console.log(response.replay); // 续接材料
 
 ## 后端 Adapter
 
-| Adapter                 | 类                       | 能力评级 |
-| ----------------------- | ------------------------ | -------- |
-| OpenAI Responses API    | `ResponsesAdapter`       | 🌟🌟🌟   |
-| Anthropic Messages API  | `MessagesAdapter`        | 🌟🌟☆    |
-| OpenAI Chat Completions | `ChatCompletionsAdapter` | 🌟☆☆     |
-| Ollama Chat API         | `OllamaAdapter`          | 🌟☆☆     |
-| Scripted Test Backend   | `MockAdapter`            | 测试夹具 |
+| Adapter                 | 类                       | 说明                     |
+| ----------------------- | ------------------------ | ------------------------ |
+| OpenAI Responses API    | `ResponsesAdapter`       | OpenAI Responses 端点    |
+| Anthropic Messages API  | `MessagesAdapter`        | Anthropic Messages 端点  |
+| OpenAI Chat Completions | `ChatCompletionsAdapter` | Chat Completions 端点    |
+| Ollama Chat API         | `OllamaAdapter`          | 本地或自托管 Ollama      |
+| Scripted Test Backend   | `MockAdapter`            | 脚本化测试夹具           |
 
 ```ts
 import { ResponsesAdapter, MessagesAdapter, ChatCompletionsAdapter, OllamaAdapter, MockAdapter } from "nano-ai";
 
-// OpenAI Responses API（能力最强）
+// OpenAI Responses API
 const responses = new ResponsesAdapter({ apiKey: "sk-..." });
 
 // Anthropic Messages API
 const messages = new MessagesAdapter({ apiKey: "sk-ant-..." });
 
-// OpenAI Chat Completions（兼容层）
+// OpenAI Chat Completions
 const chat = new ChatCompletionsAdapter({ apiKey: "sk-..." });
 
 // Ollama
@@ -154,17 +154,18 @@ const mock = new MockAdapter({
 });
 ```
 
-各 adapter 的能力差异通过 `capabilities` 字段暴露：
+公开 adapter 接口只暴露稳定的标识与流式来源：
 
 ```ts
-adapter.capabilities.reasoningStreaming; // 是否支持思维链流
-adapter.capabilities.toolCallStreaming; // 是否支持工具调用流
-adapter.capabilities.replayFidelity; // "high" | "medium" | "low"
+adapter.kind; // "responses" | "messages" | "chat-completions" | ...
+adapter.nativeStreaming; // 是否为 provider 原生流，而不是本地模拟分片
 ```
+
+像 reasoning、tool call、`replay` 材料这类响应特征，应直接从本次事件流、warning 和 `replay` 内容判断。
 
 ## Mock 后端
 
-`MockAdapter` 现在不是“按关键词回文本”的通用假后端，而是专门用于测试长流程工具调用、`replay` 续接、以及异常路径的脚本化测试夹具。
+`MockAdapter` 是一个面向测试的脚本化 adapter，用来验证长流程工具调用、`replay` 续接和异常路径。
 
 如果你要调试前端逐字渲染效果，可以给 `MockAdapter` 打开分片流：
 
@@ -183,7 +184,7 @@ const mock = new MockAdapter({
 });
 ```
 
-默认仍是一条完整 `message.delta`。只有显式配置 `stream` 时，`message` / `reasoning` / `tool_call` 参数才会被拆成多个 delta。单个 step 也可用 `stream: false` 关闭全局流速配置。
+默认会发出单个完整 `message.delta`。只有显式配置 `stream` 时，`message` / `reasoning` / `tool_call` 参数才会被拆成多个 delta。单个 step 也可用 `stream: false` 关闭全局流速配置。
 
 核心思路是按 turn 写脚本：
 
@@ -344,7 +345,7 @@ const { usage, billing, auxiliary, warnings } = collector.build();
 
 ```bash
 bun run typecheck    # TypeScript 类型检查
-bun run test         # 运行全部测试（228+）
+bun run test         # 运行全部测试
 bun run example:basic
 bun run example:multi-turn
 bun run example:tool-loop

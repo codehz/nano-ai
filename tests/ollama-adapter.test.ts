@@ -445,13 +445,9 @@ describe("OllamaAdapter - error handling", () => {
 // ── 适配器属性 ────────────────────────────────────────────────
 
 describe("OllamaAdapter - properties", () => {
-  it("should have correct kind and capabilities", () => {
+  it("should have correct kind and native streaming marker", () => {
     const adapter = new OllamaAdapter();
     expect(adapter.kind).toBe("ollama");
-    expect(adapter.capabilities.nativeStreaming).toBe(true);
-    expect(adapter.capabilities.tools).toBe(true);
-    expect(adapter.capabilities.usage).toBe("partial");
-    expect(adapter.capabilities.billing).toBe("none");
-    expect(adapter.capabilities.reasoningStreaming).toBe(false);
+    expect(adapter.nativeStreaming).toBe(true);
   });
 });

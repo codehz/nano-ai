@@ -22,7 +22,7 @@ import {
 } from "../helpers/mapping.js";
 import { emitMalformedStreamWarning } from "../helpers/adapter-auxiliary.js";
 
-import type { AdapterCapabilities, NormalizedRequest, AIStreamEvent, EventFactory, OutputItem, FetchFn } from "../index.js";
+import type { NormalizedRequest, AIStreamEvent, EventFactory, OutputItem, FetchFn } from "../index.js";
 
 // ── 类型 ──────────────────────────────────────────────────────
 
@@ -249,28 +249,11 @@ function buildAssistantReplayMessage(params: {
 
 export class ChatCompletionsAdapter extends AdapterBase {
   readonly kind = "chat-completions" as const;
-  readonly capabilities: AdapterCapabilities = {
-    nativeStreaming: true,
-    messageStreaming: true,
-    reasoningStreaming: false,
-    toolCallStreaming: false,
-    hiddenReasoningReplay: "none" as const,
-    replayFidelity: "low" as const,
-    tools: true,
-    usage: "full" as const,
-    billing: "derived" as const,
-    providerMetadata: false,
-  };
+  readonly nativeStreaming = true;
 
   private apiKey: string;
   private baseUrl: string;
   private fetchFn: FetchFn;
-
-  private markReasoningCompatibility(): void {
-    this.capabilities.reasoningStreaming = true;
-    this.capabilities.hiddenReasoningReplay = "partial";
-    this.capabilities.replayFidelity = "medium";
-  }
 
   constructor(options: ChatCompletionsAdapterOptions) {
     super();
@@ -439,7 +422,6 @@ export class ChatCompletionsAdapter extends AdapterBase {
     let currentReasoningId = "";
     let hasMessageStarted = false;
     let hasReasoningStarted = false;
-    let hasStreamedReasoning = false;
 
     // tool_calls 累积: tool call index → { id, name, args }
     const pendingToolCalls = new Map<number, PendingToolCall>();
@@ -540,7 +522,6 @@ export class ChatCompletionsAdapter extends AdapterBase {
               if (!hasReasoningStarted) {
                 currentReasoningId = `reason-${chunk.id}`;
                 hasReasoningStarted = true;
-                hasStreamedReasoning = true;
                 accumulatedReasoning = "";
                 yield factory.reasoningStarted(currentReasoningId, "full");
               }
@@ -609,8 +590,6 @@ export class ChatCompletionsAdapter extends AdapterBase {
                 yield event;
               }
 
-              if (hasStreamedReasoning) this.markReasoningCompatibility();
-
               // 构建 stop reason
               const stopReason = mapStopReason(finishReason);
 
@@ -664,8 +643,6 @@ export class ChatCompletionsAdapter extends AdapterBase {
     // 如果流结束时没有 finish_reason（断流），也尝试关闭
     if (hasMessageStarted || hasReasoningStarted || pendingToolCalls.size > 0) {
       yield factory.responseWarning("Stream ended without a finish_reason", "INCOMPLETE_STREAM");
-
-      if (hasStreamedReasoning) this.markReasoningCompatibility();
 
       const { events, assistantReplayMessage } = finalizePendingTurn();
       for (const event of events) {

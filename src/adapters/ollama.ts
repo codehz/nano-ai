@@ -28,7 +28,7 @@ import {
 } from "../helpers/mapping.js";
 import { emitMalformedStreamWarning } from "../helpers/adapter-auxiliary.js";
 
-import type { AdapterCapabilities, NormalizedRequest, AIStreamEvent, EventFactory, OutputItem, FetchFn } from "../index.js";
+import type { NormalizedRequest, AIStreamEvent, EventFactory, OutputItem, FetchFn } from "../index.js";
 
 // ── 选项类型 ──────────────────────────────────────────────────
 
@@ -226,18 +226,7 @@ function isOllamaToolCalls(value: unknown): value is OllamaToolCall[] {
 
 export class OllamaAdapter extends AdapterBase {
   readonly kind = "ollama" as const;
-  readonly capabilities: AdapterCapabilities = {
-    nativeStreaming: true,
-    messageStreaming: true,
-    reasoningStreaming: false,
-    toolCallStreaming: false,
-    hiddenReasoningReplay: "none" as const,
-    replayFidelity: "low" as const,
-    tools: true,
-    usage: "partial" as const,
-    billing: "none" as const,
-    providerMetadata: false,
-  };
+  readonly nativeStreaming = true;
 
   private baseUrl: string;
   private apiKey: string | undefined;

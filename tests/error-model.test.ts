@@ -24,7 +24,7 @@ import {
   messageItem,
 } from "../src/index.js";
 
-import type { AIStreamEvent, AdapterCapabilities } from "../src/index.js";
+import type { AIStreamEvent } from "../src/index.js";
 
 // ── 错误类型 ──────────────────────────────────────────────────
 
@@ -177,18 +177,7 @@ describe("Stream interruption semantics", () => {
     // 使用 TestAdapter 模拟 provider 错误
     class ErrorAdapter extends AdapterBase {
       readonly kind = "responses" as const;
-      readonly capabilities: AdapterCapabilities = {
-        nativeStreaming: false,
-        messageStreaming: true,
-        reasoningStreaming: false,
-        toolCallStreaming: false,
-        hiddenReasoningReplay: "none",
-        replayFidelity: "low",
-        tools: false,
-        usage: "none",
-        billing: "none",
-        providerMetadata: false,
-      };
+      readonly nativeStreaming = false;
       protected buildRequest(): never {
         throw new AIProviderError("API key invalid", "AUTH_ERROR", 401);
       }
@@ -379,18 +368,7 @@ describe("Normal vs abnormal termination", () => {
   it("abnormal: provider throws -> warning + empty completed", async () => {
     class FailAdapter extends AdapterBase {
       readonly kind = "responses" as const;
-      readonly capabilities: AdapterCapabilities = {
-        nativeStreaming: false,
-        messageStreaming: true,
-        reasoningStreaming: false,
-        toolCallStreaming: false,
-        hiddenReasoningReplay: "none",
-        replayFidelity: "low",
-        tools: false,
-        usage: "none",
-        billing: "none",
-        providerMetadata: false,
-      };
+      readonly nativeStreaming = false;
       protected buildRequest(): never {
         throw new Error("Connection refused");
       }
