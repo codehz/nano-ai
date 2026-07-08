@@ -26,5 +26,5 @@
     "tsdown": "^0.22.3",
     "typescript": "^6"
   },
-  "version": "0.1.0"
+  "version": "0.1.1"
 }
