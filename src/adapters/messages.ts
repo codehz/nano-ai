@@ -27,8 +27,7 @@ import { emitMalformedStreamWarning } from "../helpers/adapter-auxiliary.js";
 
 import { parseSSEEvents } from "../helpers/sse-parser.js";
 
-import { CAPABILITY_MATRIX } from "../index.js";
-import type { NormalizedRequest, AIStreamEvent, EventFactory, OutputItem, FetchFn } from "../index.js";
+import type { AdapterCapabilities, NormalizedRequest, AIStreamEvent, EventFactory, OutputItem, FetchFn } from "../index.js";
 
 // ── 类型 ──────────────────────────────────────────────────────
 
@@ -237,7 +236,18 @@ function buildStreamMetadata(options: {
 
 export class MessagesAdapter extends AdapterBase {
   readonly kind = "messages" as const;
-  readonly capabilities = CAPABILITY_MATRIX.messages;
+  readonly capabilities: AdapterCapabilities = {
+    nativeStreaming: true,
+    messageStreaming: true,
+    reasoningStreaming: false,
+    toolCallStreaming: true,
+    hiddenReasoningReplay: "partial" as const,
+    replayFidelity: "medium" as const,
+    tools: true,
+    usage: "full" as const,
+    billing: "lookup" as const,
+    providerMetadata: true,
+  };
 
   private apiKey: string;
   private apiVersion: string;

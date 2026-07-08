@@ -12,10 +12,10 @@
 import { AIRequestError } from "../core/errors.js";
 import { AdapterBase } from "../helpers/adapter-base.js";
 import { messageItem, reasoningItem, replayFromOutput, textBlock } from "../helpers/mapping.js";
-import { CAPABILITY_MATRIX } from "../types/adapter.js";
 
 import type {
   AIStreamEvent,
+  AdapterCapabilities,
   AuxiliaryInfo,
   BillingInfo,
   ContentBlock,
@@ -205,7 +205,18 @@ type ResolvedMockTextStreamOptions = {
 
 export class MockAdapter extends AdapterBase {
   readonly kind = "mock" as const;
-  readonly capabilities = CAPABILITY_MATRIX.mock;
+  readonly capabilities: AdapterCapabilities = {
+    nativeStreaming: false,
+    messageStreaming: true,
+    reasoningStreaming: false,
+    toolCallStreaming: true,
+    hiddenReasoningReplay: "none" as const,
+    replayFidelity: "high" as const,
+    tools: true,
+    usage: "none" as const,
+    billing: "none" as const,
+    providerMetadata: true,
+  };
 
   private readonly turns: MockTurn[];
   private readonly onExhausted: NonNullable<MockAdapterOptions["onExhausted"]>;

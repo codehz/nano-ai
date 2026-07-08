@@ -54,6 +54,3 @@ export type {
   CreateAIClientOptions,
   AIClient,
 } from "./adapter.js";
-
-// 能力矩阵常量
-export { CAPABILITY_MATRIX } from "./adapter.js";
