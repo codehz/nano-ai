@@ -20,4 +20,22 @@ export type { ChatCompletionsAdapterOptions } from "./chat-completions.js";
 export { OllamaAdapter } from "./ollama.js";
 export type { OllamaAdapterOptions } from "./ollama.js";
 export { MockAdapter } from "./mock.js";
-export type { MockAdapterOptions, MockKeywordRule, MockResponseTemplate } from "./mock.js";
+export type {
+  MockAdapterOptions,
+  MockInputExpectation,
+  MockRequestExpectation,
+  MockTurnContext,
+  MockTurnValidator,
+  MockWarningStep,
+  MockAuxiliaryStep,
+  MockMessageStep,
+  MockReasoningStep,
+  MockToolCallStep,
+  MockOutputStep,
+  MockCompleteStep,
+  MockErrorStep,
+  MockInterruptStep,
+  MockThrowStep,
+  MockStep,
+  MockTurn,
+} from "./mock.js";

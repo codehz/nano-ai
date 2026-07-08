@@ -1,6 +1,6 @@
 # nano-ai
 
-统一流式 AI 客户端 — 一套 canonical API，支持真实模型后端和本地 mock 后端（`responses` / `messages` / `chat.completions` / `ollama` / `mock`）。
+统一流式 AI 客户端 — 一套 canonical API，支持真实模型后端与面向测试的脚本化 `MockAdapter`（`responses` / `messages` / `chat.completions` / `ollama` / `mock`）。
 
 ## 安装
 
@@ -115,7 +115,7 @@ console.log(response.replay); // 续接材料
 | Anthropic Messages API  | `MessagesAdapter`        | 🌟🌟☆    |
 | OpenAI Chat Completions | `ChatCompletionsAdapter` | 🌟☆☆     |
 | Ollama Chat API         | `OllamaAdapter`          | 🌟☆☆     |
-| Local Mock Backend      | `MockAdapter`            | 调试用   |
+| Scripted Test Backend   | `MockAdapter`            | 测试夹具 |
 
 ```ts
 import { ResponsesAdapter, MessagesAdapter, ChatCompletionsAdapter, OllamaAdapter, MockAdapter } from "nano-ai";
@@ -132,13 +132,21 @@ const chat = new ChatCompletionsAdapter({ apiKey: "sk-..." });
 // Ollama
 const ollama = new OllamaAdapter({ baseUrl: "http://localhost:11434" });
 
-// 本地 mock 后端
+// 面向测试的脚本化 mock backend
 const mock = new MockAdapter({
-  rules: [
-    { keywords: ["退款", "refund"], response: "退款申请已收到，我们会在 1 个工作日内处理。" },
-    { keywords: ["订单", "order"], response: "请提供订单号，我来帮你查询。" },
+  turns: [
+    {
+      steps: [
+        { type: "message", content: "我先调用天气工具。" },
+        {
+          type: "tool_call",
+          id: "mock-call-weather",
+          name: "get_weather",
+          argumentsText: '{"city":"Hangzhou"}',
+        },
+      ],
+    },
   ],
-  defaultResponse: "暂时无法识别你的问题，请补充更多信息。",
 });
 ```
 
@@ -152,63 +160,83 @@ adapter.capabilities.replayFidelity; // "high" | "medium" | "low"
 
 ## Mock 后端
 
-适合前端联调、客服话术演示、离线测试，以及自动化工具调用回路测试。
+`MockAdapter` 现在不是“按关键词回文本”的通用假后端，而是专门用于测试长流程工具调用、`replay` 续接、以及异常路径的脚本化测试夹具。
 
-`MockAdapter` 会提取请求中的消息文本，按 `rules` 顺序匹配关键词；命中后返回对应模板，未命中则返回 `defaultResponse`。模板既可以是普通消息，也可以直接返回 `tool_call`，或者返回“消息 + 工具调用”的组合输出。
+核心思路是按 turn 写脚本：
+
+- 每一轮可声明对请求格式的期望
+- 每一轮可脚本化发出 `message` / `reasoning` / `tool_call`
+- 可注入 `warning`、`content_filter`、transport interruption、provider-style error
+- 可验证调用方是否把上一轮 `replay` 和当前 `tool_result` 正确带回
 
 ```ts
 import { createAIClient, MockAdapter } from "nano-ai";
 
 const client = createAIClient({
   adapter: new MockAdapter({
-    rules: [
-      { keywords: ["退款", "refund"], response: "退款申请已收到，我们会在 1 个工作日内处理。" },
-      { keywords: ["VIP"], response: "已为你转接 VIP 专属客服。", caseSensitive: true },
+    turns: [
       {
-        keywords: ["查天气"],
-        response: {
-          type: "tool_call",
-          id: "mock-call-weather",
-          name: "get_weather",
-          argumentsText: '{"city":"Hangzhou"}',
-          argumentsJson: { city: "Hangzhou" },
+        name: "request-tool",
+        expect: {
+          items: [{ type: "message", role: "user", textIncludes: "weather" }],
+          tools: "present",
+          toolChoice: "present",
         },
+        steps: [
+          { type: "message", content: "Checking weather now." },
+          {
+            type: "tool_call",
+            id: "mock-call-weather",
+            name: "get_weather",
+            argumentsText: '{"city":"Hangzhou"}',
+          },
+        ],
+      },
+      {
+        name: "consume-tool-result",
+        expect: {
+          requireReplayFromPreviousTurn: true,
+          requireToolResultsForPendingCalls: true,
+        },
+        steps: [{ type: "message", content: "Hangzhou is 28C and sunny." }],
       },
     ],
-    defaultResponse: "你好，这里是默认 mock 回复。",
   }),
   model: "mock-model",
 });
 ```
 
-规则结构：
+核心类型：
 
 ```ts
-type MockKeywordRule = {
-  keywords: string[]; // 任一关键词命中即触发
-  response: string | ContentBlock[] | OutputItem | OutputItem[]; // 返回模板
-  caseSensitive?: boolean; // 默认 false
+type MockTurn = {
+  name?: string;
+  expect?: MockRequestExpectation | MockTurnValidator;
+  steps: MockStep[];
 };
 ```
 
-例如返回“先说一句话，再发起工具调用”：
+测试工具循环时，第二轮通常会要求：
+
+- `requireReplayFromPreviousTurn: true`
+- `requireToolResultsForPendingCalls: true`
+
+畸形路径示例：
 
 ```ts
 {
-  keywords: ["下单"],
-  response: [
-    {
-      type: "message",
-      role: "assistant",
-      content: [{ type: "text", text: "我先帮你调用下单工具。" }],
-    },
-    {
-      type: "tool_call",
-      id: "mock-call-order",
-      name: "create_order",
-      argumentsText: '{"sku":"SKU-1","count":2}',
-      argumentsJson: { sku: "SKU-1", count: 2 },
-    },
+  steps: [
+    { type: "message", content: "partial answer" },
+    { type: "interrupt" }, // 不发 response.completed，collectStream() 应失败
+  ],
+}
+```
+
+```ts
+{
+  steps: [
+    { type: "warning", message: "content filtered by policy", code: "CONTENT_FILTERED" },
+    { type: "complete", stopReason: "content_filter" },
   ],
 }
 ```
