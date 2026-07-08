@@ -520,6 +520,7 @@ export class OllamaAdapter extends AdapterBase {
               );
             }
 
+            // oxlint-disable-next-line no-await-in-loop
             const auxiliaryResult = await auxiliary.finalize(factory);
             for (const event of auxiliaryResult.events) {
               yield event;

@@ -332,8 +332,8 @@ function mergeAuxiliary(base: AuxiliaryInfo, patch: Partial<AuxiliaryInfo>): Aux
 
   if (base.providerMetadata || patch.providerMetadata) {
     merged.providerMetadata = {
-      ...(base.providerMetadata ?? {}),
-      ...(patch.providerMetadata ?? {}),
+      ...base.providerMetadata,
+      ...patch.providerMetadata,
     };
   }
 

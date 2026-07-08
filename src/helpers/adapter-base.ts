@@ -154,14 +154,14 @@ function mergeAuxiliary(
   if (!base && !patch) return undefined;
 
   const merged: AuxiliaryInfo = {
-    ...(base ?? {}),
-    ...(patch ?? {}),
+    ...base,
+    ...patch,
   };
 
   if (base?.providerMetadata || patch?.providerMetadata) {
     merged.providerMetadata = {
-      ...(base?.providerMetadata ?? {}),
-      ...(patch?.providerMetadata ?? {}),
+      ...base?.providerMetadata,
+      ...patch?.providerMetadata,
     };
   }
 
