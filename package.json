@@ -17,7 +17,8 @@
     "test": "bun test",
     "example:basic": "bun run examples/basic.ts",
     "example:multi-turn": "bun run examples/multi-turn.ts",
-    "example:tool-loop": "bun run examples/tool-loop.ts"
+    "example:tool-loop": "bun run examples/tool-loop.ts",
+    "prepack": "tsdown"
   },
   "devDependencies": {
     "@types/bun": "latest",
