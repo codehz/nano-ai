@@ -309,10 +309,11 @@ describe("CAPABILITY_MATRIX", () => {
     expect(CAPABILITY_MATRIX["chat.completions"].replayFidelity).toBe("low");
   });
 
-  it("should mark mock as synthetic text-only backend", () => {
+  it("should mark mock as synthetic backend with tool support", () => {
     expect(CAPABILITY_MATRIX.mock.nativeStreaming).toBe(false);
     expect(CAPABILITY_MATRIX.mock.messageStreaming).toBe(true);
-    expect(CAPABILITY_MATRIX.mock.tools).toBe(false);
+    expect(CAPABILITY_MATRIX.mock.toolCallStreaming).toBe(true);
+    expect(CAPABILITY_MATRIX.mock.tools).toBe(true);
   });
 });
 
