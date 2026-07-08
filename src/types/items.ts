@@ -11,7 +11,7 @@ import type { ContentBlock } from "./content.js";
 export type MessageItem = {
   type: "message";
   id?: string;
-  role: "user" | "assistant" | "system" | "developer";
+  role: "user" | "assistant";
   content: ContentBlock[];
 };
 

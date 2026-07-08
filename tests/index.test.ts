@@ -5,6 +5,7 @@ import { describe, it, expect } from "bun:test";
 import {
   // ContentBlock
   type ContentBlock,
+  type InstructionBlock,
   // Items
   type MessageItem,
   type ReasoningItem,
@@ -57,6 +58,11 @@ describe("ContentBlock", () => {
   it("should construct an opaque block", () => {
     const block: ContentBlock = { type: "opaque", payload: { raw: true } };
     expect(block.type).toBe("opaque");
+  });
+
+  it("should construct an InstructionBlock", () => {
+    const block: InstructionBlock = { type: "json", json: { style: "strict" } };
+    expect(block.type).toBe("json");
   });
 });
 
@@ -150,6 +156,17 @@ describe("AIRequest", () => {
       input: [],
     };
     expect(req.instructions).toBe("Be helpful.");
+  });
+
+  it("should accept instructions as text/json blocks", () => {
+    const req: AIRequest = {
+      instructions: [
+        { type: "text", text: "Be helpful." },
+        { type: "json", json: { format: "json" } },
+      ],
+      input: [],
+    };
+    expect(Array.isArray(req.instructions)).toBe(true);
   });
 
   it("should accept ToolChoice", () => {

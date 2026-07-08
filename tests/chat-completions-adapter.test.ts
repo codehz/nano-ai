@@ -308,6 +308,25 @@ describe("ChatCompletionsAdapter - request building", () => {
     expect(messages[0]?.content).toBe("Be concise.");
   });
 
+  it("should convert instruction blocks to a system message", async () => {
+    const { captured, fetch } = captureRequest();
+    const adapter = new ChatCompletionsAdapter({ apiKey: "test-key", fetch });
+
+    await collectStream(
+      adapter.stream(
+        makeRequest({
+          instructions: [
+            { type: "text", text: "Be concise." },
+            { type: "json", json: { format: "json" } },
+          ],
+        }),
+      ),
+    );
+    const body = captured.current as Record<string, unknown> | null;
+    const messages = body?.messages as Array<Record<string, unknown>>;
+    expect(messages[0]?.content).toBe('Be concise.\n{"format":"json"}');
+  });
+
   it("should map tool_call to assistant tool_calls", async () => {
     const { captured, fetch } = captureRequest();
     const adapter = new ChatCompletionsAdapter({ apiKey: "test-key", fetch });

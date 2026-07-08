@@ -295,6 +295,24 @@ describe("MessagesAdapter - request building", () => {
     expect(body?.system).toBe("Be helpful.");
   });
 
+  it("should include instruction blocks as system prompt text", async () => {
+    const { captured, fetch } = captureRequest();
+    const adapter = new MessagesAdapter({ apiKey: "test-key", fetch });
+
+    await collectStream(
+      adapter.stream(
+        makeRequest({
+          instructions: [
+            { type: "text", text: "Be concise." },
+            { type: "json", json: { format: "json" } },
+          ],
+        }),
+      ),
+    );
+    const body = captured.current as Record<string, unknown> | null;
+    expect(body?.system).toBe('Be concise.\n{"format":"json"}');
+  });
+
   it("should map tool_call to tool_use block", async () => {
     const { captured, fetch } = captureRequest();
     const adapter = new MessagesAdapter({ apiKey: "test-key", fetch });
@@ -413,37 +431,6 @@ describe("MessagesAdapter - request building", () => {
 
     const result = await collectStream(adapter.stream(makeRequest({ metadata: { traceId: "trace-1" } })));
     expect(result.warnings?.some((w) => w.includes("Request metadata is not supported"))).toBe(true);
-  });
-
-  it("should merge system/developer role messages into system prompt", async () => {
-    const { captured, fetch } = captureRequest();
-    const adapter = new MessagesAdapter({ apiKey: "test-key", fetch });
-
-    await collectStream(
-      adapter.stream(
-        makeRequest({
-          input: [
-            {
-              type: "message" as const,
-              role: "system" as const,
-              content: [{ type: "text" as const, text: "Be concise." }],
-            },
-            {
-              type: "message" as const,
-              role: "developer" as const,
-              content: [{ type: "text" as const, text: "Use JSON." }],
-            },
-          ],
-        }),
-      ),
-    );
-    const body = captured.current as Record<string, unknown> | null;
-    expect(body?.system).toContain("Be concise.");
-    expect(body?.system).toContain("Use JSON.");
-    // system 消息不应该在 messages 数组中
-    const messages = body?.messages as Array<Record<string, unknown>>;
-    const hasSystem = messages.some((m) => m.role === "system");
-    expect(hasSystem).toBe(false);
   });
 
   it("should round-trip replay into a single assistant message with raw content blocks", async () => {

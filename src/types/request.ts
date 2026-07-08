@@ -4,7 +4,7 @@
  * 所有 adapter 都接受同一形状的 canonical request。
  */
 
-import type { ContentBlock } from "./content.js";
+import type { InstructionBlock } from "./content.js";
 import type { InputItem } from "./items.js";
 
 // ── 工具定义 ──────────────────────────────────────────────────
@@ -28,7 +28,7 @@ export type IncludeSettings = {
 // ── 统一请求 ──────────────────────────────────────────────────
 
 export type AIRequest = {
-  instructions?: string | ContentBlock[];
+  instructions?: string | InstructionBlock[];
   input: InputItem[];
   tools?: ToolDefinition[];
   toolChoice?: ToolChoice;

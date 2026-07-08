@@ -95,6 +95,26 @@ describe("validateRequest", () => {
     expect(issues.some((i) => i.code === "INSTRUCTIONS_INVALID")).toBe(true);
   });
 
+  it("should reject non text/json instruction blocks", () => {
+    const issues = validateRequest(
+      validRequest({
+        instructions: [
+          { type: "image", imageUrl: "https://example.com/prompt.png" },
+        ] as unknown as AIRequest["instructions"],
+      }),
+    );
+    expect(issues.some((i) => i.code === "INSTRUCTIONS_INVALID")).toBe(true);
+  });
+
+  it("should reject message roles outside user/assistant", () => {
+    const issues = validateRequest(
+      validRequest({
+        input: [{ type: "message", role: "system" } as unknown as AIRequest["input"][number]],
+      }),
+    );
+    expect(issues.some((i) => i.code === "MESSAGE_ROLE_INVALID")).toBe(true);
+  });
+
   it("should detect non-array input", () => {
     const issues = validateRequest({ ...validRequest(), input: "bad" as unknown as AIRequest["input"] });
     expect(issues.some((i) => i.code === "INPUT_EMPTY")).toBe(true);

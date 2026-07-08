@@ -105,7 +105,7 @@ function ensureMessagesReasoningBlocks(
   });
 }
 
-function instructionsToMessagesText(instructions: string | import("../index.js").ContentBlock[]): string {
+function instructionsToMessagesText(instructions: string | import("../index.js").InstructionBlock[]): string {
   return typeof instructions === "string"
     ? instructions
     : contentBlocksToText(ensureMessagesTextBlocks(instructions, "instructions"));
@@ -272,16 +272,6 @@ export class MessagesAdapter extends AdapterBase {
     for (const item of request.input) {
       switch (item.type) {
         case "message": {
-          if (item.role === "system" || item.role === "developer") {
-            // Anthropic 不支持 system/developer role 在 messages 中
-            // 合并到 system prompt
-            const text = contentBlocksToText(
-              ensureMessagesTextBlocks(item.content, `input message (${item.role}) content`),
-            );
-            systemPrompt = systemPrompt ? `${systemPrompt}\n${text}` : text;
-            break;
-          }
-
           const role = item.role === "user" ? "user" : "assistant";
           const supportedContent = ensureMessagesTextBlocks(item.content, `input message (${item.role}) content`);
           if (supportedContent.length === 1 && supportedContent[0]?.type === "text") {

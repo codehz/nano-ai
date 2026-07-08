@@ -39,7 +39,7 @@ for await (const event of stream) {
 
 ```ts
 type AIRequest = {
-  instructions?: string; // 系统指令
+  instructions?: string | InstructionBlock[]; // 系统级指令
   input: InputItem[]; // 输入 items
   tools?: ToolDefinition[]; // 工具声明
   toolChoice?: ToolChoice; // 工具选择策略
@@ -53,7 +53,7 @@ type AIRequest = {
 
 | Item 类型     | 用途                                |
 | ------------- | ----------------------------------- |
-| `message`     | 用户 / 助手 / 系统消息              |
+| `message`     | 用户 / 助手消息                     |
 | `reasoning`   | 思维链（输入侧 replay）             |
 | `tool_call`   | 模型发起的工具调用（输入侧 replay） |
 | `tool_result` | 工具执行结果                        |

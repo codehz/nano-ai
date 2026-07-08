@@ -112,7 +112,7 @@ function ensureOllamaReasoningBlocks(
   });
 }
 
-function instructionsToOllamaText(instructions: string | import("../index.js").ContentBlock[]): string {
+function instructionsToOllamaText(instructions: string | import("../index.js").InstructionBlock[]): string {
   return typeof instructions === "string"
     ? instructions
     : contentBlocksToText(ensureOllamaTextBlocks(instructions, "instructions"));
@@ -259,14 +259,7 @@ export class OllamaAdapter extends AdapterBase {
     for (const item of request.input) {
       switch (item.type) {
         case "message": {
-          const role =
-            item.role === "developer"
-              ? "system"
-              : item.role === "system"
-                ? "system"
-                : item.role === "user"
-                  ? "user"
-                  : "assistant";
+          const role = item.role;
           messages.push({
             role,
             content: contentBlocksToText(ensureOllamaTextBlocks(item.content, `input message (${item.role}) content`)),

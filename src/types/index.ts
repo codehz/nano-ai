@@ -6,7 +6,7 @@
  */
 
 // 基础内容块
-export type { ContentBlock } from "./content.js";
+export type { TextContentBlock, JsonContentBlock, InstructionBlock, ContentBlock } from "./content.js";
 
 // Item 类型体系
 export type {
