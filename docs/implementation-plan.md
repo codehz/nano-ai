@@ -160,7 +160,7 @@ v1 实现目标如下：
 | 新建 | `src/types/request.ts` — `AIRequest`、`ToolDefinition`、`ToolChoice`、`IncludeSettings`                                                              |
 | 新建 | `src/types/response.ts` — `AIResponse`、`StopReason`、`Usage`、`BillingInfo`、`AuxiliaryInfo`、`BackendTrace`                                        |
 | 新建 | `src/types/events.ts` — 全部 13 类流事件类型 + `AIStreamEvent` 联合                                                                                  |
-| 新建 | `src/types/adapter.ts` — `BackendAdapter`、`AdapterCapabilities`、`NormalizedRequest`、`CreateAIClientOptions`、`AIClient`、`CAPABILITY_MATRIX` 常量 |
+| 新建 | `src/types/adapter.ts` — `BackendAdapter`、`AdapterCapabilities`、`NormalizedRequest`、`CreateAIClientOptions`、`AIClient` |
 | 修改 | `src/types/index.ts` — 所有类型统一导出入口                                                                                                          |
 | 修改 | `src/core/client.ts` — 更新为使用正式类型导入                                                                                                        |
 | 修改 | `tests/index.test.ts` — 新增 31 个类型构造测试                                                                                                       |
@@ -172,11 +172,11 @@ v1 实现目标如下：
 
 **已覆盖的公开概念清单：**
 
-`ContentBlock` · `MessageItem` · `ReasoningItem` · `ToolCallItem` · `ToolResultItem` · `OpaqueItem` · `InputItem` · `OutputItem` · `ReplayItem` · `AIRequest` · `ToolDefinition` · `ToolChoice` · `IncludeSettings` · `StopReason` · `Usage` · `BillingInfo` · `AuxiliaryInfo` · `BackendTrace` · `AIResponse` · `StreamEventBase` · `ResponseStartedEvent` · `ResponseWarningEvent` · `ResponseAuxiliaryEvent` · `ResponseCompletedEvent` · `MessageStartedEvent` · `MessageDeltaEvent` · `MessageCompletedEvent` · `ReasoningStartedEvent` · `ReasoningDeltaEvent` · `ReasoningCompletedEvent` · `ToolCallStartedEvent` · `ToolCallDeltaEvent` · `ToolCallCompletedEvent` · `AIStreamEvent` · `BackendAdapter` · `AdapterCapabilities` · `NormalizedRequest` · `CreateAIClientOptions` · `AIClient` · `CAPABILITY_MATRIX`
+`ContentBlock` · `MessageItem` · `ReasoningItem` · `ToolCallItem` · `ToolResultItem` · `OpaqueItem` · `InputItem` · `OutputItem` · `ReplayItem` · `AIRequest` · `ToolDefinition` · `ToolChoice` · `IncludeSettings` · `StopReason` · `Usage` · `BillingInfo` · `AuxiliaryInfo` · `BackendTrace` · `AIResponse` · `StreamEventBase` · `ResponseStartedEvent` · `ResponseWarningEvent` · `ResponseAuxiliaryEvent` · `ResponseCompletedEvent` · `MessageStartedEvent` · `MessageDeltaEvent` · `MessageCompletedEvent` · `ReasoningStartedEvent` · `ReasoningDeltaEvent` · `ReasoningCompletedEvent` · `ToolCallStartedEvent` · `ToolCallDeltaEvent` · `ToolCallCompletedEvent` · `AIStreamEvent` · `BackendAdapter` · `AdapterCapabilities` · `NormalizedRequest` · `CreateAIClientOptions` · `AIClient`
 
 **备注：**
 
-- 能力矩阵 `CAPABILITY_MATRIX` 已落代码，三类后端的差异通过 `AdapterCapabilities` 类型和常量值显式建模
+- 三类后端的能力差异通过 `AdapterCapabilities` 类型和各 adapter 自身的 `capabilities` 值显式建模
 - `createAIClient()` 仍为桩，待 Phase 2 实现
 - 测试侧重于类型构造，确保所有公开类型可被用户正确实例化
 - 聚合器、事件工厂等运行时实现留待 Phase 3

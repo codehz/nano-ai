@@ -24,8 +24,6 @@ import {
   type BillingInfo,
   // Events
   type AIStreamEvent,
-  // Constants
-  CAPABILITY_MATRIX,
   // Client
   createAIClient,
   MockAdapter,
@@ -284,36 +282,6 @@ describe("AIStreamEvent", () => {
   it("should construct response.auxiliary", () => {
     const e: AIStreamEvent = { ...base, type: "response.auxiliary", usage: { totalTokens: 10 } };
     expect(e.type).toBe("response.auxiliary");
-  });
-});
-
-// ── Capability Matrix ─────────────────────────────────────────
-
-describe("CAPABILITY_MATRIX", () => {
-  it("should contain all core backends", () => {
-    expect(CAPABILITY_MATRIX.responses).toBeDefined();
-    expect(CAPABILITY_MATRIX.messages).toBeDefined();
-    expect(CAPABILITY_MATRIX["chat.completions"]).toBeDefined();
-    expect(CAPABILITY_MATRIX.mock).toBeDefined();
-  });
-
-  it("should mark responses as highest capability", () => {
-    expect(CAPABILITY_MATRIX.responses.reasoningStreaming).toBe(true);
-    expect(CAPABILITY_MATRIX.responses.hiddenReasoningReplay).toBe("full");
-    expect(CAPABILITY_MATRIX.responses.replayFidelity).toBe("high");
-  });
-
-  it("should mark chat.completions as lowest capability", () => {
-    expect(CAPABILITY_MATRIX["chat.completions"].reasoningStreaming).toBe(false);
-    expect(CAPABILITY_MATRIX["chat.completions"].hiddenReasoningReplay).toBe("none");
-    expect(CAPABILITY_MATRIX["chat.completions"].replayFidelity).toBe("low");
-  });
-
-  it("should mark mock as synthetic backend with tool support", () => {
-    expect(CAPABILITY_MATRIX.mock.nativeStreaming).toBe(false);
-    expect(CAPABILITY_MATRIX.mock.messageStreaming).toBe(true);
-    expect(CAPABILITY_MATRIX.mock.toolCallStreaming).toBe(true);
-    expect(CAPABILITY_MATRIX.mock.tools).toBe(true);
   });
 });
 
