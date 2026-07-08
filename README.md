@@ -1,6 +1,6 @@
 # nano-ai
 
-统一流式 AI 客户端，提供一套 canonical API，对接真实模型后端与面向测试的脚本化 `MockAdapter`（`responses` / `messages` / `chat.completions` / `ollama` / `mock`）。
+统一流式 AI 客户端，提供一套 canonical API，对接真实模型后端与面向测试的回调驱动 `MockAdapter`（`responses` / `messages` / `chat.completions` / `ollama` / `mock`）。
 
 ## 安装
 
@@ -109,16 +109,23 @@ console.log(response.replay); // 续接材料
 
 ## 后端 Adapter
 
-| Adapter                 | 类                       | 说明                     |
-| ----------------------- | ------------------------ | ------------------------ |
-| OpenAI Responses API    | `ResponsesAdapter`       | OpenAI Responses 端点    |
-| Anthropic Messages API  | `MessagesAdapter`        | Anthropic Messages 端点  |
-| OpenAI Chat Completions | `ChatCompletionsAdapter` | Chat Completions 端点    |
-| Ollama Chat API         | `OllamaAdapter`          | 本地或自托管 Ollama      |
-| Scripted Test Backend   | `MockAdapter`            | 脚本化测试夹具           |
+| Adapter                 | 类                       | 说明                    |
+| ----------------------- | ------------------------ | ----------------------- |
+| OpenAI Responses API    | `ResponsesAdapter`       | OpenAI Responses 端点   |
+| Anthropic Messages API  | `MessagesAdapter`        | Anthropic Messages 端点 |
+| OpenAI Chat Completions | `ChatCompletionsAdapter` | Chat Completions 端点   |
+| Ollama Chat API         | `OllamaAdapter`          | 本地或自托管 Ollama     |
+| Scripted Test Backend   | `MockAdapter`            | 脚本化测试夹具          |
 
 ```ts
-import { ResponsesAdapter, MessagesAdapter, ChatCompletionsAdapter, OllamaAdapter, MockAdapter } from "nano-ai";
+import {
+  ResponsesAdapter,
+  MessagesAdapter,
+  ChatCompletionsAdapter,
+  OllamaAdapter,
+  MockAdapter,
+  withMockStreaming,
+} from "nano-ai";
 
 // OpenAI Responses API
 const responses = new ResponsesAdapter({ apiKey: "sk-..." });
@@ -132,25 +139,23 @@ const chat = new ChatCompletionsAdapter({ apiKey: "sk-..." });
 // Ollama
 const ollama = new OllamaAdapter({ baseUrl: "http://localhost:11434" });
 
-// 面向测试的脚本化 mock backend
+// 面向测试的回调驱动 mock backend
 const mock = new MockAdapter({
-  stream: {
-    charsPerSecond: 24,
-    chunkSize: 1,
-  },
-  turns: [
-    {
-      steps: [
-        { type: "message", content: "我先调用天气工具。" },
-        {
-          type: "tool_call",
-          id: "mock-call-weather",
-          name: "get_weather",
-          argumentsText: '{"city":"Hangzhou"}',
-        },
-      ],
+  handler: withMockStreaming(
+    async function* () {
+      yield { type: "message", content: "我先调用天气工具。" };
+      yield {
+        type: "tool_call",
+        id: "mock-call-weather",
+        name: "get_weather",
+        argumentsText: '{"city":"Hangzhou"}',
+      };
     },
-  ],
+    {
+      charsPerSecond: 24,
+      chunkSize: 1,
+    },
+  ),
 });
 ```
 
@@ -165,66 +170,71 @@ adapter.nativeStreaming; // 是否为 provider 原生流，而不是本地模拟
 
 ## Mock 后端
 
-`MockAdapter` 是一个面向测试的脚本化 adapter，用来验证长流程工具调用、`replay` 续接和异常路径。
+`MockAdapter` 是一个面向测试的回调驱动 adapter，用来验证长流程工具调用、`replay` 续接和异常路径。
 
-如果你要调试前端逐字渲染效果，可以给 `MockAdapter` 打开分片流：
+如果你要调试前端逐字渲染效果，可以用 `withMockStreaming()` 给非流式 handler 包一层分片输出：
 
 ```ts
-const mock = new MockAdapter({
-  stream: {
+const handler = withMockStreaming(
+  async function* () {
+    yield { type: "message", content: "Streaming preview for the frontend." };
+  },
+  {
     charsPerSecond: 20, // 每秒约 20 个字符
     chunkSize: 1, // 默认 1，即逐字输出
     initialDelayMs: 150, // 可选：首字前停顿
   },
-  turns: [
-    {
-      steps: [{ type: "message", content: "Streaming preview for the frontend." }],
-    },
-  ],
-});
+);
 ```
 
-默认会发出单个完整 `message.delta`。只有显式配置 `stream` 时，`message` / `reasoning` / `tool_call` 参数才会被拆成多个 delta。单个 step 也可用 `stream: false` 关闭全局流速配置。
+默认会发出单个完整 `message.delta`。只有经 `withMockStreaming()` 注入默认流速后，`message` / `reasoning` / `tool_call` 参数才会被拆成多个 delta。单个 step 也可用 `stream: false` 关闭包装器的默认流速配置。
 
-核心思路是按 turn 写脚本：
+核心思路是每轮请求执行一次 handler：
 
-- 每一轮可声明对请求格式的期望
-- 每一轮可脚本化发出 `message` / `reasoning` / `tool_call`
+- handler 会拿到 `request` 和 `context`
+- `context` 内建 `previousReplay`、`pendingToolCalls`、`history`
+- handler 可脚本化发出 `message` / `reasoning` / `tool_call`
 - 可注入 `warning`、`content_filter`、transport interruption、provider-style error
-- 可验证调用方是否把上一轮 `replay` 和当前 `tool_result` 正确带回
+- 可用 `assertMockRequest()` 验证调用方是否把上一轮 `replay` 和当前 `tool_result` 正确带回
 
 ```ts
-import { createAIClient, MockAdapter } from "nano-ai";
+import { assertMockRequest, createAIClient, MockAdapter } from "nano-ai";
 
 const client = createAIClient({
   adapter: new MockAdapter({
-    turns: [
-      {
-        name: "request-tool",
-        expect: {
-          items: [{ type: "message", role: "user", textIncludes: "weather" }],
-          tools: "present",
-          toolChoice: "present",
-        },
-        steps: [
-          { type: "message", content: "Checking weather now." },
+    handler: async function* (request, context) {
+      if (context.turnIndex === 0) {
+        assertMockRequest(
+          request,
           {
-            type: "tool_call",
-            id: "mock-call-weather",
-            name: "get_weather",
-            argumentsText: '{"city":"Hangzhou"}',
+            items: [{ type: "message", role: "user", textIncludes: "weather" }],
+            tools: "present",
+            toolChoice: "present",
           },
-        ],
-      },
-      {
-        name: "consume-tool-result",
-        expect: {
+          context,
+        );
+
+        yield { type: "message", content: "Checking weather now." };
+        yield {
+          type: "tool_call",
+          id: "mock-call-weather",
+          name: "get_weather",
+          argumentsText: '{"city":"Hangzhou"}',
+        };
+        return;
+      }
+
+      assertMockRequest(
+        request,
+        {
           requireReplayFromPreviousTurn: true,
           requireToolResultsForPendingCalls: true,
         },
-        steps: [{ type: "message", content: "Hangzhou is 28C and sunny." }],
-      },
-    ],
+        context,
+      );
+
+      yield { type: "message", content: "Hangzhou is 28C and sunny." };
+    },
   }),
   model: "mock-model",
 });
@@ -233,10 +243,13 @@ const client = createAIClient({
 核心类型：
 
 ```ts
-type MockTurn = {
-  name?: string;
-  expect?: MockRequestExpectation | MockTurnValidator;
-  steps: MockStep[];
+type MockHandler = (request: NormalizedRequest, context: MockHandlerContext) => AsyncIterable<MockStep>;
+
+type MockHandlerContext = {
+  turnIndex: number;
+  previousReplay: ReplayItem[];
+  pendingToolCalls: readonly ToolCallItem[];
+  history: readonly MockHistoryRecord[];
 };
 ```
 
@@ -248,21 +261,13 @@ type MockTurn = {
 畸形路径示例：
 
 ```ts
-{
-  steps: [
-    { type: "message", content: "partial answer" },
-    { type: "interrupt" }, // 不发 response.completed，collectStream() 应失败
-  ],
-}
+yield { type: "message", content: "partial answer" };
+yield { type: "interrupt" }; // 不发 response.completed，collectStream() 应失败
 ```
 
 ```ts
-{
-  steps: [
-    { type: "warning", message: "content filtered by policy", code: "CONTENT_FILTERED" },
-    { type: "complete", stopReason: "content_filter" },
-  ],
-}
+yield { type: "warning", message: "content filtered by policy", code: "CONTENT_FILTERED" };
+yield { type: "complete", stopReason: "content_filter" };
 ```
 
 ## 多轮对话

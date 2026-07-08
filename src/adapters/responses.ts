@@ -164,9 +164,7 @@ function parseSSE(chunk: string): { events: ResponsesSSEEvent[]; rest: string; m
 
 function isReplayCanonicalInput(item: ResponsesInputItem): boolean {
   return (
-    (item.type === "message" && item.role === "assistant") ||
-    item.type === "reasoning" ||
-    item.type === "function_call"
+    (item.type === "message" && item.role === "assistant") || item.type === "reasoning" || item.type === "function_call"
   );
 }
 
@@ -452,9 +450,9 @@ export class ResponsesAdapter extends AdapterBase {
       if (completedResponse.usage) {
         auxiliary.recordUsage(
           {
-          inputTokens: completedResponse.usage.input_tokens,
-          outputTokens: completedResponse.usage.output_tokens,
-          totalTokens: completedResponse.usage.total_tokens,
+            inputTokens: completedResponse.usage.input_tokens,
+            outputTokens: completedResponse.usage.output_tokens,
+            totalTokens: completedResponse.usage.total_tokens,
           },
           "final",
           completedResponse.usage,

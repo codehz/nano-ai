@@ -122,10 +122,20 @@ function validateInputItem(item: unknown, field: string, issues: ValidationIssue
       return;
     case "tool_result":
       if (typeof item.callId !== "string" || item.callId.length === 0) {
-        pushIssue(issues, `${field}.callId`, "TOOL_RESULT_CALL_ID_INVALID", `${field}.callId must be a non-empty string`);
+        pushIssue(
+          issues,
+          `${field}.callId`,
+          "TOOL_RESULT_CALL_ID_INVALID",
+          `${field}.callId must be a non-empty string`,
+        );
       }
       if (typeof item.toolName !== "string" || item.toolName.length === 0) {
-        pushIssue(issues, `${field}.toolName`, "TOOL_RESULT_NAME_INVALID", `${field}.toolName must be a non-empty string`);
+        pushIssue(
+          issues,
+          `${field}.toolName`,
+          "TOOL_RESULT_NAME_INVALID",
+          `${field}.toolName must be a non-empty string`,
+        );
       }
       if (typeof item.outcome !== "string" || !TOOL_RESULT_OUTCOMES.has(item.outcome)) {
         pushIssue(
@@ -180,12 +190,7 @@ function validateTools(tools: unknown, issues: ValidationIssue[]): void {
     }
 
     if (!isRecord(tool.inputSchema)) {
-      pushIssue(
-        issues,
-        `${field}.inputSchema`,
-        "TOOL_INPUT_SCHEMA_INVALID",
-        `${field}.inputSchema must be an object`,
-      );
+      pushIssue(issues, `${field}.inputSchema`, "TOOL_INPUT_SCHEMA_INVALID", `${field}.inputSchema must be an object`);
     }
   }
 }
@@ -193,8 +198,13 @@ function validateTools(tools: unknown, issues: ValidationIssue[]): void {
 function validateToolChoice(toolChoice: unknown, issues: ValidationIssue[]): void {
   if (toolChoice === undefined) return;
   if (toolChoice === "auto" || toolChoice === "none") return;
-  if (!isRecord(toolChoice) || toolChoice.type !== "tool" || typeof toolChoice.name !== "string" || toolChoice.name.length === 0) {
-    pushIssue(issues, "toolChoice", "TOOL_CHOICE_INVALID", "toolChoice must be auto, none, or { type: \"tool\", name }");
+  if (
+    !isRecord(toolChoice) ||
+    toolChoice.type !== "tool" ||
+    typeof toolChoice.name !== "string" ||
+    toolChoice.name.length === 0
+  ) {
+    pushIssue(issues, "toolChoice", "TOOL_CHOICE_INVALID", 'toolChoice must be auto, none, or { type: "tool", name }');
   }
 }
 
@@ -211,12 +221,7 @@ export function validateRequest(request: AIRequest): ValidationIssue[] {
     } else if (Array.isArray(request.instructions)) {
       validateContentArray(request.instructions, "instructions", issues, "INSTRUCTIONS_INVALID");
     } else {
-      pushIssue(
-        issues,
-        "instructions",
-        "INSTRUCTIONS_INVALID",
-        "instructions must be a string or ContentBlock[]",
-      );
+      pushIssue(issues, "instructions", "INSTRUCTIONS_INVALID", "instructions must be a string or ContentBlock[]");
     }
   }
 

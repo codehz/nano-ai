@@ -97,7 +97,8 @@ function buildUsagePresentAdapters() {
                 usage: { input_tokens: 10, output_tokens: 2, total_tokens: 12 },
               },
             })}\n\n`,
-          )),
+          ),
+        ),
       }),
     },
     {
@@ -110,7 +111,8 @@ function buildUsagePresentAdapters() {
             'data: {"id":"chat-usage","choices":[{"index":0,"delta":{"role":"assistant","content":"Hi"},"finish_reason":null}]}\n',
             'data: {"id":"chat-usage","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":2,"total_tokens":12}}\n',
             "data: [DONE]\n",
-          )),
+          ),
+        ),
       }),
     },
     {
@@ -153,7 +155,8 @@ function buildUsagePresentAdapters() {
               usage: { input_tokens: 10, output_tokens: 2 },
             })}\n\n`,
             `event: message_stop\ndata: ${JSON.stringify({})}\n\n`,
-          )),
+          ),
+        ),
       }),
     },
     {
@@ -163,7 +166,8 @@ function buildUsagePresentAdapters() {
         fetch: mockFetch(() =>
           ndjsonResponse(
             `{"model":"llama3.2","created_at":"2024-01-01T00:00:00Z","message":{"role":"assistant","content":"Hi"},"done":true,"done_reason":"stop","prompt_eval_count":10,"eval_count":2}\n`,
-          )),
+          ),
+        ),
       }),
     },
   ] as const;
@@ -182,7 +186,8 @@ function buildMissingUsageAdapters() {
             `event: response.completed\ndata: ${JSON.stringify({
               response: { id: "resp-missing", model: "gpt-4o", output: [{ id: "m1", type: "message" }] },
             })}\n\n`,
-          )),
+          ),
+        ),
       }),
     },
     {
@@ -194,7 +199,8 @@ function buildMissingUsageAdapters() {
             'data: {"id":"chat-missing","choices":[{"index":0,"delta":{"role":"assistant","content":"Hi"},"finish_reason":null}]}\n',
             'data: {"id":"chat-missing","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n',
             "data: [DONE]\n",
-          )),
+          ),
+        ),
       }),
     },
     {
@@ -230,7 +236,8 @@ function buildMissingUsageAdapters() {
               index: 0,
             })}\n\n`,
             `event: message_stop\ndata: ${JSON.stringify({})}\n\n`,
-          )),
+          ),
+        ),
       }),
     },
     {
@@ -239,7 +246,8 @@ function buildMissingUsageAdapters() {
         fetch: mockFetch(() =>
           ndjsonResponse(
             `{"model":"llama3.2","created_at":"2024-01-01T00:00:00Z","message":{"role":"assistant","content":"Hi"},"done":true,"done_reason":"stop"}\n`,
-          )),
+          ),
+        ),
       }),
     },
   ] as const;
@@ -253,11 +261,12 @@ function buildMalformedAdapters() {
         apiKey: "test-key",
         fetch: mockFetch(() =>
           sseResponse(
-            'event: response.output_item.added\ndata: {bad json}\n\n',
+            "event: response.output_item.added\ndata: {bad json}\n\n",
             `event: response.completed\ndata: ${JSON.stringify({
               response: { id: "resp-malformed", model: "gpt-4o", output: [] },
             })}\n\n`,
-          )),
+          ),
+        ),
       }),
     },
     {
@@ -269,7 +278,8 @@ function buildMalformedAdapters() {
             "data: {bad json}\n",
             'data: {"id":"chat-malformed","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n',
             "data: [DONE]\n",
-          )),
+          ),
+        ),
       }),
     },
     {
@@ -280,7 +290,8 @@ function buildMalformedAdapters() {
           sseResponse(
             `event: message_start\ndata: {bad json}\n\n`,
             `event: message_stop\ndata: ${JSON.stringify({})}\n\n`,
-          )),
+          ),
+        ),
       }),
     },
     {
@@ -290,7 +301,8 @@ function buildMalformedAdapters() {
           ndjsonResponse(
             `{"bad":true}\n`,
             `{"model":"llama3.2","created_at":"2024-01-01T00:00:00Z","message":{"role":"assistant","content":""},"done":true,"done_reason":"stop"}\n`,
-          )),
+          ),
+        ),
       }),
     },
   ] as const;
@@ -346,7 +358,9 @@ describe("Adapter contracts", () => {
 
     eventsList.forEach((events) => {
       const warningCodes = events
-        .filter((event): event is Extract<AIStreamEvent, { type: "response.warning" }> => event.type === "response.warning")
+        .filter(
+          (event): event is Extract<AIStreamEvent, { type: "response.warning" }> => event.type === "response.warning",
+        )
         .map((event) => event.code);
 
       expect(warningCodes).toContain("USAGE_MISSING");

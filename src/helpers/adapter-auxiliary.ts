@@ -99,7 +99,9 @@ export class AdapterAuxiliaryState {
     }
 
     if (this.request.include?.usage !== "off" && !built.usage) {
-      events.push(factory.responseWarning("Usage information was not provided by the provider", WarningCode.USAGE_MISSING));
+      events.push(
+        factory.responseWarning("Usage information was not provided by the provider", WarningCode.USAGE_MISSING),
+      );
     }
 
     if (this.request.include?.billing !== "off") {

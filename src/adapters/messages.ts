@@ -275,7 +275,9 @@ export class MessagesAdapter extends AdapterBase {
           if (item.role === "system" || item.role === "developer") {
             // Anthropic 不支持 system/developer role 在 messages 中
             // 合并到 system prompt
-            const text = contentBlocksToText(ensureMessagesTextBlocks(item.content, `input message (${item.role}) content`));
+            const text = contentBlocksToText(
+              ensureMessagesTextBlocks(item.content, `input message (${item.role}) content`),
+            );
             systemPrompt = systemPrompt ? `${systemPrompt}\n${text}` : text;
             break;
           }
@@ -296,9 +298,7 @@ export class MessagesAdapter extends AdapterBase {
             type: "tool_use",
             id: item.id,
             name: item.name,
-            input:
-              (item.argumentsJson as Record<string, unknown> | undefined) ??
-              parseToolUseInput(item.argumentsText),
+            input: (item.argumentsJson as Record<string, unknown> | undefined) ?? parseToolUseInput(item.argumentsText),
           };
 
           if (lastMsg && lastMsg.role === "assistant" && typeof lastMsg.content !== "string") {
@@ -345,7 +345,11 @@ export class MessagesAdapter extends AdapterBase {
                   typeof b === "object" &&
                   b !== null &&
                   "type" in b &&
-                  (b.type === "text" || b.type === "thinking" || b.type === "redacted_thinking" || b.type === "tool_use" || b.type === "tool_result"),
+                  (b.type === "text" ||
+                    b.type === "thinking" ||
+                    b.type === "redacted_thinking" ||
+                    b.type === "tool_use" ||
+                    b.type === "tool_result"),
               );
               if (isValidContent) {
                 rollbackTrailingAssistantMessages(messages);
@@ -404,7 +408,10 @@ export class MessagesAdapter extends AdapterBase {
     const auxiliary = this.createAuxiliaryState(request);
 
     if (request.metadata) {
-      yield factory.responseWarning("Request metadata is not supported by the Messages adapter", "UNSUPPORTED_METADATA");
+      yield factory.responseWarning(
+        "Request metadata is not supported by the Messages adapter",
+        "UNSUPPORTED_METADATA",
+      );
     }
 
     const response = await this.fetchFn(`${this.baseUrl}/messages`, {
@@ -453,7 +460,10 @@ export class MessagesAdapter extends AdapterBase {
 
     if (request.include?.providerMetadata !== "off") {
       const headerMetadata = pickProviderHeaders(response.headers);
-      auxiliary.recordProviderMetadata("header", Object.keys(headerMetadata).length > 0 ? { headers: headerMetadata } : undefined);
+      auxiliary.recordProviderMetadata(
+        "header",
+        Object.keys(headerMetadata).length > 0 ? { headers: headerMetadata } : undefined,
+      );
     }
 
     try {
@@ -613,9 +623,9 @@ export class MessagesAdapter extends AdapterBase {
               if (u) {
                 auxiliary.recordUsage(
                   {
-                  inputTokens: u.input_tokens,
-                  outputTokens: u.output_tokens,
-                  totalTokens: u.input_tokens + u.output_tokens,
+                    inputTokens: u.input_tokens,
+                    outputTokens: u.output_tokens,
+                    totalTokens: u.input_tokens + u.output_tokens,
                   },
                   "stream",
                   u,

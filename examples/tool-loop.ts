@@ -10,34 +10,38 @@
  * 该示例使用 MockAdapter，直接演示 tools / toolChoice / replay / tool_result 接口。
  */
 
-import { MockAdapter, collectStream, createAIClient, jsonBlock, textBlock } from "../src/index.js";
+import { MockAdapter, assertMockRequest, collectStream, createAIClient, jsonBlock, textBlock } from "../src/index.js";
 
 import type { InputItem, ToolCallItem } from "../src/index.js";
 
 const adapter = new MockAdapter({
-  turns: [
-    {
-      name: "request-weather-tool",
-      expect: {
-        ordered: true,
-        items: [{ type: "message", role: "user", textIncludes: "weather in Hangzhou" }],
-        tools: "present",
-        toolChoice: "present",
-      },
-      steps: [
-        { type: "message", content: "Checking live weather now." },
+  handler: async function* (request, context) {
+    if (context.turnIndex === 0) {
+      assertMockRequest(
+        request,
         {
-          type: "tool_call",
-          id: "call-weather-1",
-          name: "get_weather",
-          argumentsText: '{"city":"Hangzhou"}',
-          argumentsJson: { city: "Hangzhou" },
+          ordered: true,
+          items: [{ type: "message", role: "user", textIncludes: "weather in Hangzhou" }],
+          tools: "present",
+          toolChoice: "present",
         },
-      ],
-    },
-    {
-      name: "consume-weather-tool-result",
-      expect: {
+        context,
+      );
+
+      yield { type: "message", content: "Checking live weather now." };
+      yield {
+        type: "tool_call",
+        id: "call-weather-1",
+        name: "get_weather",
+        argumentsText: '{"city":"Hangzhou"}',
+        argumentsJson: { city: "Hangzhou" },
+      };
+      return;
+    }
+
+    assertMockRequest(
+      request,
+      {
         ordered: true,
         requireReplayFromPreviousTurn: true,
         requireToolResultsForPendingCalls: true,
@@ -53,16 +57,16 @@ const adapter = new MockAdapter({
           },
         ],
       },
-      steps: [
-        { type: "message", content: "Hangzhou is 28C and sunny." },
-        {
-          type: "complete",
-          usage: { inputTokens: 30, outputTokens: 10, totalTokens: 40 },
-          providerMetadata: { scenario: "tool-loop-example" },
-        },
-      ],
-    },
-  ],
+      context,
+    );
+
+    yield { type: "message", content: "Hangzhou is 28C and sunny." };
+    yield {
+      type: "complete",
+      usage: { inputTokens: 30, outputTokens: 10, totalTokens: 40 },
+      providerMetadata: { scenario: "tool-loop-example" },
+    };
+  },
 });
 
 const client = createAIClient({
@@ -70,7 +74,6 @@ const client = createAIClient({
   model: "mock-model",
 });
 
-// ── 模拟工具执行 ──────────────────────────────────────────
 async function runTool(call: ToolCallItem): Promise<unknown> {
   console.log(`  → Executing ${call.name}(${call.argumentsText})`);
 
@@ -87,7 +90,6 @@ async function runTool(call: ToolCallItem): Promise<unknown> {
   }
 }
 
-// ── 工具声明 ─────────────────────────────────────────────
 const tools = [
   {
     name: "get_weather",

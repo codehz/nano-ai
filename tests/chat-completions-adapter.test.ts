@@ -85,8 +85,13 @@ describe("ChatCompletionsAdapter - text streaming", () => {
     const chunks = [
       'data: {"id":"chatcmpl-split","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}',
       "\n",
-      'data: {"id":"chatcmpl-split","choices":[{"index":0,"delta":{"content":"Hello"},"finish_reason":null}]}'.slice(0, 50),
-      'data: {"id":"chatcmpl-split","choices":[{"index":0,"delta":{"content":"Hello"},"finish_reason":null}]}'.slice(50) + "\n",
+      'data: {"id":"chatcmpl-split","choices":[{"index":0,"delta":{"content":"Hello"},"finish_reason":null}]}'.slice(
+        0,
+        50,
+      ),
+      'data: {"id":"chatcmpl-split","choices":[{"index":0,"delta":{"content":"Hello"},"finish_reason":null}]}'.slice(
+        50,
+      ) + "\n",
       'data: {"id":"chatcmpl-split","choices":[{"index":0,"delta":{"content":" chunked"},"finish_reason":null}]}\n',
       'data: {"id":"chatcmpl-split","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n',
       "data: [DO",
@@ -480,7 +485,9 @@ describe("ChatCompletionsAdapter - request building", () => {
     const round1 = await collectStream(
       round1Adapter.stream(
         makeRequest({
-          input: [{ type: "message" as const, role: "user" as const, content: [{ type: "text" as const, text: "weather?" }] }],
+          input: [
+            { type: "message" as const, role: "user" as const, content: [{ type: "text" as const, text: "weather?" }] },
+          ],
         }),
       ),
     );

@@ -283,7 +283,7 @@ export class ChatCompletionsAdapter extends AdapterBase {
             item.role === "developer"
               ? "system"
               : item.role === "system"
-              ? "system"
+                ? "system"
                 : item.role === "user"
                   ? "user"
                   : "assistant";
@@ -293,9 +293,10 @@ export class ChatCompletionsAdapter extends AdapterBase {
         }
         case "tool_call": {
           // 只允许附着到尾部 assistant turn，否则新建一个
-          const lastAssistant = messages.length > 0 && messages[messages.length - 1]?.role === "assistant"
-            ? messages[messages.length - 1]
-            : null;
+          const lastAssistant =
+            messages.length > 0 && messages[messages.length - 1]?.role === "assistant"
+              ? messages[messages.length - 1]
+              : null;
           const tc: ChatToolCall = {
             id: item.id,
             type: "function",

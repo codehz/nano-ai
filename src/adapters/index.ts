@@ -22,11 +22,13 @@ export type { OllamaAdapterOptions } from "./ollama.js";
 export { MockAdapter } from "./mock.js";
 export type {
   MockAdapterOptions,
+  MockHistoryRecord,
   MockTextStreamOptions,
   MockInputExpectation,
   MockRequestExpectation,
-  MockTurnContext,
-  MockTurnValidator,
+  MockHandlerContext,
+  MockHandler,
+  MockStaticHandler,
   MockWarningStep,
   MockAuxiliaryStep,
   MockMessageStep,
@@ -38,5 +40,5 @@ export type {
   MockInterruptStep,
   MockThrowStep,
   MockStep,
-  MockTurn,
 } from "./mock.js";
+export { assertMockRequest, withMockStreaming } from "./mock.js";

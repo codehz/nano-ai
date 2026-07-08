@@ -465,7 +465,9 @@ describe("MessagesAdapter - request building", () => {
     const round1 = await collectStream(
       round1Adapter.stream(
         makeRequest({
-          input: [{ type: "message" as const, role: "user" as const, content: [{ type: "text" as const, text: "weather?" }] }],
+          input: [
+            { type: "message" as const, role: "user" as const, content: [{ type: "text" as const, text: "weather?" }] },
+          ],
         }),
       ),
     );

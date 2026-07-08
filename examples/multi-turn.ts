@@ -7,36 +7,46 @@
  * 该示例使用 MockAdapter，直接验证 replay 续接是否正确。
  */
 
-import { MockAdapter, collectStream, createAIClient, textBlock } from "../src/index.js";
+import { MockAdapter, assertMockRequest, collectStream, createAIClient, textBlock } from "../src/index.js";
 
 import type { InputItem } from "../src/index.js";
 
 const adapter = new MockAdapter({
-  turns: [
-    {
-      name: "introduce-name",
-      expect: {
-        ordered: true,
-        items: [{ type: "message", role: "user", textIncludes: "My name is Alice." }],
-      },
-      steps: [{ type: "message", content: "Nice to meet you, Alice." }],
-    },
-    {
-      name: "recall-name",
-      expect: {
-        ordered: true,
-        requireReplayFromPreviousTurn: true,
-        items: [
-          { type: "message", role: "user", textIncludes: "My name is Alice." },
-          { type: "message", role: "assistant", textIncludes: "Nice to meet you, Alice." },
-          { type: "message", role: "user", textIncludes: "What's my name?" },
-        ],
-      },
-      steps: [{ type: "message", content: "Your name is Alice." }],
-    },
-    {
-      name: "tell-joke",
-      expect: {
+  handler: async function* (request, context) {
+    if (context.turnIndex === 0) {
+      assertMockRequest(
+        request,
+        {
+          ordered: true,
+          items: [{ type: "message", role: "user", textIncludes: "My name is Alice." }],
+        },
+        context,
+      );
+      yield { type: "message", content: "Nice to meet you, Alice." };
+      return;
+    }
+
+    if (context.turnIndex === 1) {
+      assertMockRequest(
+        request,
+        {
+          ordered: true,
+          requireReplayFromPreviousTurn: true,
+          items: [
+            { type: "message", role: "user", textIncludes: "My name is Alice." },
+            { type: "message", role: "assistant", textIncludes: "Nice to meet you, Alice." },
+            { type: "message", role: "user", textIncludes: "What's my name?" },
+          ],
+        },
+        context,
+      );
+      yield { type: "message", content: "Your name is Alice." };
+      return;
+    }
+
+    assertMockRequest(
+      request,
+      {
         ordered: true,
         requireReplayFromPreviousTurn: true,
         items: [
@@ -47,9 +57,13 @@ const adapter = new MockAdapter({
           { type: "message", role: "user", textIncludes: "Tell me a joke." },
         ],
       },
-      steps: [{ type: "message", content: "Why do programmers confuse Halloween and Christmas? Because OCT 31 === DEC 25." }],
-    },
-  ],
+      context,
+    );
+    yield {
+      type: "message",
+      content: "Why do programmers confuse Halloween and Christmas? Because OCT 31 === DEC 25.",
+    };
+  },
 });
 
 const client = createAIClient({
@@ -58,10 +72,8 @@ const client = createAIClient({
 });
 
 async function main() {
-  // 调用方维护的完整 transcript
   const transcript: InputItem[] = [];
 
-  // ── Round 1 ──────────────────────────────────────────────
   console.log("\n=== Round 1 ===");
 
   transcript.push({
@@ -73,10 +85,8 @@ async function main() {
   const r1 = await collectStream(client.stream({ input: transcript }));
   console.log(`Assistant: ${r1.text}`);
 
-  // 将本轮 replay 追加到 transcript
   transcript.push(...r1.replay);
 
-  // ── Round 2 ──────────────────────────────────────────────
   console.log("\n=== Round 2 ===");
 
   transcript.push({
@@ -90,7 +100,6 @@ async function main() {
 
   transcript.push(...r2.replay);
 
-  // ── Round 3（可选窗口裁剪） ─────────────────────────────
   console.log("\n=== Round 3 ===");
 
   transcript.push({

@@ -25,8 +25,10 @@ import {
   // Events
   type AIStreamEvent,
   // Client
+  assertMockRequest,
   createAIClient,
   MockAdapter,
+  withMockStreaming,
 } from "../src/index.js";
 
 // ── ContentBlock ──────────────────────────────────────────────
@@ -294,5 +296,13 @@ describe("exports", () => {
 
   it("should export MockAdapter", () => {
     expect(MockAdapter).toBeFunction();
+  });
+
+  it("should export assertMockRequest", () => {
+    expect(assertMockRequest).toBeFunction();
+  });
+
+  it("should export withMockStreaming", () => {
+    expect(withMockStreaming).toBeFunction();
   });
 });

@@ -28,11 +28,7 @@ export type { SSEEvent } from "./sse-parser.js";
 
 export { AdapterBase } from "./adapter-base.js";
 export type { StreamResult } from "./adapter-base.js";
-export {
-  AdapterAuxiliaryState,
-  emitMalformedStreamWarning,
-  metadataSourceList,
-} from "./adapter-auxiliary.js";
+export { AdapterAuxiliaryState, emitMalformedStreamWarning, metadataSourceList } from "./adapter-auxiliary.js";
 export type { AuxiliaryFinalizeOptions, AuxiliaryFinalizeResult, BillingPostprocessHook } from "./adapter-auxiliary.js";
 export { syntheticStream } from "./synthetic-stream.js";
 export type { SyntheticStreamOptions } from "./synthetic-stream.js";
