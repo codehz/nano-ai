@@ -1,6 +1,6 @@
 # nano-ai
 
-统一流式 AI 客户端 — 一套 canonical API，三种后端协议（`responses` / `messages` / `chat.completions`）。
+统一流式 AI 客户端 — 一套 canonical API，支持真实模型后端和本地 mock 后端（`responses` / `messages` / `chat.completions` / `ollama` / `mock`）。
 
 ## 安装
 
@@ -114,9 +114,11 @@ console.log(response.replay); // 续接材料
 | OpenAI Responses API    | `ResponsesAdapter`       | 🌟🌟🌟   |
 | Anthropic Messages API  | `MessagesAdapter`        | 🌟🌟☆    |
 | OpenAI Chat Completions | `ChatCompletionsAdapter` | 🌟☆☆     |
+| Ollama Chat API         | `OllamaAdapter`          | 🌟☆☆     |
+| Local Mock Backend      | `MockAdapter`            | 调试用   |
 
 ```ts
-import { ResponsesAdapter, MessagesAdapter, ChatCompletionsAdapter } from "nano-ai";
+import { ResponsesAdapter, MessagesAdapter, ChatCompletionsAdapter, OllamaAdapter, MockAdapter } from "nano-ai";
 
 // OpenAI Responses API（能力最强）
 const responses = new ResponsesAdapter({ apiKey: "sk-..." });
@@ -126,6 +128,18 @@ const messages = new MessagesAdapter({ apiKey: "sk-ant-..." });
 
 // OpenAI Chat Completions（兼容层）
 const chat = new ChatCompletionsAdapter({ apiKey: "sk-..." });
+
+// Ollama
+const ollama = new OllamaAdapter({ baseUrl: "http://localhost:11434" });
+
+// 本地 mock 后端
+const mock = new MockAdapter({
+  rules: [
+    { keywords: ["退款", "refund"], response: "退款申请已收到，我们会在 1 个工作日内处理。" },
+    { keywords: ["订单", "order"], response: "请提供订单号，我来帮你查询。" },
+  ],
+  defaultResponse: "暂时无法识别你的问题，请补充更多信息。",
+});
 ```
 
 各 adapter 的能力差异通过 `capabilities` 字段暴露：
@@ -134,6 +148,37 @@ const chat = new ChatCompletionsAdapter({ apiKey: "sk-..." });
 adapter.capabilities.reasoningStreaming; // 是否支持思维链流
 adapter.capabilities.toolCallStreaming; // 是否支持工具调用流
 adapter.capabilities.replayFidelity; // "high" | "medium" | "low"
+```
+
+## Mock 后端
+
+适合前端联调、客服话术演示、离线测试。
+
+`MockAdapter` 会提取请求中的消息文本，按 `rules` 顺序匹配关键词；命中后返回对应模板，未命中则返回 `defaultResponse`。
+
+```ts
+import { createAIClient, MockAdapter } from "nano-ai";
+
+const client = createAIClient({
+  adapter: new MockAdapter({
+    rules: [
+      { keywords: ["退款", "refund"], response: "退款申请已收到，我们会在 1 个工作日内处理。" },
+      { keywords: ["VIP"], response: "已为你转接 VIP 专属客服。", caseSensitive: true },
+    ],
+    defaultResponse: "你好，这里是默认 mock 回复。",
+  }),
+  model: "mock-model",
+});
+```
+
+规则结构：
+
+```ts
+type MockKeywordRule = {
+  keywords: string[]; // 任一关键词命中即触发
+  response: string | ContentBlock[] | MessageItem; // 返回模板
+  caseSensitive?: boolean; // 默认 false
+};
 ```
 
 ## 多轮对话

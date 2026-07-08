@@ -18,7 +18,7 @@ export type StreamEventBase = {
   sequence: number;
   timestamp: string;
   backend: {
-    kind: "chat-completions" | "messages" | "responses" | "ollama";
+    kind: "chat-completions" | "messages" | "responses" | "ollama" | "mock";
     isSynthetic: boolean;
   };
 };

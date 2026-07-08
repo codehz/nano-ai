@@ -35,7 +35,7 @@ export type SyntheticStreamOptions = {
   model: string;
   responseId: string;
   backend: {
-    kind: "chat-completions" | "messages" | "responses";
+    kind: "chat-completions" | "messages" | "responses" | "mock";
     /** syntheticStream 强制设为 true */
   };
   output: OutputItem[];
