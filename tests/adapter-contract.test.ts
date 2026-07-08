@@ -315,78 +315,94 @@ describe("Adapter contracts", () => {
       new OllamaAdapter({ fetch: mockFetch(() => ndjsonResponse("")) }),
     ];
 
-    for (const adapter of adapters) {
-      try {
-        await collectStream(adapter.stream(request));
-        expect.unreachable();
-      } catch (error) {
-        expect(error).toMatchObject({ code: "UNSUPPORTED_CONTENT_BLOCK" });
+    const results = await Promise.allSettled(adapters.map(async (adapter) => collectStream(adapter.stream(request))));
+
+    results.forEach((result) => {
+      expect(result.status).toBe("rejected");
+      if (result.status === "rejected") {
+        expect(result.reason).toMatchObject({ code: "UNSUPPORTED_CONTENT_BLOCK" });
       }
-    }
+    });
   });
 
   it("should suppress billing warnings consistently when include.billing is off", async () => {
-    for (const { adapter } of buildMissingUsageAdapters()) {
-      const result = await collectStream(adapter.stream(makeRequest({ include: { billing: "off" } })));
+    const results = await Promise.all(
+      buildMissingUsageAdapters().map(async ({ adapter }) =>
+        collectStream(adapter.stream(makeRequest({ include: { billing: "off" } }))),
+      ),
+    );
+
+    results.forEach((result) => {
       expect(result.warnings?.some((warning) => warning.includes("Billing information"))).toBeFalsy();
-    }
+    });
   });
 
   it("should emit stable missing usage and billing warning codes across adapters", async () => {
-    for (const { adapter } of buildMissingUsageAdapters()) {
-      const events = await collectEvents(adapter.stream(makeRequest({ include: { providerMetadata: "off" } })));
+    const eventsList = await Promise.all(
+      buildMissingUsageAdapters().map(async ({ adapter }) =>
+        collectEvents(adapter.stream(makeRequest({ include: { providerMetadata: "off" } }))),
+      ),
+    );
+
+    eventsList.forEach((events) => {
       const warningCodes = events
         .filter((event): event is Extract<AIStreamEvent, { type: "response.warning" }> => event.type === "response.warning")
         .map((event) => event.code);
 
       expect(warningCodes).toContain("USAGE_MISSING");
       expect(warningCodes).toContain("BILLING_MISSING");
-    }
+    });
   });
 
   it("should use STREAM_ERROR for malformed transport warnings across adapters", async () => {
-    for (const { adapter } of buildMalformedAdapters()) {
-      const events = await collectEvents(
-        adapter.stream(
-          makeRequest({
-            include: {
-              usage: "off",
-              billing: "off",
-              providerMetadata: "off",
-            },
-          }),
+    const eventsList = await Promise.all(
+      buildMalformedAdapters().map(async ({ adapter }) =>
+        collectEvents(
+          adapter.stream(
+            makeRequest({
+              include: {
+                usage: "off",
+                billing: "off",
+                providerMetadata: "off",
+              },
+            }),
+          ),
         ),
-      );
+      ),
+    );
 
+    eventsList.forEach((events) => {
       const malformedWarning = events.find(
         (event): event is Extract<AIStreamEvent, { type: "response.warning" }> =>
           event.type === "response.warning" && event.message.includes("malformed"),
       );
 
       expect(malformedWarning?.code).toBe("STREAM_ERROR");
-    }
+    });
   });
 
   it("should emit one response.auxiliary before response.completed when usage is present", async () => {
-    for (const { kind, adapter, usageSource } of buildUsagePresentAdapters()) {
-      const events = await collectEvents(adapter.stream(makeRequest()));
-      const types = events.map((event) => event.type);
-      const auxiliaryIndexes = types
-        .map((type, index) => ({ type, index }))
-        .filter((entry) => entry.type === "response.auxiliary")
-        .map((entry) => entry.index);
-      const completedIndex = types.indexOf("response.completed");
+    await Promise.all(
+      buildUsagePresentAdapters().map(async ({ kind, adapter, usageSource }) => {
+        const events = await collectEvents(adapter.stream(makeRequest()));
+        const types = events.map((event) => event.type);
+        const auxiliaryIndexes = types
+          .map((type, index) => ({ type, index }))
+          .filter((entry) => entry.type === "response.auxiliary")
+          .map((entry) => entry.index);
+        const completedIndex = types.indexOf("response.completed");
 
-      expect(auxiliaryIndexes).toHaveLength(1);
-      expect(auxiliaryIndexes[0]).toBeLessThan(completedIndex);
+        expect(auxiliaryIndexes).toHaveLength(1);
+        expect(auxiliaryIndexes[0]).toBeLessThan(completedIndex);
 
-      const result = aggregateEvents(events);
-      expect(result.backend.adapter).toBe(kind);
-      expect(result.backend.isSyntheticStream).toBe(false);
-      expect(result.backend.rawResponseId).toBeDefined();
-      expect(result.replay.length).toBeGreaterThanOrEqual(1);
-      expect(result.usage).toBeDefined();
-      expect(result.auxiliary?.usageSource).toBe(usageSource);
-    }
+        const result = aggregateEvents(events);
+        expect(result.backend.adapter).toBe(kind);
+        expect(result.backend.isSyntheticStream).toBe(false);
+        expect(result.backend.rawResponseId).toBeDefined();
+        expect(result.replay.length).toBeGreaterThanOrEqual(1);
+        expect(result.usage).toBeDefined();
+        expect(result.auxiliary?.usageSource).toBe(usageSource);
+      }),
+    );
   });
 });

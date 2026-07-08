@@ -356,12 +356,14 @@ export class MockAdapter extends AdapterBase {
   }
 
   private resolveTurn(turnIndex: number): MockTurn {
-    if (turnIndex < this.turns.length) {
-      return this.turns[turnIndex]!;
+    const turn = this.turns[turnIndex];
+    if (turn !== undefined) {
+      return turn;
     }
 
-    if (this.onExhausted === "repeat-last" && this.turns.length > 0) {
-      return this.turns[this.turns.length - 1]!;
+    const lastTurn = this.turns.at(-1);
+    if (this.onExhausted === "repeat-last" && lastTurn !== undefined) {
+      return lastTurn;
     }
 
     if (this.onExhausted === "complete-empty") {
@@ -618,7 +620,8 @@ function assertOrderedItems(input: readonly InputItem[], expectations: readonly 
   for (const expected of expectations) {
     let matched = false;
     while (cursor < input.length) {
-      if (matchesItemExpectation(input[cursor]!, expected)) {
+      const item = input[cursor];
+      if (item !== undefined && matchesItemExpectation(item, expected)) {
         matched = true;
         cursor += 1;
         break;
