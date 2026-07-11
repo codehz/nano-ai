@@ -497,6 +497,100 @@ describe("MessagesAdapter - request building", () => {
   });
 });
 
+// ── 合成 ID 唯一性 ───────────────────────────────────────────
+
+describe("MessagesAdapter - synthetic item IDs", () => {
+  it("should produce unique IDs across multi-round tool loops by namespacing with rawResponseId", async () => {
+    // 第 1 轮: response id = "msg_R1", 两个 content block (thinking@0, text@1)
+    const round1SSE = [
+      `event: message_start\ndata: ${JSON.stringify({ type: "message_start", message: { id: "msg_R1", type: "message", role: "assistant", model: "claude-3-opus", content: [], stop_reason: null, usage: { input_tokens: 10, output_tokens: 0 } } })}\n\n`,
+      `event: content_block_start\ndata: ${JSON.stringify({ type: "content_block_start", index: 0, content_block: { type: "thinking", thinking: "" } })}\n\n`,
+      `event: content_block_delta\ndata: ${JSON.stringify({ type: "content_block_delta", index: 0, delta: { type: "thinking_delta", thinking: "..." } })}\n\n`,
+      `event: content_block_stop\ndata: ${JSON.stringify({ type: "content_block_stop", index: 0 })}\n\n`,
+      `event: content_block_start\ndata: ${JSON.stringify({ type: "content_block_start", index: 1, content_block: { type: "text", text: "" } })}\n\n`,
+      `event: content_block_delta\ndata: ${JSON.stringify({ type: "content_block_delta", index: 1, delta: { type: "text_delta", text: "Round1" } })}\n\n`,
+      `event: content_block_stop\ndata: ${JSON.stringify({ type: "content_block_stop", index: 1 })}\n\n`,
+      `event: message_delta\ndata: ${JSON.stringify({ type: "message_delta", delta: { stop_reason: "tool_use", stop_sequence: null }, usage: { input_tokens: 10, output_tokens: 4 } })}\n\n`,
+      messageStopSSE(),
+    ];
+    const adapter1 = new MessagesAdapter({
+      apiKey: "test-key",
+      fetch: mockFetch(sseResponse(...round1SSE)),
+    });
+    const result1 = await collectStream(adapter1.stream(makeRequest()));
+
+    // 第 2 轮: response id = "msg_R2", 同样索引的 content block
+    const round2SSE = [
+      `event: message_start\ndata: ${JSON.stringify({ type: "message_start", message: { id: "msg_R2", type: "message", role: "assistant", model: "claude-3-opus", content: [], stop_reason: null, usage: { input_tokens: 10, output_tokens: 0 } } })}\n\n`,
+      `event: content_block_start\ndata: ${JSON.stringify({ type: "content_block_start", index: 0, content_block: { type: "thinking", thinking: "" } })}\n\n`,
+      `event: content_block_delta\ndata: ${JSON.stringify({ type: "content_block_delta", index: 0, delta: { type: "thinking_delta", thinking: "..." } })}\n\n`,
+      `event: content_block_stop\ndata: ${JSON.stringify({ type: "content_block_stop", index: 0 })}\n\n`,
+      `event: content_block_start\ndata: ${JSON.stringify({ type: "content_block_start", index: 1, content_block: { type: "text", text: "" } })}\n\n`,
+      `event: content_block_delta\ndata: ${JSON.stringify({ type: "content_block_delta", index: 1, delta: { type: "text_delta", text: "Round2" } })}\n\n`,
+      `event: content_block_stop\ndata: ${JSON.stringify({ type: "content_block_stop", index: 1 })}\n\n`,
+      `event: message_delta\ndata: ${JSON.stringify({ type: "message_delta", delta: { stop_reason: "end_turn", stop_sequence: null }, usage: { input_tokens: 10, output_tokens: 4 } })}\n\n`,
+      messageStopSSE(),
+    ];
+    const adapter2 = new MessagesAdapter({
+      apiKey: "test-key",
+      fetch: mockFetch(sseResponse(...round2SSE)),
+    });
+    const result2 = await collectStream(adapter2.stream(makeRequest()));
+
+    // 断言: 各轮内部 ID 符合预期格式
+    expect(result1.output[0]!.type).toBe("reasoning");
+    expect(result1.output[0]!.id).toBe("reason-0-msg_R1");
+    expect(result1.output[1]!.type).toBe("message");
+    expect(result1.output[1]!.id).toBe("msg-1-msg_R1");
+
+    expect(result2.output[0]!.type).toBe("reasoning");
+    expect(result2.output[0]!.id).toBe("reason-0-msg_R2");
+    expect(result2.output[1]!.type).toBe("message");
+    expect(result2.output[1]!.id).toBe("msg-1-msg_R2");
+
+    // 核心断言: 相同索引的合成 ID 因 rawResponseId 不同而不同
+    expect(result1.output[0]!.id).not.toBe(result2.output[0]!.id);
+    expect(result1.output[1]!.id).not.toBe(result2.output[1]!.id);
+  });
+
+  it("should not namespace tool_use IDs (they use provider-generated IDs)", async () => {
+    const sse1 = [
+      `event: message_start\ndata: ${JSON.stringify({ type: "message_start", message: { id: "msg_T1", type: "message", role: "assistant", content: [], stop_reason: null, usage: { input_tokens: 10, output_tokens: 0 } } })}\n\n`,
+      `event: content_block_start\ndata: ${JSON.stringify({ type: "content_block_start", index: 0, content_block: { type: "tool_use", id: "tu_A1", name: "get_weather", input: {} } })}\n\n`,
+      `event: content_block_delta\ndata: ${JSON.stringify({ type: "content_block_delta", index: 0, delta: { type: "input_json_delta", partial_json: "{}" } })}\n\n`,
+      `event: content_block_stop\ndata: ${JSON.stringify({ type: "content_block_stop", index: 0 })}\n\n`,
+      `event: message_delta\ndata: ${JSON.stringify({ type: "message_delta", delta: { stop_reason: "tool_use", stop_sequence: null }, usage: { input_tokens: 10, output_tokens: 5 } })}\n\n`,
+      messageStopSSE(),
+    ];
+    const sse2 = [
+      `event: message_start\ndata: ${JSON.stringify({ type: "message_start", message: { id: "msg_T2", type: "message", role: "assistant", content: [], stop_reason: null, usage: { input_tokens: 10, output_tokens: 0 } } })}\n\n`,
+      `event: content_block_start\ndata: ${JSON.stringify({ type: "content_block_start", index: 0, content_block: { type: "tool_use", id: "tu_B2", name: "search", input: {} } })}\n\n`,
+      `event: content_block_delta\ndata: ${JSON.stringify({ type: "content_block_delta", index: 0, delta: { type: "input_json_delta", partial_json: "{}" } })}\n\n`,
+      `event: content_block_stop\ndata: ${JSON.stringify({ type: "content_block_stop", index: 0 })}\n\n`,
+      `event: message_delta\ndata: ${JSON.stringify({ type: "message_delta", delta: { stop_reason: "tool_use", stop_sequence: null }, usage: { input_tokens: 10, output_tokens: 5 } })}\n\n`,
+      messageStopSSE(),
+    ];
+
+    const adapter1 = new MessagesAdapter({
+      apiKey: "test-key",
+      fetch: mockFetch(sseResponse(...sse1)),
+    });
+    const result1 = await collectStream(adapter1.stream(makeRequest()));
+
+    const adapter2 = new MessagesAdapter({
+      apiKey: "test-key",
+      fetch: mockFetch(sseResponse(...sse2)),
+    });
+    const result2 = await collectStream(adapter2.stream(makeRequest()));
+
+    // tool_use ID 直接来自 provider, 不做命名空间化
+    expect(result1.output[0]!.type).toBe("tool_call");
+    expect(result1.output[0]!.id).toBe("tu_A1");
+    expect(result2.output[0]!.type).toBe("tool_call");
+    expect(result2.output[0]!.id).toBe("tu_B2");
+  });
+});
+
 // ── 错误处理 ──────────────────────────────────────────────────
 
 describe("MessagesAdapter - error handling", () => {
