@@ -162,6 +162,11 @@ function rollbackTrailingAssistantMessages(messages: MessagesAPIMessage[]): void
   }
 }
 
+/** 用 response 级别的命名空间合成 content block 的 item ID，避免多轮工具循环 ID 碰撞 */
+function synthesizeItemId(kind: "msg" | "reason" | "reason-redacted", blockIndex: number, responseId: string): string {
+  return `${kind}-${blockIndex}-${responseId}`;
+}
+
 function parseToolUseInput(input: string): Record<string, unknown> {
   try {
     const parsed = JSON.parse(input);
@@ -446,7 +451,7 @@ export class MessagesAdapter extends AdapterBase {
     // 完成响应数据
     let stopReason: string | undefined;
     let stopSequence: string | null | undefined;
-    let rawResponseId: string | undefined;
+    let rawResponseId = "";
 
     if (request.include?.providerMetadata !== "off") {
       const headerMetadata = pickProviderHeaders(response.headers);
@@ -503,7 +508,7 @@ export class MessagesAdapter extends AdapterBase {
               switch (block.type) {
                 case "text": {
                   currentItemType = "message";
-                  currentItemId = `msg-${block.type}-${currentContentBlockIndex}`;
+                  currentItemId = synthesizeItemId("msg", currentContentBlockIndex, rawResponseId);
                   textBuffer = "";
                   yield factory.messageStarted(currentItemId);
                   break;
@@ -511,7 +516,7 @@ export class MessagesAdapter extends AdapterBase {
                 case "thinking": {
                   hasStreamedReasoning = true;
                   currentItemType = "reasoning";
-                  currentItemId = `reason-${currentContentBlockIndex}`;
+                  currentItemId = synthesizeItemId("reason", currentContentBlockIndex, rawResponseId);
                   currentThinkingVisibility = "full";
                   thinkingBuffer = "";
                   yield factory.reasoningStarted(currentItemId, "full");
@@ -520,7 +525,7 @@ export class MessagesAdapter extends AdapterBase {
                 case "redacted_thinking": {
                   hasStreamedReasoning = true;
                   currentItemType = "reasoning";
-                  currentItemId = `reason-redacted-${currentContentBlockIndex}`;
+                  currentItemId = synthesizeItemId("reason-redacted", currentContentBlockIndex, rawResponseId);
                   currentThinkingVisibility = "redacted";
                   const data = (block as unknown as { data: string }).data;
                   yield factory.reasoningStarted(currentItemId, "redacted");
