@@ -131,12 +131,43 @@ type ResponsesSSEEvent =
   | { type: "response.tool_call.delta"; data: { item_id: string; delta: { arguments?: string } } }
   | { type: "response.tool_call.done"; data: { item_id: string; arguments?: string; name?: string } }
   | { type: "response.completed"; data: { response: ResponsesAPIResponse } }
-  | { type: "error"; data: { message: string; code?: string } };
+  | { type: "response.failed"; data: { response: ResponsesAPIResponse } }
+  | { type: "response.incomplete"; data: { response: ResponsesAPIResponse } }
+  | { type: "error"; data: { message: string; code?: string } }
+  | { type: string; data: Record<string, unknown> };
+
+/** 已处理或可安全忽略的 Responses SSE 类型（未知类型会 warning 一次）。 */
+const KNOWN_RESPONSES_SSE_TYPES = new Set([
+  "response.output_item.added",
+  "response.output_item.done",
+  "response.output_text.delta",
+  "response.output_text.done",
+  "response.reasoning.delta",
+  "response.reasoning.done",
+  "response.tool_call.delta",
+  "response.tool_call.done",
+  "response.function_call_arguments.delta",
+  "response.function_call_arguments.done",
+  "response.content_part.added",
+  "response.content_part.done",
+  "response.refusal.delta",
+  "response.refusal.done",
+  "response.in_progress",
+  "response.created",
+  "response.completed",
+  "response.failed",
+  "response.incomplete",
+  "error",
+]);
 
 type ResponsesAPIResponse = {
   id: string;
   model: string;
   output: ResponsesAPIOutputItem[];
+  status?: "completed" | "failed" | "in_progress" | "cancelled" | "queued" | "incomplete" | string;
+  incomplete_details?: { reason?: string | null } | null;
+  error?: { message?: string; code?: string } | null;
+  failure?: { message?: string; code?: string } | null;
   usage?: {
     input_tokens: number;
     output_tokens: number;
@@ -172,12 +203,12 @@ function isReplayCanonicalInput(item: ResponsesInputItem): boolean {
   );
 }
 
-function rollbackTrailingReplayCanonicalItems(input: ResponsesInputItem[]): void {
-  while (input.length > 0) {
-    const last = input[input.length - 1];
-    if (!last || !isReplayCanonicalInput(last)) break;
-    input.pop();
-  }
+function hasReplayCanonicalInput(input: ResponsesInputItem[]): boolean {
+  return input.some(isReplayCanonicalInput);
+}
+
+function extractFailureMessage(response: ResponsesAPIResponse): string {
+  return response.error?.message ?? response.failure?.message ?? "unknown";
 }
 
 // ── Content block 映射 ─────────────────────────────────────────
@@ -262,7 +293,8 @@ export class ResponsesAdapter extends AdapterBase {
           break;
         }
         case "opaque": {
-          // opaque items with item_reference purpose can be passed through
+          // Canonical replay items take priority; item_reference is only a fallback
+          // when the consumer kept only the provider continuation id.
           if (
             item.source === "responses" &&
             item.purpose === "replay" &&
@@ -271,8 +303,7 @@ export class ResponsesAdapter extends AdapterBase {
             "id" in (item.payload as Record<string, unknown>)
           ) {
             const { id } = item.payload as Record<string, unknown>;
-            if (typeof id === "string") {
-              rollbackTrailingReplayCanonicalItems(input);
+            if (typeof id === "string" && !hasReplayCanonicalInput(input)) {
               input.push({ type: "item_reference", id });
             }
           }
@@ -361,6 +392,7 @@ export class ResponsesAdapter extends AdapterBase {
     let buffer = "";
     let completedResponse: ResponsesAPIResponse | undefined;
     let completedEmitted = false;
+    let unknownEventsWarned = false;
 
     try {
       while (true) {
@@ -380,13 +412,14 @@ export class ResponsesAdapter extends AdapterBase {
 
         for (const sseEvent of events) {
           if (sseEvent.type === "error") {
-            yield factory.responseWarning(sseEvent.data.message, sseEvent.data.code);
+            const data = sseEvent.data as { message?: string; code?: string };
+            yield factory.responseWarning(data.message ?? "Provider error event", data.code);
             continue;
           }
 
           // item 级事件
           if (sseEvent.type === "response.output_item.added") {
-            const item = sseEvent.data.item;
+            const item = (sseEvent.data as { item: { id: string; type: string; [key: string]: unknown } }).item;
             switch (item.type) {
               case "message":
                 yield factory.messageStarted(item.id);
@@ -402,54 +435,75 @@ export class ResponsesAdapter extends AdapterBase {
           }
 
           if (sseEvent.type === "response.output_text.delta") {
-            yield factory.messageDelta(sseEvent.data.item_id, sseEvent.data.delta);
+            const data = sseEvent.data as { item_id: string; delta: string };
+            yield factory.messageDelta(data.item_id, data.delta);
             continue;
           }
 
           if (sseEvent.type === "response.output_text.done") {
-            yield factory.messageCompleted(messageItem([textBlock(sseEvent.data.text)], { id: sseEvent.data.item_id }));
-            output.push(messageItem([textBlock(sseEvent.data.text)], { id: sseEvent.data.item_id }));
+            const data = sseEvent.data as { item_id: string; text: string };
+            yield factory.messageCompleted(messageItem([textBlock(data.text)], { id: data.item_id }));
+            output.push(messageItem([textBlock(data.text)], { id: data.item_id }));
             continue;
           }
 
           if (sseEvent.type === "response.reasoning.delta") {
-            yield factory.reasoningDelta(sseEvent.data.item_id, textBlock(sseEvent.data.delta));
+            const data = sseEvent.data as { item_id: string; delta: string };
+            yield factory.reasoningDelta(data.item_id, textBlock(data.delta));
             continue;
           }
 
           if (sseEvent.type === "response.reasoning.done") {
-            yield factory.reasoningCompleted(
-              reasoningItem([textBlock(sseEvent.data.text)], "full", sseEvent.data.item_id),
-            );
-            output.push(reasoningItem([textBlock(sseEvent.data.text)], "full", sseEvent.data.item_id));
+            const data = sseEvent.data as { item_id: string; text: string };
+            yield factory.reasoningCompleted(reasoningItem([textBlock(data.text)], "full", data.item_id));
+            output.push(reasoningItem([textBlock(data.text)], "full", data.item_id));
             continue;
           }
 
           if (sseEvent.type === "response.tool_call.delta") {
-            if (sseEvent.data.delta.arguments) {
-              yield factory.toolCallDelta(sseEvent.data.item_id, { argumentsText: sseEvent.data.delta.arguments });
+            const data = sseEvent.data as { item_id: string; delta: { arguments?: string } };
+            if (data.delta.arguments) {
+              yield factory.toolCallDelta(data.item_id, { argumentsText: data.delta.arguments });
             }
             continue;
           }
 
           if (sseEvent.type === "response.tool_call.done") {
-            const tcItem = toolCallItem(
-              sseEvent.data.item_id,
-              sseEvent.data.name ?? "unknown",
-              sseEvent.data.arguments ?? "",
-            );
+            const data = sseEvent.data as { item_id: string; arguments?: string; name?: string };
+            const tcItem = toolCallItem(data.item_id, data.name ?? "unknown", data.arguments ?? "");
             yield factory.toolCallCompleted(tcItem);
             output.push(tcItem);
             continue;
           }
 
-          if (sseEvent.type === "response.completed") {
+          if (
+            sseEvent.type === "response.completed" ||
+            sseEvent.type === "response.failed" ||
+            sseEvent.type === "response.incomplete"
+          ) {
+            const data = sseEvent.data as { response: ResponsesAPIResponse };
             if (completedResponse) {
               yield factory.responseWarning("Duplicate finish signal ignored", "DUPLICATE_FINISH");
               continue;
             }
 
-            completedResponse = sseEvent.data.response;
+            completedResponse = data.response;
+
+            if (sseEvent.type === "response.failed") {
+              yield factory.responseWarning(
+                `Response failed: ${extractFailureMessage(data.response)}`,
+                "PROVIDER_FAILURE",
+              );
+            }
+            continue;
+          }
+
+          if (!KNOWN_RESPONSES_SSE_TYPES.has(sseEvent.type) && !unknownEventsWarned) {
+            unknownEventsWarned = true;
+            yield factory.responseWarning(
+              `Responses API sent unknown event type "${sseEvent.type}"; this may indicate an incomplete integration`,
+              "UNKNOWN_PROVIDER_EVENT",
+            );
           }
         }
 
@@ -514,16 +568,26 @@ export class ResponsesAdapter extends AdapterBase {
   // ── 辅助方法 ──────────────────────────────────────────────
 
   private inferStopReason(response: ResponsesAPIResponse): import("../index.js").StopReason {
-    const output = response.output;
-    if (!output || output.length === 0) return "unknown";
+    if (response.status === "failed") return "error";
 
-    // 检查是否有未完成的 function_call
+    if (response.status === "incomplete") {
+      const reason = response.incomplete_details?.reason;
+      if (reason === "content_filter") return "content_filter";
+      if (reason === "max_output_tokens") return "max_output_tokens";
+      return "max_output_tokens";
+    }
+
+    const output = response.output;
+    if (!output || output.length === 0) {
+      return response.status === "completed" ? "end_turn" : "unknown";
+    }
+
     const hasFunctionCall = output.some((item) => item.type === "function_call");
     if (hasFunctionCall) return "tool_call";
 
-    // 检查最后一条 message 的 status
-    const lastMsg = output[output.length - 1];
-    if (lastMsg?.status === "incomplete") return "max_output_tokens";
+    const lastItem = output[output.length - 1];
+    if (lastItem?.status === "failed") return "error";
+    if (lastItem?.status === "incomplete") return "max_output_tokens";
 
     return "end_turn";
   }

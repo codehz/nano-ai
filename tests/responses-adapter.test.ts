@@ -391,7 +391,7 @@ describe("ResponsesAdapter - request building", () => {
     ).rejects.toBeInstanceOf(AIRequestError);
   });
 
-  it("should round-trip replay without duplicating canonical items when opaque continuation is present", async () => {
+  it("should prefer canonical replay items over opaque item_reference", async () => {
     const round1SSE = [
       'event: response.output_item.added\ndata: {"item":{"id":"m1","type":"message"}}\n\n',
       'event: response.output_text.delta\ndata: {"item_id":"m1","delta":"Hi"}\n\n',
@@ -437,7 +437,34 @@ describe("ResponsesAdapter - request building", () => {
     const body = captured.current as Record<string, unknown> | null;
     expect(body?.input).toEqual([
       { type: "message", role: "user", content: "Hello" },
-      { type: "item_reference", id: "resp-round-1" },
+      { type: "message", role: "assistant", content: [{ type: "text", text: "Hi" }] },
+    ]);
+  });
+
+  it("should use item_reference when only opaque replay is present", async () => {
+    const { captured, fetch } = captureRequest();
+    const adapter = new ResponsesAdapter({ apiKey: "test-key", fetch });
+
+    await collectStream(
+      adapter.stream(
+        makeRequest({
+          input: [
+            { type: "message" as const, role: "user" as const, content: [{ type: "text" as const, text: "Hello" }] },
+            {
+              type: "opaque" as const,
+              source: "responses",
+              purpose: "replay",
+              payload: { id: "resp-only-opaque" },
+            },
+          ],
+        }),
+      ),
+    );
+
+    const body = captured.current as Record<string, unknown> | null;
+    expect(body?.input).toEqual([
+      { type: "message", role: "user", content: "Hello" },
+      { type: "item_reference", id: "resp-only-opaque" },
     ]);
   });
 });
@@ -475,6 +502,101 @@ describe("ResponsesAdapter - error handling", () => {
     const result = await collectStream(adapter.stream(makeRequest()));
     expect(result.warnings).toBeDefined();
     expect(result.warnings).toContain("Rate limit exceeded");
+  });
+
+  it("should warn once on unknown SSE event types without aborting", async () => {
+    const sse = [
+      'event: response.future_feature\ndata: {"foo":1}\n\n',
+      'event: response.future_feature\ndata: {"foo":2}\n\n',
+      'event: response.output_item.added\ndata: {"item":{"id":"m1","type":"message"}}\n\n',
+      'event: response.output_text.done\ndata: {"item_id":"m1","text":"ok"}\n\n',
+      `event: response.completed\ndata: ${JSON.stringify({
+        response: { id: "resp-unknown", model: "gpt-4o", output: [{ id: "m1", type: "message" }] },
+      })}\n\n`,
+    ];
+
+    const adapter = new ResponsesAdapter({
+      apiKey: "test-key",
+      fetch: mockFetch(sseResponse(...sse)),
+    });
+
+    const result = await collectStream(adapter.stream(makeRequest()));
+    expect(result.text).toBe("ok");
+    const unknownWarnings = (result.warnings ?? []).filter((w) => w.includes("unknown event type"));
+    expect(unknownWarnings).toHaveLength(1);
+  });
+
+  it("should map response.failed to stopReason error and emit PROVIDER_FAILURE warning", async () => {
+    const sse = [
+      'event: response.output_item.added\ndata: {"item":{"id":"m1","type":"message"}}\n\n',
+      'event: response.output_text.done\ndata: {"item_id":"m1","text":"partial"}\n\n',
+      `event: response.failed\ndata: ${JSON.stringify({
+        response: {
+          id: "resp-failed",
+          model: "gpt-4o",
+          status: "failed",
+          error: { message: "upstream timeout" },
+          output: [{ id: "m1", type: "message", content: [{ type: "text", text: "partial" }] }],
+        },
+      })}\n\n`,
+    ];
+
+    const adapter = new ResponsesAdapter({
+      apiKey: "test-key",
+      fetch: mockFetch(sseResponse(...sse)),
+    });
+
+    const result = await collectStream(adapter.stream(makeRequest()));
+    expect(result.stopReason).toBe("error");
+    expect(result.backend.rawResponseId).toBe("resp-failed");
+    expect(result.warnings?.some((w) => w.includes("Response failed") || w.includes("upstream timeout"))).toBe(true);
+  });
+
+  it("should map response.incomplete max_output_tokens to stopReason", async () => {
+    const sse = [
+      'event: response.output_item.added\ndata: {"item":{"id":"m1","type":"message"}}\n\n',
+      'event: response.output_text.done\ndata: {"item_id":"m1","text":"cut off"}\n\n',
+      `event: response.incomplete\ndata: ${JSON.stringify({
+        response: {
+          id: "resp-incomplete",
+          model: "gpt-4o",
+          status: "incomplete",
+          incomplete_details: { reason: "max_output_tokens" },
+          output: [{ id: "m1", type: "message", status: "incomplete" }],
+        },
+      })}\n\n`,
+    ];
+
+    const adapter = new ResponsesAdapter({
+      apiKey: "test-key",
+      fetch: mockFetch(sseResponse(...sse)),
+    });
+
+    const result = await collectStream(adapter.stream(makeRequest()));
+    expect(result.stopReason).toBe("max_output_tokens");
+    expect(result.backend.rawResponseId).toBe("resp-incomplete");
+  });
+
+  it("should map incomplete content_filter reason", async () => {
+    const sse = [
+      `event: response.incomplete\ndata: ${JSON.stringify({
+        response: {
+          id: "resp-cf",
+          model: "gpt-4o",
+          status: "incomplete",
+          incomplete_details: { reason: "content_filter" },
+          output: [],
+        },
+      })}\n\n`,
+    ];
+
+    const adapter = new ResponsesAdapter({
+      apiKey: "test-key",
+      fetch: mockFetch(sseResponse(...sse)),
+    });
+
+    const result = await collectStream(adapter.stream(makeRequest()));
+    expect(result.stopReason).toBe("content_filter");
   });
 
   it("should omit usage when include.usage is off", async () => {
