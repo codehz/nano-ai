@@ -34,3 +34,9 @@ export { syntheticStream } from "./synthetic-stream.js";
 export type { SyntheticStreamOptions } from "./synthetic-stream.js";
 export { AuxiliaryCollector } from "./auxiliary-collector.js";
 export type { UsageSource, BillingSource, LookupResult } from "./auxiliary-collector.js";
+export {
+  usageFromAnthropicMessages,
+  usageFromChatCompletions,
+  usageFromOllama,
+  usageFromOpenAIResponses,
+} from "./usage-mapping.js";

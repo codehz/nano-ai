@@ -21,6 +21,7 @@ import {
   contentBlocksToText,
 } from "../helpers/mapping.js";
 import { emitMalformedStreamWarning } from "../helpers/adapter-auxiliary.js";
+import { usageFromChatCompletions } from "../helpers/usage-mapping.js";
 
 import type { NormalizedRequest, AIStreamEvent, EventFactory, OutputItem, FetchFn } from "../index.js";
 
@@ -73,7 +74,13 @@ type ChatChunk = {
   created: number;
   model: string;
   choices: ChatChunkChoice[];
-  usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
+  usage?: {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+    prompt_tokens_details?: { cached_tokens?: number };
+    completion_tokens_details?: { reasoning_tokens?: number };
+  };
 };
 
 type ChatChunkChoice = {
@@ -485,15 +492,7 @@ export class ChatCompletionsAdapter extends AdapterBase {
 
           // usage 可能在最终 chunk 中
           if (chunk.usage) {
-            auxiliary.recordUsage(
-              {
-                inputTokens: chunk.usage.prompt_tokens,
-                outputTokens: chunk.usage.completion_tokens,
-                totalTokens: chunk.usage.total_tokens,
-              },
-              "final",
-              chunk.usage,
-            );
+            auxiliary.recordUsage(usageFromChatCompletions(chunk.usage), "final", chunk.usage);
           }
 
           for (const choice of chunk.choices) {
