@@ -30,6 +30,21 @@ function sseResponse(...chunks: string[]): Response {
   });
 }
 
+function byteChunksResponse(...chunks: Uint8Array[]): Response {
+  const body = new ReadableStream({
+    start(controller) {
+      for (const chunk of chunks) {
+        controller.enqueue(chunk);
+      }
+      controller.close();
+    },
+  });
+  return new Response(body, {
+    status: 200,
+    headers: { "Content-Type": "text/event-stream" },
+  });
+}
+
 function mockFetch(resp: Response): FetchFn {
   return async () => resp;
 }
@@ -74,6 +89,44 @@ describe("ResponsesAdapter - text streaming", () => {
     expect(result.usage?.inputTokens).toBe(10);
     expect(result.usage?.outputTokens).toBe(3);
     expect(result.backend.rawResponseId).toBe("resp-123");
+  });
+
+  it("should preserve UTF-8 characters split across transport chunks", async () => {
+    const encoder = new TextEncoder();
+    const prefix = encoder.encode(
+      'event: response.output_item.added\ndata: {"item":{"id":"m1","type":"message"}}\n\nevent: response.output_text.delta\ndata: {"item_id":"m1","delta":"',
+    );
+    const text = encoder.encode("你好");
+    const suffix = encoder.encode(
+      '"}\n\nevent: response.output_text.done\ndata: {"item_id":"m1","text":"你好"}\n\nevent: response.completed\ndata: {"response":{"id":"resp-utf8","model":"gpt-4o","output":[{"id":"m1","type":"message"}]}}\n\n',
+    );
+    const adapter = new ResponsesAdapter({
+      apiKey: "test-key",
+      fetch: async () => byteChunksResponse(prefix, text.slice(0, 1), text.slice(1, 4), text.slice(4), suffix),
+    });
+
+    const result = await collectStream(adapter.stream(makeRequest()));
+    expect(result.text).toBe("你好");
+    expect(result.stopReason).toBe("end_turn");
+  });
+
+  it("should preserve UTF-8 characters split across transport chunks", async () => {
+    const encoder = new TextEncoder();
+    const prefix = encoder.encode(
+      'event: response.output_item.added\ndata: {"item":{"id":"m1","type":"message"}}\n\nevent: response.output_text.delta\ndata: {"item_id":"m1","delta":"',
+    );
+    const text = encoder.encode("你好");
+    const suffix = encoder.encode(
+      '"}\n\nevent: response.output_text.done\ndata: {"item_id":"m1","text":"你好"}\n\nevent: response.completed\ndata: {"response":{"id":"resp-utf8","model":"gpt-4o","output":[{"id":"m1","type":"message"}]}}\n\n',
+    );
+    const adapter = new ResponsesAdapter({
+      apiKey: "test-key",
+      fetch: async () => byteChunksResponse(prefix, text.slice(0, 1), text.slice(1, 4), text.slice(4), suffix),
+    });
+
+    const result = await collectStream(adapter.stream(makeRequest()));
+    expect(result.text).toBe("你好");
+    expect(result.stopReason).toBe("end_turn");
   });
 
   it("should map input/output token details in completed usage", async () => {
