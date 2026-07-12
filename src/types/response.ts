@@ -24,7 +24,6 @@ export type Usage = {
   cachedInputTokens?: number;
   /** Tokens written to prompt cache (Anthropic cache_creation_input_tokens) */
   cacheWriteInputTokens?: number;
-
 };
 
 export type BillingInfo = {

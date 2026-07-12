@@ -134,7 +134,10 @@ function assertChatToolResultOutcome(outcome: import("../index.js").ToolResultIt
  * - 每条 `data:` 行必须已经是一个完整 JSON 对象
  * - 允许传输层把单行拆成多个 chunk，但不接受 provider 把一个 JSON event 改写成多条 `data:` 行
  */
-function parseChatSSE(buffer: string, allowEOF = false): { chunks: ChatChunk[]; rest: string; malformedEvents: number } {
+function parseChatSSE(
+  buffer: string,
+  allowEOF = false,
+): { chunks: ChatChunk[]; rest: string; malformedEvents: number } {
   const chunks: ChatChunk[] = [];
   let rest = buffer;
   let malformedEvents = 0;
@@ -268,10 +271,7 @@ function isChatReplayMessage(value: unknown): value is ChatMessage {
 
 function assertChatReplayMessages(messages: unknown, field: string): asserts messages is ChatMessage[] {
   if (!Array.isArray(messages)) {
-    throw new AIRequestError(
-      `Invalid opaque replay payload: ${field} must be an array`,
-      "INVALID_OPAQUE_REPLAY",
-    );
+    throw new AIRequestError(`Invalid opaque replay payload: ${field} must be an array`, "INVALID_OPAQUE_REPLAY");
   }
   for (let i = 0; i < messages.length; i++) {
     if (!isChatReplayMessage(messages[i])) {

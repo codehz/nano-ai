@@ -147,13 +147,21 @@ describe("ChatCompletionsAdapter - text streaming", () => {
     const finish = encoder.encode(
       'data: {"id":"chatcmpl-utf8","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n',
     );
-    const done = encoder.encode('data: [DONE]\n');
+    const done = encoder.encode("data: [DONE]\n");
     const nihaoBytes = encoder.encode("你好");
 
     const adapter = new ChatCompletionsAdapter({
       apiKey: "test-key",
       fetch: async () =>
-        byteChunksResponse(prefix, nihaoBytes.slice(0, 1), nihaoBytes.slice(1, 4), nihaoBytes.slice(4), suffix, finish, done),
+        byteChunksResponse(
+          prefix,
+          nihaoBytes.slice(0, 1),
+          nihaoBytes.slice(1, 4),
+          nihaoBytes.slice(4),
+          suffix,
+          finish,
+          done,
+        ),
     });
 
     const result = await collectStream(adapter.stream(makeRequest()));
@@ -844,7 +852,7 @@ describe("ChatCompletionsAdapter - error handling", () => {
       'data: {"id":"chatcmpl-dup","choices":[{"index":0,"delta":{"content":"Hi"},"finish_reason":null}]}\n',
       'data: {"id":"chatcmpl-dup","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n',
       'data: {"id":"chatcmpl-dup","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n',
-      'data: [DONE]\n',
+      "data: [DONE]\n",
     ];
 
     const adapter = new ChatCompletionsAdapter({
