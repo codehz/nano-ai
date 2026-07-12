@@ -40,7 +40,11 @@ export class AIError extends Error {
 
 /** 请求构造失败 — 参数校验不通过。在进入 adapter 前同步抛错。 */
 export class AIRequestError extends AIError {
-  constructor(message: string, code: ErrorCode) {
+  constructor(
+    message: string,
+    code: ErrorCode,
+    public readonly issues?: readonly { field: string; code: string; message: string }[],
+  ) {
     super(message, code, "AIRequestError");
   }
 }

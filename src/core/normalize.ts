@@ -6,7 +6,8 @@
  */
 
 import type { AIRequest, NormalizedRequest } from "../types/index.js";
-import { assertValidRequest } from "./validation.js";
+import { assertValidRequest, validateInclude } from "./validation.js";
+import { AIRequestError } from "./errors.js";
 
 export type NormalizeOptions = {
   model: string;
@@ -28,6 +29,19 @@ const DEFAULT_INCLUDE = {
  */
 export function normalizeRequest(request: AIRequest, options: NormalizeOptions): NormalizedRequest {
   const { model, defaults } = options;
+
+  // 在展开 include 前先校验，防止非法值被合并掩盖
+  const earlyIncludeIssues: { field: string; code: string; message: string }[] = [];
+  if (request.include !== undefined) {
+    validateInclude(request.include, earlyIncludeIssues);
+  }
+  if (defaults?.include !== undefined) {
+    validateInclude(defaults.include, earlyIncludeIssues);
+  }
+  const firstIncludeIssue = earlyIncludeIssues[0];
+  if (firstIncludeIssue) {
+    throw new AIRequestError(firstIncludeIssue.message, firstIncludeIssue.code, earlyIncludeIssues);
+  }
 
   // 合并 defaults（浅合并，input/tools 由 request 完全覆盖）
   const merged: AIRequest = {

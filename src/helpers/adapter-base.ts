@@ -29,6 +29,7 @@ import { AIMappingError, AIProviderError, AIRequestError, AIStreamError } from "
 import type { EventFactory } from "../core/event-factory.js";
 import { extractText } from "./mapping.js";
 import { AdapterAuxiliaryState } from "./adapter-auxiliary.js";
+import { mergeAuxiliary } from "../core/merge-auxiliary.js";
 
 // ── Adapter 解析中间结果 ──────────────────────────────────────
 
@@ -153,24 +154,6 @@ export abstract class AdapterBase implements BackendAdapter {
   protected createAuxiliaryState(request: NormalizedRequest): AdapterAuxiliaryState {
     return new AdapterAuxiliaryState(request);
   }
-}
-
-function mergeAuxiliary(base?: Partial<AuxiliaryInfo>, patch?: Partial<AuxiliaryInfo>): AuxiliaryInfo | undefined {
-  if (!base && !patch) return undefined;
-
-  const merged: AuxiliaryInfo = {
-    ...base,
-    ...patch,
-  };
-
-  if (base?.providerMetadata || patch?.providerMetadata) {
-    merged.providerMetadata = {
-      ...base?.providerMetadata,
-      ...patch?.providerMetadata,
-    };
-  }
-
-  return merged;
 }
 
 function mergeWarnings(...groups: Array<string[] | undefined>): string[] | undefined {
