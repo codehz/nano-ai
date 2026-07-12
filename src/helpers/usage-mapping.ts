@@ -1,7 +1,7 @@
 /**
  * Provider usage → canonical Usage 映射
  *
- * best-effort 提取 reasoning / cache / billable 等扩展字段。
+ * best-effort 提取 reasoning / cache 等扩展字段。
  */
 
 import type { Usage } from "../types/index.js";
@@ -18,27 +18,6 @@ function record(obj: Record<string, number | undefined>): Partial<Usage> {
     }
   }
   return out;
-}
-
-function billableFromOpenAIStyle(
-  inputTokens: number | undefined,
-  outputTokens: number | undefined,
-  cachedInputTokens: number | undefined,
-  reasoningTokens: number | undefined,
-): Pick<Usage, "billableInputTokens" | "billableOutputTokens"> {
-  let billableInputTokens: number | undefined;
-  if (inputTokens !== undefined) {
-    billableInputTokens =
-      cachedInputTokens !== undefined ? Math.max(0, inputTokens - cachedInputTokens) : inputTokens;
-  }
-
-  let billableOutputTokens: number | undefined;
-  if (outputTokens !== undefined) {
-    billableOutputTokens =
-      reasoningTokens !== undefined ? Math.max(0, outputTokens - reasoningTokens) : outputTokens;
-  }
-
-  return record({ billableInputTokens, billableOutputTokens });
 }
 
 /** OpenAI Chat Completions `usage` */
@@ -63,7 +42,6 @@ export function usageFromChatCompletions(raw: {
     totalTokens,
     cachedInputTokens,
     reasoningTokens,
-    ...billableFromOpenAIStyle(inputTokens, outputTokens, cachedInputTokens, reasoningTokens),
   });
 }
 
@@ -90,7 +68,6 @@ export function usageFromOpenAIResponses(raw: {
     totalTokens,
     cachedInputTokens,
     reasoningTokens,
-    ...billableFromOpenAIStyle(inputTokens, outputTokens, cachedInputTokens, reasoningTokens),
   });
 }
 
@@ -114,23 +91,16 @@ export function usageFromAnthropicMessages(raw: {
   const totalTokens =
     inputTokens !== undefined && outputTokens !== undefined ? inputTokens + outputTokens : undefined;
 
-  let billableInputTokens: number | undefined;
-  if (uncachedInputTokens !== undefined || cacheWriteInputTokens !== undefined) {
-    billableInputTokens = (uncachedInputTokens ?? 0) + (cacheWriteInputTokens ?? 0);
-  }
-
   return record({
     inputTokens,
     outputTokens,
     totalTokens,
     cachedInputTokens,
     cacheWriteInputTokens,
-    billableInputTokens,
-    billableOutputTokens: outputTokens,
   });
 }
 
-/** Ollama 流式 chunk（无 cache / reasoning 细分时仅填基础与 billable 镜像） */
+/** Ollama 流式 chunk */
 export function usageFromOllama(raw: {
   prompt_eval_count?: number;
   eval_count?: number;
@@ -144,7 +114,5 @@ export function usageFromOllama(raw: {
     inputTokens,
     outputTokens,
     totalTokens,
-    billableInputTokens: inputTokens,
-    billableOutputTokens: outputTokens,
   });
 }

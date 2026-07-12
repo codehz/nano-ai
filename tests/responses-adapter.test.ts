@@ -104,8 +104,6 @@ describe("ResponsesAdapter - text streaming", () => {
     const result = await collectStream(adapter.stream(makeRequest()));
     expect(result.usage?.cachedInputTokens).toBe(5);
     expect(result.usage?.reasoningTokens).toBe(8);
-    expect(result.usage?.billableInputTokens).toBe(45);
-    expect(result.usage?.billableOutputTokens).toBe(12);
   });
 
   it("should handle streaming multiple messages", async () => {
