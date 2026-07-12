@@ -16,6 +16,7 @@ import {
   AdapterBase,
   AIMappingError,
   AIProviderError,
+  collectStream,
 } from "../src/index.js";
 
 import type { NormalizedRequest, AIStreamEvent, EventFactory } from "../src/index.js";
@@ -185,27 +186,29 @@ describe("AdapterBase", () => {
       request: NormalizedRequest,
     ): AsyncIterable<AIStreamEvent> {
       yield factory.messageStarted("m1");
-      yield factory.messageDelta("m1", "Hello world");
-      yield factory.messageCompleted({
-        type: "message",
-        role: "assistant",
-        id: "m1",
-        content: [textBlock("Hello world")],
-      });
+      yield factory.messageDelta("m1", textBlock("Hello world"));
+      yield factory.messageCompleted("m1");
 
       const output = [messageItem([textBlock("Hello world")], { id: "m1" })];
-      yield factory.responseCompleted(
-        this.buildResponse(
-          request,
-          {
-            output,
-            replay: output,
-            stopReason: "end_turn",
-            usage: { inputTokens: 5, outputTokens: 2 },
-          },
-          factory,
-        ),
+      const resp = this.buildResponse(
+        request,
+        {
+          output,
+          replay: output,
+          stopReason: "end_turn",
+          usage: { inputTokens: 5, outputTokens: 2 },
+        },
+        factory,
       );
+      yield factory.responseCompleted({
+        replay: resp.replay,
+        stopReason: resp.stopReason,
+        usage: resp.usage,
+        billing: resp.billing,
+        auxiliary: resp.auxiliary,
+        warnings: resp.warnings,
+        trace: resp.backend,
+      });
     }
   }
 
@@ -245,14 +248,11 @@ describe("AdapterBase", () => {
       events.push(event);
     }
 
-    const completed = events.find((e) => e.type === "response.completed");
-    expect(completed).toBeDefined();
-    if (completed?.type === "response.completed") {
-      expect(completed.response.text).toBe("Hello world");
-      expect(completed.response.stopReason).toBe("end_turn");
-      expect(completed.response.usage?.inputTokens).toBe(5);
-      expect(completed.response.usage?.outputTokens).toBe(2);
-    }
+    const result = await collectStream(adapter.stream(request));
+    expect(result.text).toBe("Hello world");
+    expect(result.stopReason).toBe("end_turn");
+    expect(result.usage?.inputTokens).toBe(5);
+    expect(result.usage?.outputTokens).toBe(2);
   });
 
   it("should rethrow provider request errors", async () => {
@@ -315,8 +315,8 @@ describe("AdapterBase", () => {
     const completed = events.find((e) => e.type === "response.completed");
     expect(completed).toBeDefined();
     if (completed?.type === "response.completed") {
-      expect(completed.response.warnings).toBeDefined();
-      expect(completed.response.warnings![0]).toContain("provider exploded");
+      expect(completed.warnings).toBeDefined();
+      expect(completed.warnings![0]).toContain("provider exploded");
     }
   });
 
@@ -332,7 +332,7 @@ describe("AdapterBase", () => {
     }
     const completed = events.find((e) => e.type === "response.completed");
     if (completed?.type === "response.completed") {
-      expect(completed.response.backend.requestId).toBe("my-custom-id");
+      expect(completed.trace?.requestId).toBe("my-custom-id");
     }
   });
 
@@ -348,7 +348,7 @@ describe("AdapterBase", () => {
     }
     const completed = events.find((e) => e.type === "response.completed");
     if (completed?.type === "response.completed") {
-      expect(completed.response.backend.isSyntheticStream).toBe(true);
+      expect(completed.trace?.isSyntheticStream).toBe(true);
     }
 
     const started = events.find((e) => e.type === "response.started");
@@ -376,24 +376,22 @@ describe("AdapterBase", () => {
         factory: EventFactory,
         request: NormalizedRequest,
       ): AsyncIterable<AIStreamEvent> {
-        yield factory.responseCompleted(this.buildResponse(request, { output: [], replay: [] }, factory));
+        const resp = this.buildResponse(request, { output: [], replay: [] }, factory);
+        yield factory.responseCompleted({
+          replay: resp.replay,
+          stopReason: resp.stopReason,
+          usage: resp.usage,
+          billing: resp.billing,
+          auxiliary: resp.auxiliary,
+          warnings: resp.warnings,
+          trace: resp.backend,
+        });
       }
     }
     const adapter = new EmptyAdapter();
-    const events: AIStreamEvent[] = [];
-    for await (const event of adapter.stream({
-      model: "gpt-4",
-      requestId: "r",
-      input: [],
-    })) {
-      events.push(event);
-    }
-
-    const completed = events.find((e) => e.type === "response.completed");
-    if (completed?.type === "response.completed") {
-      expect(completed.response.output).toEqual([]);
-      expect(completed.response.text).toBe("");
-      expect(completed.response.toolCalls).toEqual([]);
-    }
+    const result = await collectStream(adapter.stream({ model: "gpt-4", requestId: "r", input: [] }));
+    expect(result.output).toEqual([]);
+    expect(result.text).toBe("");
+    expect(result.toolCalls).toEqual([]);
   });
 });

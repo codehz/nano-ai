@@ -365,13 +365,21 @@ export class MockAdapter extends AdapterBase {
             break;
           }
           case "complete": {
-            const response = this.finalizeTurn(request, factory, mockRequest, output, step, stepCount);
-            yield factory.responseCompleted(response);
+            const finalResponse = this.finalizeTurn(request, factory, mockRequest, output, step, stepCount);
+            yield factory.responseCompleted({
+              replay: finalResponse.replay,
+              stopReason: finalResponse.stopReason,
+              trace: finalResponse.backend,
+              usage: finalResponse.usage,
+              billing: finalResponse.billing,
+              auxiliary: finalResponse.auxiliary,
+              warnings: finalResponse.warnings,
+            });
             return;
           }
           case "error": {
             yield factory.responseWarning(step.message, step.code);
-            const response = this.finalizeTurn(
+            const finalResponse = this.finalizeTurn(
               request,
               factory,
               mockRequest,
@@ -383,7 +391,15 @@ export class MockAdapter extends AdapterBase {
               },
               stepCount,
             );
-            yield factory.responseCompleted(response);
+            yield factory.responseCompleted({
+              replay: finalResponse.replay,
+              stopReason: finalResponse.stopReason,
+              trace: finalResponse.backend,
+              usage: finalResponse.usage,
+              billing: finalResponse.billing,
+              auxiliary: finalResponse.auxiliary,
+              warnings: finalResponse.warnings,
+            });
             return;
           }
           case "interrupt":
@@ -394,7 +410,7 @@ export class MockAdapter extends AdapterBase {
         }
       }
 
-      const response = this.finalizeTurn(
+      const finalResponse = this.finalizeTurn(
         request,
         factory,
         mockRequest,
@@ -404,7 +420,15 @@ export class MockAdapter extends AdapterBase {
         },
         stepCount,
       );
-      yield factory.responseCompleted(response);
+      yield factory.responseCompleted({
+        replay: finalResponse.replay,
+        stopReason: finalResponse.stopReason,
+        trace: finalResponse.backend,
+        usage: finalResponse.usage,
+        billing: finalResponse.billing,
+        auxiliary: finalResponse.auxiliary,
+        warnings: finalResponse.warnings,
+      });
     } finally {
       this.activeStream = false;
     }
@@ -617,13 +641,15 @@ async function* emitMessage(
     if (block.type === "text") {
       for (const chunk of chunkText(block.text, stream)) {
         await delayForChunk(stream, chunkIndex, chunk.length);
-        yield factory.messageDelta(item.id, chunk);
+        yield factory.messageDelta(item.id, textBlock(chunk));
         chunkIndex += 1;
       }
+    } else {
+      yield factory.messageDelta(item.id, block);
     }
   }
 
-  yield factory.messageCompleted(item);
+  yield factory.messageCompleted(item.id);
 }
 
 async function* emitReasoning(
@@ -651,7 +677,7 @@ async function* emitReasoning(
     }
   }
 
-  yield factory.reasoningCompleted(item);
+  yield factory.reasoningCompleted(item.id);
 }
 
 async function* emitToolCall(
@@ -671,7 +697,7 @@ async function* emitToolCall(
     }
   }
 
-  yield factory.toolCallCompleted(item);
+  yield factory.toolCallCompleted(item.id);
 }
 
 function resolveStepStreamOptions(

@@ -250,13 +250,8 @@ describe("AIStreamEvent", () => {
     const e: AIStreamEvent = {
       ...base,
       type: "response.completed",
-      response: {
-        output: [],
-        replay: [],
-        text: "",
-        toolCalls: [],
-        backend: { adapter: "responses", isSyntheticStream: false },
-      },
+      replay: [],
+      trace: { adapter: "responses", isSyntheticStream: false },
     };
     expect(e.type).toBe("response.completed");
   });
@@ -267,7 +262,7 @@ describe("AIStreamEvent", () => {
     const completed: AIStreamEvent = {
       ...base,
       type: "message.completed",
-      item: { type: "message", role: "assistant", content: [{ type: "text", text: "Hi" }] },
+      itemId: "m1",
     };
     expect(started.type).toBe("message.started");
     expect(delta.type).toBe("message.delta");

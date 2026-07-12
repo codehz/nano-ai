@@ -19,14 +19,15 @@ import type {
   ToolCallStartedEvent,
   ToolCallDeltaEvent,
   ToolCallCompletedEvent,
-  MessageItem,
-  ReasoningItem,
-  ToolCallItem,
   ContentBlock,
   Usage,
   BillingInfo,
   AuxiliaryInfo,
-  AIResponse,
+  ReplayItem,
+  StopReason,
+  BackendTrace,
+  OpaqueItem,
+  ReasoningItem,
 } from "../types/index.js";
 
 export type EventFactoryBackend = {
@@ -80,8 +81,17 @@ export function createEventFactory(state: EventFactoryState) {
       return { ...base(), type: "response.auxiliary", ...data };
     },
 
-    responseCompleted(response: AIResponse): ResponseCompletedEvent {
-      return { ...base(), type: "response.completed", response };
+    responseCompleted(completion: {
+      replay: ReplayItem[];
+      stopReason?: StopReason;
+      usage?: Usage;
+      billing?: BillingInfo;
+      auxiliary?: AuxiliaryInfo;
+      warnings?: string[];
+      opaqueOutput?: OpaqueItem[];
+      trace?: Partial<BackendTrace>;
+    }): ResponseCompletedEvent {
+      return { ...base(), type: "response.completed", ...completion };
     },
 
     // ── 消息流事件 ──────────────────────────────────────────
@@ -90,12 +100,12 @@ export function createEventFactory(state: EventFactoryState) {
       return { ...base(), type: "message.started", item: { id, role: "assistant" } };
     },
 
-    messageDelta(itemId: string, text: string): MessageDeltaEvent {
-      return { ...base(), type: "message.delta", itemId, delta: { type: "text", text } };
+    messageDelta(itemId: string, delta: ContentBlock): MessageDeltaEvent {
+      return { ...base(), type: "message.delta", itemId, delta };
     },
 
-    messageCompleted(item: MessageItem): MessageCompletedEvent {
-      return { ...base(), type: "message.completed", item };
+    messageCompleted(itemId: string): MessageCompletedEvent {
+      return { ...base(), type: "message.completed", itemId };
     },
 
     // ── 思维链流事件 ────────────────────────────────────────
@@ -108,8 +118,8 @@ export function createEventFactory(state: EventFactoryState) {
       return { ...base(), type: "reasoning.delta", itemId, delta };
     },
 
-    reasoningCompleted(item: ReasoningItem): ReasoningCompletedEvent {
-      return { ...base(), type: "reasoning.completed", item };
+    reasoningCompleted(itemId: string): ReasoningCompletedEvent {
+      return { ...base(), type: "reasoning.completed", itemId };
     },
 
     // ── 工具调用流事件 ──────────────────────────────────────
@@ -122,8 +132,8 @@ export function createEventFactory(state: EventFactoryState) {
       return { ...base(), type: "tool_call.delta", itemId, delta };
     },
 
-    toolCallCompleted(item: ToolCallItem): ToolCallCompletedEvent {
-      return { ...base(), type: "tool_call.completed", item };
+    toolCallCompleted(itemId: string): ToolCallCompletedEvent {
+      return { ...base(), type: "tool_call.completed", itemId };
     },
 
     /** 返回当前已发出的 sequence 计数（用于断言） */

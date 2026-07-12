@@ -14,7 +14,7 @@
  */
 
 import { createEventFactory } from "../core/event-factory.js";
-import { replayFromOutput, extractText } from "./mapping.js";
+import { replayFromOutput } from "./mapping.js";
 
 import type {
   OutputItem,
@@ -23,10 +23,10 @@ import type {
   Usage,
   BillingInfo,
   AIStreamEvent,
-  AIResponse,
   MessageItem,
   ReasoningItem,
   ToolCallItem,
+  OpaqueItem,
 } from "../types/index.js";
 
 // ── 输入参数 ──────────────────────────────────────────────────
@@ -99,7 +99,7 @@ export async function* syntheticStream(options: SyntheticStreamOptions): AsyncIt
     yield factory.responseAuxiliary({ usage, billing });
   }
 
-  // 4. 构建最终 response
+  // 4. 构建最终 completion 并发射
   const finalReplay = replay ?? replayFromOutput(output);
 
   // 收集警告
@@ -107,26 +107,22 @@ export async function* syntheticStream(options: SyntheticStreamOptions): AsyncIt
   allWarnings.push("Response is synthetically streamed; delta granularity may differ from native streaming");
   if (extraWarnings) allWarnings.push(...extraWarnings);
 
-  const response: AIResponse = {
-    id: responseId,
-    output,
+  yield factory.responseCompleted({
     replay: finalReplay,
-    text: extractText(output),
-    toolCalls: output.filter((item): item is ToolCallItem => item.type === "tool_call"),
     stopReason,
     usage,
     billing,
     auxiliary: providerMetadata ? { providerMetadata } : undefined,
+    opaqueOutput: output.filter((item): item is OpaqueItem => item.type === "opaque"),
     warnings: allWarnings.length > 0 ? allWarnings : undefined,
-    backend: {
+    trace: {
       requestId: responseId,
       rawResponseId,
       adapter: backend.kind,
       isSyntheticStream: true,
+      warnings: allWarnings.length > 0 ? allWarnings : undefined,
     },
-  };
-
-  yield factory.responseCompleted(response);
+  });
 }
 
 // ── Item 事件发射 ─────────────────────────────────────────────
@@ -156,12 +152,10 @@ function* emitMessageEvents(
   yield factory.messageStarted(id);
 
   for (const block of item.content) {
-    if (block.type === "text") {
-      yield factory.messageDelta(id, block.text);
-    }
+    yield factory.messageDelta(id, block);
   }
 
-  yield factory.messageCompleted(item);
+  yield factory.messageCompleted(id);
 }
 
 function* emitReasoningEvents(
@@ -172,12 +166,10 @@ function* emitReasoningEvents(
   yield factory.reasoningStarted(id, item.visibility);
 
   for (const block of item.content) {
-    if (block.type === "text") {
-      yield factory.reasoningDelta(id, block);
-    }
+    yield factory.reasoningDelta(id, block);
   }
 
-  yield factory.reasoningCompleted(item);
+  yield factory.reasoningCompleted(id);
 }
 
 function* emitToolCallEvents(
@@ -190,7 +182,7 @@ function* emitToolCallEvents(
     yield factory.toolCallDelta(item.id, { argumentsText: item.argumentsText });
   }
 
-  yield factory.toolCallCompleted(item);
+  yield factory.toolCallCompleted(item.id);
 }
 
 // ── Helper ────────────────────────────────────────────────────

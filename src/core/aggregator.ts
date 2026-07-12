@@ -2,11 +2,14 @@
  * 流聚合器
  *
  * 将 AIStreamEvent 序列聚合为统一的 AIResponse。
+ *
  * 职责：
- * - 合并 message.delta / reasoning.delta / tool_call.delta
- * - 合并多次 response.auxiliary 补丁
- * - 生成 output / text / toolCalls
- * - 保持 output 顺序稳定
+ * - 严格 item 状态机：started 创建 active item，delta 累积，completed 构建 OutputItem
+ * - 校验：未 started 的 delta/completed、ID 重用、类型错配、response.completed 时 active items 非空
+ * - 响应级 sequence/responseId/started/completed 校验
+ * - usage/billing/auxiliary 仅来自 response.auxiliary
+ * - warning 仅来自 response.warning
+ * - 最终 AIResponse 由聚合器唯一构建
  *
  * 约束：
  * - replay 由 adapter 显式提供，聚合器不猜测
@@ -25,9 +28,35 @@ import type {
   AuxiliaryInfo,
   BackendTrace,
   StopReason,
+  ContentBlock,
 } from "../types/index.js";
 import { AIStreamError } from "./errors.js";
 import { mergeAuxiliary } from "./merge-auxiliary.js";
+
+// ── Active item types ─────────────────────────────────────────
+
+type ActiveMessage = {
+  type: "message";
+  id: string;
+  role: "assistant";
+  content: ContentBlock[];
+};
+
+type ActiveReasoning = {
+  type: "reasoning";
+  id: string;
+  visibility: "full" | "summary" | "redacted" | "opaque";
+  content: ContentBlock[];
+};
+
+type ActiveToolCall = {
+  type: "tool_call";
+  id: string;
+  name: string;
+  argumentsText: string;
+};
+
+type ActiveItem = ActiveMessage | ActiveReasoning | ActiveToolCall;
 
 // ── 聚合器状态 ────────────────────────────────────────────────
 
@@ -48,12 +77,12 @@ export interface AggregatorState {
   started: boolean;
   completed: boolean;
   nextSequence?: number;
+  activeItems: Map<string, ActiveItem>;
 
   /** adapter 在 response.completed 中提供的 replay */
   replayFromAdapter?: import("../types/index.js").ReplayItem[];
-  responseIdFromAdapter?: string;
   stopReasonFromAdapter?: StopReason;
-  backendFromAdapter?: BackendTrace;
+  backendFromAdapter?: Partial<BackendTrace>;
 }
 
 export function createAggregatorState(): AggregatorState {
@@ -66,6 +95,47 @@ export function createAggregatorState(): AggregatorState {
     toolCalls: [],
     started: false,
     completed: false,
+    activeItems: new Map(),
+  };
+}
+
+// ── Active item helpers ───────────────────────────────────────
+
+function getActiveItem(state: AggregatorState, itemId: string, expectedType: ActiveItem["type"]): ActiveItem {
+  const item = state.activeItems.get(itemId);
+  if (!item) {
+    throw streamProtocolError(`Received ${expectedType} delta/completed for unknown item: ${itemId}`);
+  }
+  if (item.type !== expectedType) {
+    throw streamProtocolError(`Item ${itemId} started as ${item.type} but received ${expectedType} event`);
+  }
+  return item;
+}
+
+function finalizeMessage(active: ActiveMessage): MessageItem {
+  return {
+    type: "message",
+    id: active.id,
+    role: active.role,
+    content: active.content,
+  };
+}
+
+function finalizeReasoning(active: ActiveReasoning): import("../types/index.js").ReasoningItem {
+  return {
+    type: "reasoning",
+    id: active.id,
+    visibility: active.visibility,
+    content: active.content,
+  };
+}
+
+function finalizeToolCall(active: ActiveToolCall): ToolCallItem {
+  return {
+    type: "tool_call",
+    id: active.id,
+    name: active.name,
+    argumentsText: active.argumentsText,
   };
 }
 
@@ -97,61 +167,117 @@ function handleResponseAuxiliary(state: AggregatorState, event: AIStreamEvent & 
   }
 }
 
+function handleMessageStarted(state: AggregatorState, event: AIStreamEvent & { type: "message.started" }): void {
+  const id = event.item.id;
+  if (state.activeItems.has(id)) {
+    throw streamProtocolError(`Item with id ${id} is already active`);
+  }
+  state.activeItems.set(id, {
+    type: "message",
+    id,
+    role: event.item.role,
+    content: [],
+  });
+}
+
+function handleMessageDelta(state: AggregatorState, event: AIStreamEvent & { type: "message.delta" }): void {
+  const active = getActiveItem(state, event.itemId, "message") as ActiveMessage;
+  active.content.push(event.delta);
+}
+
 function handleMessageCompleted(state: AggregatorState, event: AIStreamEvent & { type: "message.completed" }): void {
-  state.output.push(event.item);
-  pushMessageText(state, event.item);
+  const active = getActiveItem(state, event.itemId, "message") as ActiveMessage;
+  state.activeItems.delete(event.itemId);
+  const item = finalizeMessage(active);
+  state.output.push(item);
+  pushMessageText(state, item);
+}
+
+function handleReasoningStarted(state: AggregatorState, event: AIStreamEvent & { type: "reasoning.started" }): void {
+  const id = event.item.id;
+  if (state.activeItems.has(id)) {
+    throw streamProtocolError(`Item with id ${id} is already active`);
+  }
+  state.activeItems.set(id, {
+    type: "reasoning",
+    id,
+    visibility: event.item.visibility,
+    content: [],
+  });
+}
+
+function handleReasoningDelta(state: AggregatorState, event: AIStreamEvent & { type: "reasoning.delta" }): void {
+  const active = getActiveItem(state, event.itemId, "reasoning") as ActiveReasoning;
+  active.content.push(event.delta);
 }
 
 function handleReasoningCompleted(
   state: AggregatorState,
   event: AIStreamEvent & { type: "reasoning.completed" },
 ): void {
-  state.output.push(event.item);
+  const active = getActiveItem(state, event.itemId, "reasoning") as ActiveReasoning;
+  state.activeItems.delete(event.itemId);
+  state.output.push(finalizeReasoning(active));
+}
+
+function handleToolCallStarted(state: AggregatorState, event: AIStreamEvent & { type: "tool_call.started" }): void {
+  const id = event.item.id;
+  if (state.activeItems.has(id)) {
+    throw streamProtocolError(`Item with id ${id} is already active`);
+  }
+  state.activeItems.set(id, {
+    type: "tool_call",
+    id,
+    name: event.item.name,
+    argumentsText: "",
+  });
+}
+
+function handleToolCallDelta(state: AggregatorState, event: AIStreamEvent & { type: "tool_call.delta" }): void {
+  const active = getActiveItem(state, event.itemId, "tool_call") as ActiveToolCall;
+  if (event.delta.argumentsText) {
+    active.argumentsText += event.delta.argumentsText;
+  }
 }
 
 function handleToolCallCompleted(state: AggregatorState, event: AIStreamEvent & { type: "tool_call.completed" }): void {
-  state.output.push(event.item);
-  state.toolCalls.push(event.item);
+  const active = getActiveItem(state, event.itemId, "tool_call") as ActiveToolCall;
+  state.activeItems.delete(event.itemId);
+  const item = finalizeToolCall(active);
+  state.output.push(item);
+  state.toolCalls.push(item);
 }
 
 function handleResponseCompleted(state: AggregatorState, event: AIStreamEvent & { type: "response.completed" }): void {
+  if (state.activeItems.size > 0) {
+    throw streamProtocolError("response.completed received while active items still pending");
+  }
   state.completed = true;
-  state.replayFromAdapter = event.response.replay;
-  state.responseIdFromAdapter = event.response.id;
-  state.stopReasonFromAdapter = event.response.stopReason;
-  state.backendFromAdapter = event.response.backend;
-
-  // 从 response.completed 中提取 usage/billing（适配器可能未发 auxiliary 事件）
-  if (event.response.usage) {
-    state.usage = { ...state.usage, ...event.response.usage };
-  }
-  if (event.response.billing) {
-    state.billing = { ...state.billing, ...event.response.billing };
-  }
-  if (event.response.auxiliary) {
-    state.auxiliary = mergeAuxiliary(state.auxiliary, event.response.auxiliary) ?? {};
-  }
-  if (event.response.warnings) {
-    pushWarnings(state, event.response.warnings);
-  }
+  state.replayFromAdapter = event.replay;
+  state.stopReasonFromAdapter = event.stopReason;
+  state.backendFromAdapter = event.trace;
+  if (event.usage) state.usage = { ...state.usage, ...event.usage };
+  if (event.billing) state.billing = { ...state.billing, ...event.billing };
+  if (event.auxiliary) state.auxiliary = mergeAuxiliary(state.auxiliary, event.auxiliary) ?? {};
+  if (event.warnings) pushWarnings(state, event.warnings);
+  if (event.opaqueOutput) state.output.push(...event.opaqueOutput);
 }
 
 // ── 从聚合状态构建最终 AIResponse ─────────────────────────────
 
 function buildResponse(state: AggregatorState): AIResponse {
-  // 合并 backend trace
-  const backendFromResponse = state.backendFromAdapter;
+  const backendFromCompleted = state.backendFromAdapter;
   const backend: BackendTrace = {
-    adapter: backendFromResponse?.adapter ?? state.backendInfo?.kind ?? ("unknown" as BackendTrace["adapter"]),
-    isSyntheticStream: backendFromResponse?.isSyntheticStream ?? state.backendInfo?.isSynthetic ?? false,
-    requestId: backendFromResponse?.requestId ?? state.responseId,
-    rawResponseId: backendFromResponse?.rawResponseId,
-    metadataSources: backendFromResponse?.metadataSources,
-    warnings: backendFromResponse?.warnings,
+    adapter: backendFromCompleted?.adapter ?? state.backendInfo?.kind ?? ("unknown" as BackendTrace["adapter"]),
+    isSyntheticStream: backendFromCompleted?.isSyntheticStream ?? state.backendInfo?.isSynthetic ?? false,
+    requestId: backendFromCompleted?.requestId ?? state.responseId,
+    rawResponseId: backendFromCompleted?.rawResponseId,
+    metadataSources: backendFromCompleted?.metadataSources,
+    warnings: backendFromCompleted?.warnings,
   };
 
   return {
-    id: state.responseIdFromAdapter ?? state.responseId,
+    id: state.responseId,
     output: state.output,
     replay: state.replayFromAdapter ?? [],
     text: state.textParts.join(""),
@@ -194,17 +320,28 @@ export function aggregateEvent(state: AggregatorState, event: AIStreamEvent): vo
       handleResponseAuxiliary(state, event);
       break;
     case "message.started":
+      handleMessageStarted(state, event);
+      break;
     case "message.delta":
-    case "reasoning.started":
-    case "reasoning.delta":
-    case "tool_call.started":
-    case "tool_call.delta":
+      handleMessageDelta(state, event);
       break;
     case "message.completed":
       handleMessageCompleted(state, event);
       break;
+    case "reasoning.started":
+      handleReasoningStarted(state, event);
+      break;
+    case "reasoning.delta":
+      handleReasoningDelta(state, event);
+      break;
     case "reasoning.completed":
       handleReasoningCompleted(state, event);
+      break;
+    case "tool_call.started":
+      handleToolCallStarted(state, event);
+      break;
+    case "tool_call.delta":
+      handleToolCallDelta(state, event);
       break;
     case "tool_call.completed":
       handleToolCallCompleted(state, event);
@@ -235,6 +372,14 @@ function pushWarnings(state: AggregatorState, warnings: readonly string[]): void
   }
 }
 
+function pushMessageText(state: AggregatorState, item: MessageItem): void {
+  for (const block of item.content) {
+    if (block.type === "text") {
+      state.textParts.push(block.text);
+    }
+  }
+}
+
 function validateEventEnvelope(state: AggregatorState, event: AIStreamEvent): void {
   if (state.completed) {
     throw streamProtocolError("response.completed must be the final stream event");
@@ -252,13 +397,5 @@ function validateEventEnvelope(state: AggregatorState, event: AIStreamEvent): vo
 }
 
 function streamProtocolError(message: string): AIStreamError {
-  return new AIStreamError(message, "STREAM_ERROR");
-}
-
-function pushMessageText(state: AggregatorState, item: MessageItem): void {
-  for (const block of item.content) {
-    if (block.type === "text") {
-      state.textParts.push(block.text);
-    }
-  }
+  return new AIStreamError(message, "STREAM_PROTOCOL_ERROR");
 }

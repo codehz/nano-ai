@@ -451,13 +451,13 @@ export class ChatCompletionsAdapter extends AdapterBase {
 
       if (hasReasoningStarted && accumulatedReasoning) {
         const reasoning = reasoningItem([textBlock(accumulatedReasoning)], "full", currentReasoningId);
-        events.push(factory.reasoningCompleted(reasoning));
+        events.push(factory.reasoningCompleted(currentReasoningId));
         output.push(reasoning);
       }
 
       if (hasMessageStarted) {
         const message = messageItem([textBlock(accumulatedContent)], { id: currentMessageId });
-        events.push(factory.messageCompleted(message));
+        events.push(factory.messageCompleted(currentMessageId));
         if (accumulatedContent) {
           output.push(message);
         }
@@ -465,7 +465,7 @@ export class ChatCompletionsAdapter extends AdapterBase {
 
       for (const pending of finalizedToolCalls) {
         const toolCall = toolCallItem(pending.id, pending.name, pending.args);
-        events.push(factory.toolCallCompleted(toolCall));
+        events.push(factory.toolCallCompleted(pending.id));
         output.push(toolCall);
       }
 
@@ -515,23 +515,30 @@ export class ChatCompletionsAdapter extends AdapterBase {
         yield event;
       }
 
-      yield factory.responseCompleted(
-        buildResponse(
-          request,
-          {
-            output,
-            replay,
-            stopReason,
-            usage: auxiliaryResult.usage,
-            billing: auxiliaryResult.billing,
-            auxiliary: auxiliaryResult.auxiliary,
-            warnings: auxiliaryResult.warnings,
-            metadataSources: auxiliaryResult.metadataSources,
-            rawResponseId,
-          },
-          factory,
-        ),
+      const finalResponse = buildResponse(
+        request,
+        {
+          output,
+          replay,
+          stopReason,
+          usage: auxiliaryResult.usage,
+          billing: auxiliaryResult.billing,
+          auxiliary: auxiliaryResult.auxiliary,
+          warnings: auxiliaryResult.warnings,
+          metadataSources: auxiliaryResult.metadataSources,
+          rawResponseId,
+        },
+        factory,
       );
+      yield factory.responseCompleted({
+        replay: finalResponse.replay,
+        stopReason: finalResponse.stopReason,
+        trace: finalResponse.backend,
+        usage: finalResponse.usage,
+        billing: finalResponse.billing,
+        auxiliary: finalResponse.auxiliary,
+        warnings: finalResponse.warnings,
+      });
     };
 
     try {
@@ -624,7 +631,7 @@ export class ChatCompletionsAdapter extends AdapterBase {
                 yield factory.messageStarted(currentMessageId);
               }
               accumulatedContent += delta.content;
-              yield factory.messageDelta(currentMessageId, delta.content);
+              yield factory.messageDelta(currentMessageId, textBlock(delta.content));
             }
 
             // 处理 tool_calls delta

@@ -6,7 +6,7 @@
 
 import { createEventFactory, textBlock, messageItem, reasoningItem, toolCallItem } from "../src/index.js";
 
-import type { AIStreamEvent, AIResponse, MessageItem, ReasoningItem, ToolCallItem } from "../src/index.js";
+import type { AIResponse, AIStreamEvent, MessageItem, ReasoningItem, ToolCallItem } from "../src/index.js";
 
 // ── 工厂辅助 ──────────────────────────────────────────────────
 
@@ -66,27 +66,23 @@ export function goldenMessageReasoningToolCallSequence(): AIStreamEvent[] {
     // reasoning block
     f.reasoningStarted("r1", "full"),
     f.reasoningDelta("r1", textBlock("thinking step 1...")),
-    f.reasoningCompleted(r),
+    f.reasoningCompleted("r1"),
 
     // message block
     f.messageStarted("m1"),
-    f.messageDelta("m1", "Hi there!"),
-    f.messageCompleted(m),
+    f.messageDelta("m1", textBlock("Hi there!")),
+    f.messageCompleted("m1"),
 
     // tool_call block
     f.toolCallStarted("tc1", "get_weather"),
     f.toolCallDelta("tc1", { argumentsText: '{"city":"Hangzhou"}' }),
-    f.toolCallCompleted(tc),
+    f.toolCallCompleted("tc1"),
 
     // completed
     f.responseCompleted({
-      id: "golden-1",
-      output: [r, m, tc],
       replay: [r, m, tc],
-      text: "Hi there!",
-      toolCalls: [tc],
       stopReason: "tool_call",
-      backend: { adapter: "responses", isSyntheticStream: false },
+      trace: { adapter: "responses", isSyntheticStream: false },
     }),
   ];
 }
@@ -101,16 +97,12 @@ export function goldenTextOnlySequence(): AIStreamEvent[] {
   return [
     f.responseStarted("gpt-4o"),
     f.messageStarted("m1"),
-    f.messageDelta("m1", "Hi there!"),
-    f.messageCompleted(m),
+    f.messageDelta("m1", textBlock("Hi there!")),
+    f.messageCompleted("m1"),
     f.responseCompleted({
-      id: "golden-text",
-      output: [m],
       replay: [m],
-      text: "Hi there!",
-      toolCalls: [],
       stopReason: "end_turn",
-      backend: { adapter: "responses", isSyntheticStream: false },
+      trace: { adapter: "responses", isSyntheticStream: false },
     }),
   ];
 }
@@ -127,16 +119,12 @@ export function goldenWarningSequence(): AIStreamEvent[] {
     f.responseWarning("Usage information was not provided", "USAGE_MISSING"),
     f.responseWarning("Replay fidelity is low for this provider", "REPLAY_FIDELITY_LOW"),
     f.messageStarted("m1"),
-    f.messageDelta("m1", "Hi there!"),
-    f.messageCompleted(m),
+    f.messageDelta("m1", textBlock("Hi there!")),
+    f.messageCompleted("m1"),
     f.responseCompleted({
-      id: "golden-warn",
-      output: [m],
       replay: [m],
-      text: "Hi there!",
-      toolCalls: [],
       warnings: ["Usage information was not provided", "Replay fidelity is low for this provider"],
-      backend: { adapter: "responses", isSyntheticStream: false },
+      trace: { adapter: "responses", isSyntheticStream: false },
     }),
   ];
 }
@@ -149,7 +137,7 @@ export function goldenInterruptedSequence(): AIStreamEvent[] {
   return [
     f.responseStarted("gpt-4o"),
     f.messageStarted("m1"),
-    f.messageDelta("m1", "Partial output"),
+    f.messageDelta("m1", textBlock("Partial output")),
     // 故意没有 message.completed 和 response.completed
   ];
 }

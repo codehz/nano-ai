@@ -556,7 +556,7 @@ export class MessagesAdapter extends AdapterBase {
                   yield factory.reasoningStarted(currentItemId, "redacted");
                   yield factory.reasoningDelta(currentItemId, textBlock(data));
                   const redactedItem = reasoningItem([textBlock(data)], "redacted", currentItemId);
-                  yield factory.reasoningCompleted(redactedItem);
+                  yield factory.reasoningCompleted(currentItemId);
                   output.push(redactedItem);
                   rawReplayContent.push({ type: "redacted_thinking", data });
                   currentItemType = null;
@@ -584,7 +584,7 @@ export class MessagesAdapter extends AdapterBase {
                   if (currentItemType === "message" && currentItemId) {
                     const txt = (delta as unknown as { text: string }).text;
                     textBuffer += txt;
-                    yield factory.messageDelta(currentItemId, txt);
+                    yield factory.messageDelta(currentItemId, textBlock(txt));
                   }
                   break;
                 }
@@ -610,18 +610,16 @@ export class MessagesAdapter extends AdapterBase {
 
             case "content_block_stop": {
               if (currentItemType === "message" && currentItemId) {
-                yield factory.messageCompleted(messageItem([textBlock(textBuffer)], { id: currentItemId }));
+                yield factory.messageCompleted(currentItemId);
                 output.push(messageItem([textBlock(textBuffer)], { id: currentItemId }));
                 rawReplayContent.push({ type: "text", text: textBuffer });
               } else if (currentItemType === "reasoning" && currentItemId && currentThinkingVisibility !== "redacted") {
-                yield factory.reasoningCompleted(
-                  reasoningItem([textBlock(thinkingBuffer)], currentThinkingVisibility, currentItemId),
-                );
+                yield factory.reasoningCompleted(currentItemId);
                 output.push(reasoningItem([textBlock(thinkingBuffer)], currentThinkingVisibility, currentItemId));
                 rawReplayContent.push({ type: "thinking", thinking: thinkingBuffer });
               } else if (currentItemType === "tool_call" && currentItemId) {
                 const tcItem = toolCallItem(currentItemId, currentToolName, currentArgsText || argsBuffer);
-                yield factory.toolCallCompleted(tcItem);
+                yield factory.toolCallCompleted(currentItemId);
                 output.push(tcItem);
                 rawReplayContent.push({
                   type: "tool_use",
@@ -712,23 +710,30 @@ export class MessagesAdapter extends AdapterBase {
 
     if (!completedEmitted) {
       completedEmitted = true;
-      yield factory.responseCompleted(
-        this.buildResponse(
-          request,
-          {
-            output,
-            replay,
-            stopReason: stopReason ? mapStopReason(stopReason) : undefined,
-            usage: auxiliaryResult.usage,
-            billing: auxiliaryResult.billing,
-            auxiliary: auxiliaryResult.auxiliary,
-            warnings: auxiliaryResult.warnings,
-            metadataSources: auxiliaryResult.metadataSources,
-            rawResponseId,
-          },
-          factory,
-        ),
+      const finalResponse = this.buildResponse(
+        request,
+        {
+          output,
+          replay,
+          stopReason: stopReason ? mapStopReason(stopReason) : undefined,
+          usage: auxiliaryResult.usage,
+          billing: auxiliaryResult.billing,
+          auxiliary: auxiliaryResult.auxiliary,
+          warnings: auxiliaryResult.warnings,
+          metadataSources: auxiliaryResult.metadataSources,
+          rawResponseId,
+        },
+        factory,
       );
+      yield factory.responseCompleted({
+        replay: finalResponse.replay,
+        stopReason: finalResponse.stopReason,
+        trace: finalResponse.backend,
+        usage: finalResponse.usage,
+        billing: finalResponse.billing,
+        auxiliary: finalResponse.auxiliary,
+        warnings: finalResponse.warnings,
+      });
     }
   }
 }

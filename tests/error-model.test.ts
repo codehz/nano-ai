@@ -21,7 +21,7 @@ import {
   collectStream,
   AdapterBase,
   textBlock,
-  messageItem,
+  normalizeRequest,
 } from "../src/index.js";
 
 import type { AIStreamEvent } from "../src/index.js";
@@ -96,12 +96,10 @@ describe("WarningCode", () => {
 describe("Fatal errors", () => {
   it("should throw synchronously from createAIClient when input is empty", () => {
     // 这个测试验证 validateRequest 在进入 adapter 前就抛错
-    const { normalizeRequest } = require("../src/index.js");
     expect(() => normalizeRequest({ input: [] }, { model: "gpt-4" })).toThrow(AIRequestError);
   });
 
   it("should throw when temperature is out of range", () => {
-    const { normalizeRequest } = require("../src/index.js");
     expect(() =>
       normalizeRequest(
         {
@@ -150,7 +148,7 @@ describe("Stream interruption semantics", () => {
     async function* interrupted(): AsyncIterable<AIStreamEvent> {
       yield f.responseStarted("gpt-4");
       yield f.messageStarted("m1");
-      yield f.messageDelta("m1", "Partial");
+      yield f.messageDelta("m1", textBlock("Partial"));
       // 没有 message.completed, 没有 response.completed
       // 流在这里中断
     }
@@ -167,7 +165,7 @@ describe("Stream interruption semantics", () => {
     const events = [
       f.responseStarted("gpt-4"),
       f.messageStarted("m1"),
-      f.messageDelta("m1", "Partial"),
+      f.messageDelta("m1", textBlock("Partial")),
       // 没有 response.completed
     ];
 
@@ -218,21 +216,21 @@ describe("Stream interruption semantics", () => {
     const normalEvents = [
       f.responseStarted("gpt-4"),
       f.messageStarted("m1"),
-      f.messageDelta("m1", "ok"),
-      f.messageCompleted(messageItem([textBlock("ok")], { id: "m1" })),
+      f.messageDelta("m1", textBlock("ok")),
+      f.messageCompleted("m1"),
       f.responseCompleted({
-        id: "r",
-        output: [],
         replay: [],
-        text: "ok",
-        toolCalls: [],
-        backend: { adapter: "responses", isSyntheticStream: false },
+        trace: { adapter: "responses", isSyntheticStream: false },
       }),
     ];
     expect(() => aggregateEvents(normalEvents)).not.toThrow();
 
     // 中断
-    const interruptedEvents = [f.responseStarted("gpt-4"), f.messageStarted("m1"), f.messageDelta("m1", "Partial")];
+    const interruptedEvents = [
+      f.responseStarted("gpt-4"),
+      f.messageStarted("m1"),
+      f.messageDelta("m1", textBlock("Partial")),
+    ];
     expect(() => aggregateEvents(interruptedEvents)).toThrow();
   });
 });
@@ -250,12 +248,8 @@ describe("Non-fatal differences use warning channel", () => {
       f.responseStarted("gpt-4"),
       f.responseWarning("Usage information was not provided by the provider", WarningCode.USAGE_MISSING),
       f.responseCompleted({
-        id: "r",
-        output: [],
         replay: [],
-        text: "",
-        toolCalls: [],
-        backend: { adapter: "responses", isSyntheticStream: false },
+        trace: { adapter: "responses", isSyntheticStream: false },
       }),
     ];
 
@@ -274,12 +268,8 @@ describe("Non-fatal differences use warning channel", () => {
       f.responseStarted("gpt-4"),
       f.responseWarning("Replay fidelity is low for this provider", WarningCode.REPLAY_FIDELITY_LOW),
       f.responseCompleted({
-        id: "r",
-        output: [],
         replay: [],
-        text: "",
-        toolCalls: [],
-        backend: { adapter: "responses", isSyntheticStream: false },
+        trace: { adapter: "responses", isSyntheticStream: false },
       }),
     ];
 
@@ -298,12 +288,8 @@ describe("Non-fatal differences use warning channel", () => {
       f.responseStarted("gpt-4"),
       f.responseWarning("Some non-fatal issue", "NON_FATAL"),
       f.responseCompleted({
-        id: "r",
-        output: [],
         replay: [],
-        text: "",
-        toolCalls: [],
-        backend: { adapter: "responses", isSyntheticStream: false },
+        trace: { adapter: "responses", isSyntheticStream: false },
       }),
     ];
 
@@ -323,12 +309,8 @@ describe("Non-fatal differences use warning channel", () => {
       f.responseStarted("gpt-4"),
       f.responseWarning("Billing amount is an estimate", WarningCode.BILLING_ESTIMATED),
       f.responseCompleted({
-        id: "r",
-        output: [],
         replay: [],
-        text: "",
-        toolCalls: [],
-        backend: { adapter: "responses", isSyntheticStream: false },
+        trace: { adapter: "responses", isSyntheticStream: false },
       }),
     ];
 
@@ -347,15 +329,11 @@ describe("Normal vs abnormal termination", () => {
     const events = [
       f.responseStarted("gpt-4"),
       f.messageStarted("m1"),
-      f.messageDelta("m1", "Done"),
-      f.messageCompleted(messageItem([textBlock("Done")], { id: "m1" })),
+      f.messageDelta("m1", { type: "text", text: "Done" }),
+      f.messageCompleted("m1"),
       f.responseCompleted({
-        id: "normal",
-        output: [messageItem([textBlock("Done")], { id: "m1" })],
         replay: [],
-        text: "Done",
-        toolCalls: [],
-        backend: { adapter: "responses", isSyntheticStream: false },
+        trace: { adapter: "responses", isSyntheticStream: false },
         stopReason: "end_turn",
       }),
     ];

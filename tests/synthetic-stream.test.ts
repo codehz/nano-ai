@@ -83,7 +83,7 @@ describe("syntheticStream - items", () => {
 
     const delta = events.find((e) => e.type === "message.delta");
     if (delta?.type === "message.delta") {
-      expect(delta.delta.text).toBe("Hello world");
+      expect(delta.delta.type === "text" ? delta.delta.text : undefined).toBe("Hello world");
     }
   });
 
@@ -157,21 +157,17 @@ describe("syntheticStream - items", () => {
 
     const types = events.map((e) => e.type);
     expect(types.filter((t) => t.includes("opaque"))).toHaveLength(0);
-    // 但最终 response 应包含 opaque item
-    const completed = events.find((e) => e.type === "response.completed");
-    if (completed?.type === "response.completed") {
-      expect(completed.response.output).toHaveLength(2);
-      expect(completed.response.output[1]!.type).toBe("opaque");
-    }
+    // 用 aggregateEvents 验证 opaque item 出现在最终 AIResponse 中
+    const result = aggregateEvents(events);
+    expect(result.output).toHaveLength(2);
+    expect(result.output[1]!.type).toBe("opaque");
   });
 
   it("should handle empty output gracefully", async () => {
     const events = await collect(syntheticStream(makeOptions({ output: [] })));
-    const completed = events.find((e) => e.type === "response.completed");
-    if (completed?.type === "response.completed") {
-      expect(completed.response.output).toEqual([]);
-      expect(completed.response.text).toBe("");
-    }
+    const result = aggregateEvents(events);
+    expect(result.output).toEqual([]);
+    expect(result.text).toBe("");
   });
 });
 
@@ -207,7 +203,7 @@ describe("syntheticStream - metadata", () => {
 
     const completed = events.find((e) => e.type === "response.completed");
     if (completed?.type === "response.completed") {
-      expect(completed.response.stopReason).toBe("end_turn");
+      expect(completed.stopReason).toBe("end_turn");
     }
   });
 
@@ -215,8 +211,8 @@ describe("syntheticStream - metadata", () => {
     const events = await collect(syntheticStream(makeOptions()));
     const completed = events.find((e) => e.type === "response.completed");
     if (completed?.type === "response.completed") {
-      expect(completed.response.warnings).toBeDefined();
-      expect(completed.response.warnings!.some((w) => w.includes("synthetically"))).toBe(true);
+      expect(completed.warnings).toBeDefined();
+      expect(completed.warnings!.some((w) => w.includes("synthetically"))).toBe(true);
     }
   });
 
@@ -230,7 +226,7 @@ describe("syntheticStream - metadata", () => {
     );
     const completed = events.find((e) => e.type === "response.completed");
     if (completed?.type === "response.completed") {
-      expect(completed.response.warnings).toContain("Custom adapter warning");
+      expect(completed.warnings).toContain("Custom adapter warning");
     }
   });
 });
