@@ -14,6 +14,8 @@ import {
   opaqueItem,
   replayFromOutput,
   AdapterBase,
+  AIMappingError,
+  AIProviderError,
 } from "../src/index.js";
 
 import type { NormalizedRequest, AIStreamEvent, EventFactory } from "../src/index.js";
@@ -246,12 +248,12 @@ describe("AdapterBase", () => {
     }
   });
 
-  it("should include provider request error as warning and still complete", async () => {
+  it("should rethrow provider request errors", async () => {
     class ErrorAdapter extends AdapterBase {
       readonly kind = "responses" as const;
       readonly nativeStreaming = false;
       protected buildRequest(): never {
-        throw new Error("API connection failed");
+        throw new AIProviderError("API connection failed", "PROVIDER_ERROR", 503);
       }
       protected async *runStream(): AsyncIterable<AIStreamEvent> {
         // unreachable since buildRequest throws
@@ -259,28 +261,21 @@ describe("AdapterBase", () => {
     }
 
     const adapter = new ErrorAdapter();
-    const events: AIStreamEvent[] = [];
-    for await (const event of adapter.stream({ model: "gpt-4", requestId: "r", input: [] })) {
-      events.push(event);
-    }
-
-    const warning = events.find((e) => e.type === "response.warning");
-    expect(warning).toBeDefined();
-    if (warning?.type === "response.warning") {
-      expect(warning.message).toContain("API connection failed");
-    }
-
-    const completed = events.find((e) => e.type === "response.completed");
-    expect(completed).toBeDefined();
+    await expect((async () => {
+      for await (const ignoredEvent of adapter.stream({ model: "gpt-4", requestId: "r", input: [] })) {
+        void ignoredEvent;
+        // consume
+      }
+    })()).rejects.toBeInstanceOf(AIProviderError);
   });
 
-  it("should carry emitted warnings into the final completed response", async () => {
+  it("should degrade mapping errors into warning + completed", async () => {
     class WarningAdapter extends AdapterBase {
       readonly kind = "responses" as const;
       readonly nativeStreaming = false;
 
       protected buildRequest(): never {
-        throw new Error("provider exploded");
+        throw new AIMappingError("provider exploded", "MAPPING_ERROR");
       }
 
       protected async *runStream(): AsyncIterable<AIStreamEvent> {

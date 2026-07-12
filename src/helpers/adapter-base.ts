@@ -25,7 +25,7 @@ import type {
   ToolCallItem,
 } from "../types/index.js";
 import { createEventFactory } from "../core/event-factory.js";
-import { AIMappingError, AIRequestError, AIStreamError } from "../core/errors.js";
+import { AIMappingError, AIProviderError, AIRequestError, AIStreamError } from "../core/errors.js";
 import type { EventFactory } from "../core/event-factory.js";
 import { extractText } from "./mapping.js";
 import { AdapterAuxiliaryState } from "./adapter-auxiliary.js";
@@ -75,11 +75,17 @@ export abstract class AdapterBase implements BackendAdapter {
       const providerRequest = await this.buildRequest(request);
       yield* this.runStream(providerRequest, factory, request);
     } catch (err) {
-      if (err instanceof AIRequestError || err instanceof AIStreamError || err instanceof AIMappingError) {
+      if (err instanceof AIRequestError || err instanceof AIProviderError || err instanceof AIStreamError) {
         throw err;
       }
-      yield factory.responseWarning(err instanceof Error ? err.message : String(err), "PROVIDER_ERROR");
-      yield factory.responseCompleted(this.buildResponse(request, { output: [], replay: [] }, factory));
+
+      if (err instanceof AIMappingError) {
+        yield factory.responseWarning(err.message, "MAPPING_ERROR");
+        yield factory.responseCompleted(this.buildResponse(request, { output: [], replay: [] }, factory));
+        return;
+      }
+
+      throw err;
     }
   }
 

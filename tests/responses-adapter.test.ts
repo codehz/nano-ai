@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect } from "bun:test";
-import { AIRequestError, ResponsesAdapter, collectStream } from "../src/index.js";
+import { AIProviderError, AIRequestError, ResponsesAdapter, collectStream } from "../src/index.js";
 
 import type { NormalizedRequest, FetchFn } from "../src/index.js";
 
@@ -221,6 +221,49 @@ describe("ResponsesAdapter - text streaming", () => {
       expect(result.replay[1]!.purpose).toBe("replay");
     }
   });
+
+  it("should parse final SSE event without trailing blank line", async () => {
+    const sse = [
+      'event: response.output_item.added\ndata: {"item":{"id":"m1","type":"message"}}\n\n',
+      'event: response.output_text.done\ndata: {"item_id":"m1","text":"Hi"}\n\n',
+      `event: response.completed\ndata: ${JSON.stringify({
+        response: { id: "resp-no-blank", model: "gpt-4o", output: [{ id: "m1", type: "message" }] },
+      })}`,
+    ];
+
+    const adapter = new ResponsesAdapter({
+      apiKey: "test-key",
+      fetch: mockFetch(sseResponse(...sse)),
+    });
+
+    const result = await collectStream(adapter.stream(makeRequest()));
+    expect(result.text).toBe("Hi");
+    expect(result.backend.rawResponseId).toBe("resp-no-blank");
+  });
+
+  it("should emit completed only once when response.completed repeats", async () => {
+    const completed = `event: response.completed\ndata: ${JSON.stringify({
+      response: { id: "resp-dup", model: "gpt-4o", output: [{ id: "m1", type: "message" }] },
+    })}\n\n`;
+    const sse = [
+      'event: response.output_item.added\ndata: {"item":{"id":"m1","type":"message"}}\n\n',
+      'event: response.output_text.done\ndata: {"item_id":"m1","text":"Hi"}\n\n',
+      completed,
+      completed,
+    ];
+
+    const adapter = new ResponsesAdapter({
+      apiKey: "test-key",
+      fetch: mockFetch(sseResponse(...sse)),
+    });
+
+    const eventTypes: string[] = [];
+    for await (const event of adapter.stream(makeRequest())) {
+      eventTypes.push(event.type);
+    }
+
+    expect(eventTypes.filter((type) => type === "response.completed")).toHaveLength(1);
+  });
 });
 
 // ── Request building ──────────────────────────────────────────
@@ -402,7 +445,7 @@ describe("ResponsesAdapter - request building", () => {
 // ── Error handling ────────────────────────────────────────────
 
 describe("ResponsesAdapter - error handling", () => {
-  it("should emit warning on HTTP error", async () => {
+  it("should throw on HTTP error", async () => {
     const errorResponse = new Response("Unauthorized", {
       status: 401,
       statusText: "Unauthorized",
@@ -413,10 +456,7 @@ describe("ResponsesAdapter - error handling", () => {
       fetch: async () => errorResponse,
     });
 
-    const result = await collectStream(adapter.stream(makeRequest()));
-    expect(result.warnings).toBeDefined();
-    expect(result.warnings![0]).toContain("Responses API error 401");
-    expect(result.output).toEqual([]);
+    await expect(collectStream(adapter.stream(makeRequest()))).rejects.toBeInstanceOf(AIProviderError);
   });
 
   it("should emit warning on SSE error event", async () => {
