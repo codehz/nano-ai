@@ -68,6 +68,8 @@ export type MockHandlerContext = {
   previousReplay: ReplayItem[];
   pendingToolCalls: readonly ToolCallItem[];
   history: readonly MockHistoryRecord[];
+  /** 请求的 AbortSignal，handler 可检查 signal.aborted 提前退出。 */
+  signal?: AbortSignal;
 };
 
 export type MockWarningStep = {
@@ -290,7 +292,7 @@ export class MockAdapter extends AdapterBase {
 
   protected async buildRequest(request: NormalizedRequest): Promise<MockProviderRequest> {
     const turnIndex = this.cursor;
-    const context = this.buildHandlerContext(turnIndex);
+    const context = this.buildHandlerContext(turnIndex, request.signal);
     const remainingPendingToolCalls = consumePendingToolCalls(this.pendingToolCalls, request.input);
     const handlerResult = this.handler(request, context);
 
@@ -321,6 +323,9 @@ export class MockAdapter extends AdapterBase {
       let stepCount = 0;
 
       for await (const step of mockRequest.handlerResult) {
+        // 若 signal 已 abort，停止消费 handler 并返回
+        if (request.signal?.aborted) return;
+
         stepCount += 1;
 
         switch (step.type) {
@@ -479,7 +484,7 @@ export class MockAdapter extends AdapterBase {
     );
   }
 
-  private buildHandlerContext(turnIndex: number): MockHandlerContext {
+  private buildHandlerContext(turnIndex: number, signal?: AbortSignal): MockHandlerContext {
     return {
       turnIndex,
       previousReplay: this.previousReplay.map(cloneItem),
@@ -489,6 +494,7 @@ export class MockAdapter extends AdapterBase {
         replay: record.replay.map(cloneItem),
         toolCalls: record.toolCalls.map(cloneItem),
       })),
+      signal,
     };
   }
 }

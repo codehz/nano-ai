@@ -44,6 +44,8 @@ export type CreateAIClientOptions = {
   adapter: BackendAdapter;
   model: string;
   defaults?: Partial<AIRequest>;
+  /** 全局默认 AbortSignal，当 request.signal 未设置时生效。 */
+  signal?: AbortSignal;
 };
 
 export interface AIClient {

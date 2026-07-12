@@ -36,4 +36,6 @@ export type AIRequest = {
   metadata?: Record<string, string>;
   temperature?: number;
   maxOutputTokens?: number;
+  /** AbortSignal 用于打断请求。abort 时 fetch 调用会被取消，流迭代器抛出 AbortError。 */
+  signal?: AbortSignal;
 };

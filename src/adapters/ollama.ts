@@ -351,6 +351,7 @@ export class OllamaAdapter extends AdapterBase {
         method: "POST",
         headers,
         body: JSON.stringify(providerRequest),
+        signal: request.signal,
       });
     } catch (err) {
       throw new AIProviderError(err instanceof Error ? err.message : String(err), "PROVIDER_ERROR");

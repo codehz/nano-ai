@@ -398,6 +398,7 @@ export class ChatCompletionsAdapter extends AdapterBase {
           Authorization: `Bearer ${this.apiKey}`,
         },
         body: JSON.stringify(providerRequest),
+        signal: request.signal,
       });
     } catch (err) {
       throw new AIProviderError(err instanceof Error ? err.message : String(err), "PROVIDER_ERROR");

@@ -65,6 +65,9 @@ export abstract class AdapterBase implements BackendAdapter {
    * 3. 委托 runStream 发射全部流事件（含 response.completed）
    */
   async *stream(request: NormalizedRequest): AsyncIterable<AIStreamEvent> {
+    // 若请求已被 abort，不发出任何事件
+    request.signal?.throwIfAborted();
+
     const factory = createEventFactory({
       responseId: request.requestId,
       backend: { kind: this.kind, isSynthetic: this.capabilities.textStreaming === "synthetic" },
