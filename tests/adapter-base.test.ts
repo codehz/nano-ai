@@ -275,12 +275,14 @@ describe("AdapterBase", () => {
     }
 
     const adapter = new ErrorAdapter();
-    await expect((async () => {
-      for await (const ignoredEvent of adapter.stream({ model: "gpt-4", requestId: "r", input: [] })) {
-        void ignoredEvent;
-        // consume
-      }
-    })()).rejects.toBeInstanceOf(AIProviderError);
+    await expect(
+      (async () => {
+        for await (const ignoredEvent of adapter.stream({ model: "gpt-4", requestId: "r", input: [] })) {
+          void ignoredEvent;
+          // consume
+        }
+      })(),
+    ).rejects.toBeInstanceOf(AIProviderError);
   });
 
   it("should degrade mapping errors into warning + completed", async () => {

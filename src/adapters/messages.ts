@@ -120,7 +120,9 @@ function isMessagesReplayContentBlock(value: unknown): value is MessagesAPIConte
     case "text":
       return typeof block.text === "string";
     case "thinking":
-      return typeof block.thinking === "string" && (block.signature === undefined || typeof block.signature === "string");
+      return (
+        typeof block.thinking === "string" && (block.signature === undefined || typeof block.signature === "string")
+      );
     case "redacted_thinking":
       return typeof block.data === "string";
     case "tool_use":
@@ -145,10 +147,7 @@ function isMessagesReplayContentBlock(value: unknown): value is MessagesAPIConte
 
 function assertMessagesReplayContent(content: unknown): asserts content is MessagesAPIContentBlock[] {
   if (!Array.isArray(content)) {
-    throw new AIRequestError(
-      "Invalid opaque replay payload: content must be an array",
-      "INVALID_OPAQUE_REPLAY",
-    );
+    throw new AIRequestError("Invalid opaque replay payload: content must be an array", "INVALID_OPAQUE_REPLAY");
   }
   for (let i = 0; i < content.length; i++) {
     if (!isMessagesReplayContentBlock(content[i])) {

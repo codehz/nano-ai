@@ -194,16 +194,18 @@ describe("Stream interruption semantics", () => {
     }
 
     const adapter = new ErrorAdapter();
-    await expect((async () => {
-      for await (const ignoredEvent of adapter.stream({
-        model: "gpt-4",
-        requestId: "r",
-        input: [],
-      })) {
-        void ignoredEvent;
-        // consume
-      }
-    })()).rejects.toBeInstanceOf(AIProviderError);
+    await expect(
+      (async () => {
+        for await (const ignoredEvent of adapter.stream({
+          model: "gpt-4",
+          requestId: "r",
+          input: [],
+        })) {
+          void ignoredEvent;
+          // consume
+        }
+      })(),
+    ).rejects.toBeInstanceOf(AIProviderError);
   });
 
   it("should distinguish normal completion from interruption", async () => {
@@ -383,11 +385,13 @@ describe("Normal vs abnormal termination", () => {
     }
 
     const adapter = new FailAdapter();
-    await expect((async () => {
-      for await (const ignoredEvent of adapter.stream({ model: "gpt-4", requestId: "r", input: [] })) {
-        void ignoredEvent;
-        // consume
-      }
-    })()).rejects.toThrow("Connection refused");
+    await expect(
+      (async () => {
+        for await (const ignoredEvent of adapter.stream({ model: "gpt-4", requestId: "r", input: [] })) {
+          void ignoredEvent;
+          // consume
+        }
+      })(),
+    ).rejects.toThrow("Connection refused");
   });
 });

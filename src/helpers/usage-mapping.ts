@@ -88,8 +88,7 @@ export function usageFromAnthropicMessages(raw: {
     (n): n is number => n !== undefined,
   );
   const inputTokens = inputParts.length > 0 ? inputParts.reduce((sum, n) => sum + n, 0) : undefined;
-  const totalTokens =
-    inputTokens !== undefined && outputTokens !== undefined ? inputTokens + outputTokens : undefined;
+  const totalTokens = inputTokens !== undefined && outputTokens !== undefined ? inputTokens + outputTokens : undefined;
 
   return record({
     inputTokens,
@@ -101,14 +100,10 @@ export function usageFromAnthropicMessages(raw: {
 }
 
 /** Ollama 流式 chunk */
-export function usageFromOllama(raw: {
-  prompt_eval_count?: number;
-  eval_count?: number;
-}): Partial<Usage> {
+export function usageFromOllama(raw: { prompt_eval_count?: number; eval_count?: number }): Partial<Usage> {
   const inputTokens = num(raw.prompt_eval_count);
   const outputTokens = num(raw.eval_count);
-  const totalTokens =
-    inputTokens !== undefined && outputTokens !== undefined ? inputTokens + outputTokens : undefined;
+  const totalTokens = inputTokens !== undefined && outputTokens !== undefined ? inputTokens + outputTokens : undefined;
 
   return record({
     inputTokens,
