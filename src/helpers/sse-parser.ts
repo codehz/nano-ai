@@ -27,6 +27,10 @@ export type SSEParseResult = {
   malformedEvents: number;
 };
 
+export type ParseSSEOptions = {
+  allowEOF?: boolean;
+};
+
 /**
  * 将 SSE 文本块解析为事件数组。
  * 累积事件行直到遇到空行，支持 [DONE] 标记。
@@ -37,13 +41,46 @@ export type SSEParseResult = {
  * - 未完成的行保留在 rest 中，等待下次 chunk 补全
  * - 支持跨 chunk 的 event 分片
  */
-export function parseSSEEvents(chunk: string): SSEParseResult {
+export function parseSSEEvents(chunk: string, options: ParseSSEOptions = {}): SSEParseResult {
   const events: SSEEvent[] = [];
   let eventType = "";
   let dataLines: string[] = [];
   let consumedUntil = 0;
   let cursor = 0;
   let malformedEvents = 0;
+
+  const emitEvent = (consumedCursor: number): void => {
+    const dataStr = dataLines.join("\n");
+    if (dataStr === "[DONE]") {
+      eventType = "";
+      dataLines = [];
+      consumedUntil = consumedCursor;
+      return;
+    }
+
+    try {
+      const data = JSON.parse(dataStr);
+      events.push({ type: eventType, data });
+    } catch {
+      malformedEvents++;
+    }
+
+    eventType = "";
+    dataLines = [];
+    consumedUntil = consumedCursor;
+  };
+
+  const consumeLine = (line: string, consumedCursor: number): void => {
+    if (line.startsWith("event: ")) {
+      eventType = line.slice(7).trim();
+    } else if (line.startsWith("data: ")) {
+      dataLines.push(line.slice(6));
+    } else if (line === "" && eventType && dataLines.length > 0) {
+      emitEvent(consumedCursor);
+    } else if (line === "" && !eventType && dataLines.length === 0) {
+      consumedUntil = consumedCursor;
+    }
+  };
 
   while (cursor < chunk.length) {
     const lineEnd = chunk.indexOf("\n", cursor);
@@ -56,31 +93,20 @@ export function parseSSEEvents(chunk: string): SSEParseResult {
       line = line.slice(0, -1);
     }
 
-    if (line.startsWith("event: ")) {
-      eventType = line.slice(7).trim();
-    } else if (line.startsWith("data: ")) {
-      dataLines.push(line.slice(6));
-    } else if (line === "" && eventType && dataLines.length > 0) {
-      // 完整的 event（以空行结尾）
-      const dataStr = dataLines.join("\n");
-      if (dataStr === "[DONE]") {
-        eventType = "";
-        dataLines = [];
-        consumedUntil = cursor;
-        continue;
-      }
-      try {
-        const data = JSON.parse(dataStr);
-        events.push({ type: eventType, data });
-      } catch {
-        malformedEvents++;
-      }
-      eventType = "";
-      dataLines = [];
-      consumedUntil = cursor;
-    } else if (line === "" && !eventType && dataLines.length === 0) {
-      consumedUntil = cursor;
+    consumeLine(line, cursor);
+  }
+
+  if (options.allowEOF && cursor < chunk.length) {
+    let line = chunk.slice(cursor);
+    if (line.endsWith("\r")) {
+      line = line.slice(0, -1);
     }
+    consumeLine(line, chunk.length);
+    cursor = chunk.length;
+  }
+
+  if (options.allowEOF && eventType && dataLines.length > 0) {
+    emitEvent(chunk.length);
   }
 
   return { events, rest: chunk.slice(consumedUntil), malformedEvents };

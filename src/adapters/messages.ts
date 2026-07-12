@@ -11,7 +11,7 @@
  */
 
 import { AdapterBase } from "../helpers/adapter-base.js";
-import { AIRequestError } from "../core/errors.js";
+import { AIProviderError, AIRequestError, AIStreamError } from "../core/errors.js";
 import {
   textBlock,
   messageItem,
@@ -157,8 +157,11 @@ type MessagesAPIMessageResponse = {
 
 // ── SSE 解析 ──────────────────────────────────────────────────
 
-function parseMessagesSSE(chunk: string): { events: MessagesSSEEvent[]; rest: string; malformedEvents: number } {
-  const result = parseSSEEvents(chunk);
+function parseMessagesSSE(
+  chunk: string,
+  allowEOF = false,
+): { events: MessagesSSEEvent[]; rest: string; malformedEvents: number } {
+  const result = parseSSEEvents(chunk, { allowEOF });
   return { events: result.events as MessagesSSEEvent[], rest: result.rest, malformedEvents: result.malformedEvents };
 }
 
@@ -417,6 +420,7 @@ export class MessagesAdapter extends AdapterBase {
   ): AsyncIterable<AIStreamEvent> {
     this.warningAccumulator = [];
     const auxiliary = this.createAuxiliaryState(request);
+    let completedEmitted = false;
 
     if (request.metadata) {
       yield factory.responseWarning(
@@ -425,24 +429,35 @@ export class MessagesAdapter extends AdapterBase {
       );
     }
 
-    const response = await this.fetchFn(`${this.baseUrl}/messages`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": this.apiKey,
-        "anthropic-version": this.apiVersion,
-      },
-      body: JSON.stringify(providerRequest),
-    });
+    let response: Response;
+
+    try {
+      response = await this.fetchFn(`${this.baseUrl}/messages`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": this.apiKey,
+          "anthropic-version": this.apiVersion,
+        },
+        body: JSON.stringify(providerRequest),
+      });
+    } catch (err) {
+      throw new AIProviderError(err instanceof Error ? err.message : String(err), "PROVIDER_ERROR");
+    }
 
     if (!response.ok) {
       const errorText = await response.text().catch(() => "unknown error");
-      throw new Error(`Messages API error ${response.status}: ${errorText}`);
+      throw new AIProviderError(
+        `Messages API error ${response.status}: ${errorText}`,
+        "PROVIDER_ERROR",
+        response.status,
+        errorText,
+      );
     }
 
     const reader = response.body?.getReader();
     if (!reader) {
-      throw new Error("Response body is not readable");
+      throw new AIStreamError("Response body is not readable", "STREAM_ERROR");
     }
 
     // 流累积状态
@@ -480,10 +495,8 @@ export class MessagesAdapter extends AdapterBase {
     try {
       while (true) {
         const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const { events, rest, malformedEvents } = parseMessagesSSE(buffer);
+        buffer += done ? decoder.decode() : decoder.decode(value, { stream: true });
+        const { events, rest, malformedEvents } = parseMessagesSSE(buffer, done);
         buffer = rest;
 
         const malformedWarning = emitMalformedStreamWarning(factory, {
@@ -643,6 +656,8 @@ export class MessagesAdapter extends AdapterBase {
             }
           }
         }
+
+        if (done) break;
       }
     } finally {
       reader.releaseLock();
@@ -692,22 +707,25 @@ export class MessagesAdapter extends AdapterBase {
       yield event;
     }
 
-    yield factory.responseCompleted(
-      this.buildResponse(
-        request,
-        {
-          output,
-          replay,
-          stopReason: stopReason ? mapStopReason(stopReason) : undefined,
-          usage: auxiliaryResult.usage,
-          billing: auxiliaryResult.billing,
-          auxiliary: auxiliaryResult.auxiliary,
-          warnings: auxiliaryResult.warnings,
-          metadataSources: auxiliaryResult.metadataSources,
-          rawResponseId,
-        },
-        factory,
-      ),
-    );
+    if (!completedEmitted) {
+      completedEmitted = true;
+      yield factory.responseCompleted(
+        this.buildResponse(
+          request,
+          {
+            output,
+            replay,
+            stopReason: stopReason ? mapStopReason(stopReason) : undefined,
+            usage: auxiliaryResult.usage,
+            billing: auxiliaryResult.billing,
+            auxiliary: auxiliaryResult.auxiliary,
+            warnings: auxiliaryResult.warnings,
+            metadataSources: auxiliaryResult.metadataSources,
+            rawResponseId,
+          },
+          factory,
+        ),
+      );
+    }
   }
 }

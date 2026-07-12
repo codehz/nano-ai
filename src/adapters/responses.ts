@@ -10,7 +10,7 @@
  */
 
 import { AdapterBase } from "../helpers/adapter-base.js";
-import { AIRequestError } from "../core/errors.js";
+import { AIProviderError, AIRequestError, AIStreamError } from "../core/errors.js";
 import {
   textBlock,
   messageItem,
@@ -158,8 +158,11 @@ type ResponsesAPIOutputItem = {
 
 // ── SSE 解析 ──────────────────────────────────────────────────
 
-function parseSSE(chunk: string): { events: ResponsesSSEEvent[]; rest: string; malformedEvents: number } {
-  const result = parseSSEEvents(chunk);
+function parseSSE(
+  chunk: string,
+  allowEOF = false,
+): { events: ResponsesSSEEvent[]; rest: string; malformedEvents: number } {
+  const result = parseSSEEvents(chunk, { allowEOF });
   return { events: result.events as ResponsesSSEEvent[], rest: result.rest, malformedEvents: result.malformedEvents };
 }
 
@@ -322,23 +325,34 @@ export class ResponsesAdapter extends AdapterBase {
     request: NormalizedRequest,
   ): AsyncIterable<AIStreamEvent> {
     const auxiliary = this.createAuxiliaryState(request);
-    const response = await this.fetchFn(`${this.baseUrl}/responses`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${this.apiKey}`,
-      },
-      body: JSON.stringify(providerRequest),
-    });
+    let response: Response;
+
+    try {
+      response = await this.fetchFn(`${this.baseUrl}/responses`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${this.apiKey}`,
+        },
+        body: JSON.stringify(providerRequest),
+      });
+    } catch (err) {
+      throw new AIProviderError(err instanceof Error ? err.message : String(err), "PROVIDER_ERROR");
+    }
 
     if (!response.ok) {
       const errorText = await response.text().catch(() => "unknown error");
-      throw new Error(`Responses API error ${response.status}: ${errorText}`);
+      throw new AIProviderError(
+        `Responses API error ${response.status}: ${errorText}`,
+        "PROVIDER_ERROR",
+        response.status,
+        errorText,
+      );
     }
 
     const reader = response.body?.getReader();
     if (!reader) {
-      throw new Error("Response body is not readable");
+      throw new AIStreamError("Response body is not readable", "STREAM_ERROR");
     }
 
     // 流式累积状态
@@ -346,14 +360,13 @@ export class ResponsesAdapter extends AdapterBase {
     const decoder = new TextDecoder();
     let buffer = "";
     let completedResponse: ResponsesAPIResponse | undefined;
+    let completedEmitted = false;
 
     try {
       while (true) {
         const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const { events, rest, malformedEvents } = parseSSE(buffer);
+        buffer += done ? decoder.decode() : decoder.decode(value, { stream: true });
+        const { events, rest, malformedEvents } = parseSSE(buffer, done);
         buffer = rest;
 
         const malformedWarning = emitMalformedStreamWarning(factory, {
@@ -431,9 +444,16 @@ export class ResponsesAdapter extends AdapterBase {
           }
 
           if (sseEvent.type === "response.completed") {
+            if (completedResponse) {
+              yield factory.responseWarning("Duplicate finish signal ignored", "DUPLICATE_FINISH");
+              continue;
+            }
+
             completedResponse = sseEvent.data.response;
           }
         }
+
+        if (done) break;
       }
     } finally {
       reader.releaseLock();
@@ -469,23 +489,26 @@ export class ResponsesAdapter extends AdapterBase {
       yield event;
     }
 
-    yield factory.responseCompleted(
-      this.buildResponse(
-        request,
-        {
-          output,
-          replay,
-          stopReason,
-          usage: auxiliaryResult.usage,
-          billing: auxiliaryResult.billing,
-          auxiliary: auxiliaryResult.auxiliary,
-          warnings: auxiliaryResult.warnings,
-          metadataSources: auxiliaryResult.metadataSources,
-          rawResponseId,
-        },
-        factory,
-      ),
-    );
+    if (!completedEmitted) {
+      completedEmitted = true;
+      yield factory.responseCompleted(
+        this.buildResponse(
+          request,
+          {
+            output,
+            replay,
+            stopReason,
+            usage: auxiliaryResult.usage,
+            billing: auxiliaryResult.billing,
+            auxiliary: auxiliaryResult.auxiliary,
+            warnings: auxiliaryResult.warnings,
+            metadataSources: auxiliaryResult.metadataSources,
+            rawResponseId,
+          },
+          factory,
+        ),
+      );
+    }
   }
 
   // ── 辅助方法 ──────────────────────────────────────────────

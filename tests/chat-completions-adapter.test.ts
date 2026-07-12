@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect } from "bun:test";
-import { AIRequestError, ChatCompletionsAdapter, collectStream } from "../src/index.js";
+import { AIProviderError, AIRequestError, ChatCompletionsAdapter, collectStream } from "../src/index.js";
 
 import type { NormalizedRequest, FetchFn } from "../src/index.js";
 
@@ -29,6 +29,21 @@ function sseResponse(...chunks: string[]): Response {
 
 function mockFetch(resp: Response): FetchFn {
   return async () => resp;
+}
+
+function byteChunksResponse(...chunks: Uint8Array[]): Response {
+  const body = new ReadableStream({
+    start(controller) {
+      for (const chunk of chunks) {
+        controller.enqueue(chunk);
+      }
+      controller.close();
+    },
+  });
+  return new Response(body, {
+    status: 200,
+    headers: { "Content-Type": "text/event-stream" },
+  });
 }
 
 function makeRequest(overrides?: Partial<NormalizedRequest>): NormalizedRequest {
@@ -107,6 +122,42 @@ describe("ChatCompletionsAdapter - text streaming", () => {
     expect(result.text).toBe("Hello chunked");
     expect(result.output).toHaveLength(1);
     expect(result.stopReason).toBe("end_turn");
+  });
+
+  it("should parse a final SSE frame without trailing newline", async () => {
+    const chunks = [
+      'data: {"id":"chatcmpl-final-no-newline","choices":[{"index":0,"delta":{"content":"Hi"},"finish_reason":null}]}\n',
+      'data: {"id":"chatcmpl-final-no-newline","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}',
+    ];
+
+    const adapter = new ChatCompletionsAdapter({
+      apiKey: "test-key",
+      fetch: async () => sseResponse(...chunks),
+    });
+
+    const result = await collectStream(adapter.stream(makeRequest()));
+    expect(result.text).toBe("Hi");
+    expect(result.stopReason).toBe("end_turn");
+  });
+
+  it("should flush UTF-8 bytes split across chunk boundaries", async () => {
+    const encoder = new TextEncoder();
+    const prefix = encoder.encode('data: {"id":"chatcmpl-utf8","choices":[{"index":0,"delta":{"content":"');
+    const suffix = encoder.encode('"},"finish_reason":null}]}\n');
+    const finish = encoder.encode(
+      'data: {"id":"chatcmpl-utf8","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n',
+    );
+    const done = encoder.encode('data: [DONE]\n');
+    const nihaoBytes = encoder.encode("你好");
+
+    const adapter = new ChatCompletionsAdapter({
+      apiKey: "test-key",
+      fetch: async () =>
+        byteChunksResponse(prefix, nihaoBytes.slice(0, 1), nihaoBytes.slice(1, 4), nihaoBytes.slice(4), suffix, finish, done),
+    });
+
+    const result = await collectStream(adapter.stream(makeRequest()));
+    expect(result.text).toBe("你好");
   });
 
   it("should handle finish_reason length", async () => {
@@ -564,17 +615,14 @@ describe("ChatCompletionsAdapter - request building", () => {
 // ── 错误处理 ──────────────────────────────────────────────────
 
 describe("ChatCompletionsAdapter - error handling", () => {
-  it("should emit warning on HTTP error", async () => {
+  it("should throw on HTTP error", async () => {
     const errorResponse = new Response("Unauthorized", { status: 401 });
     const adapter = new ChatCompletionsAdapter({
       apiKey: "bad-key",
       fetch: async () => errorResponse,
     });
 
-    const result = await collectStream(adapter.stream(makeRequest()));
-    expect(result.warnings).toBeDefined();
-    expect(result.warnings![0]).toContain("Chat Completions API error 401");
-    expect(result.output).toEqual([]);
+    await expect(collectStream(adapter.stream(makeRequest()))).rejects.toBeInstanceOf(AIProviderError);
   });
 
   it("should handle incomplete stream gracefully", async () => {
@@ -610,6 +658,27 @@ describe("ChatCompletionsAdapter - error handling", () => {
     const result = await collectStream(adapter.stream(makeRequest({ include: { billing: "off" } })));
     expect(result.warnings?.some((w) => w.includes("malformed Chat Completions SSE"))).toBe(true);
     expect(result.text).toBe("Hi");
+  });
+
+  it("should emit completed only once when finish_reason is duplicated", async () => {
+    const chunks = [
+      'data: {"id":"chatcmpl-dup","choices":[{"index":0,"delta":{"content":"Hi"},"finish_reason":null}]}\n',
+      'data: {"id":"chatcmpl-dup","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n',
+      'data: {"id":"chatcmpl-dup","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n',
+      'data: [DONE]\n',
+    ];
+
+    const adapter = new ChatCompletionsAdapter({
+      apiKey: "test-key",
+      fetch: mockFetch(sseResponse(...chunks)),
+    });
+
+    const eventTypes: string[] = [];
+    for await (const event of adapter.stream(makeRequest())) {
+      eventTypes.push(event.type);
+    }
+
+    expect(eventTypes.filter((type) => type === "response.completed")).toHaveLength(1);
   });
 });
 

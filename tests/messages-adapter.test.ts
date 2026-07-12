@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect } from "bun:test";
-import { AIRequestError, MessagesAdapter, collectStream } from "../src/index.js";
+import { AIProviderError, AIRequestError, MessagesAdapter, collectStream } from "../src/index.js";
 
 import type { NormalizedRequest, FetchFn } from "../src/index.js";
 
@@ -124,6 +124,26 @@ describe("MessagesAdapter - text streaming", () => {
     expect(result.usage?.cachedInputTokens).toBe(7);
     expect(result.usage?.cacheWriteInputTokens).toBe(3);
     expect(result.usage?.totalTokens).toBe(24);
+  });
+
+  it("should parse final SSE event without trailing blank line", async () => {
+    const sse = [
+      `event: message_start\ndata: ${JSON.stringify({ type: "message_start", message: { id: "msg_eof", type: "message", role: "assistant", content: [], stop_reason: null, usage: { input_tokens: 1, output_tokens: 0 } } })}\n\n`,
+      `event: content_block_start\ndata: ${JSON.stringify({ type: "content_block_start", index: 0, content_block: { type: "text", text: "" } })}\n\n`,
+      `event: content_block_delta\ndata: ${JSON.stringify({ type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "Hi" } })}\n\n`,
+      `event: content_block_stop\ndata: ${JSON.stringify({ type: "content_block_stop", index: 0 })}\n\n`,
+      `event: message_delta\ndata: ${JSON.stringify({ type: "message_delta", delta: { stop_reason: "end_turn", stop_sequence: null }, usage: { input_tokens: 1, output_tokens: 1 } })}\n\n`,
+      `event: message_stop\ndata: {"type":"message_stop"}`,
+    ];
+
+    const adapter = new MessagesAdapter({
+      apiKey: "test-key",
+      fetch: mockFetch(sseResponse(...sse)),
+    });
+
+    const result = await collectStream(adapter.stream(makeRequest()));
+    expect(result.text).toBe("Hi");
+    expect(result.stopReason).toBe("end_turn");
   });
 
   it("should handle SSE events split across transport chunks", async () => {
@@ -682,7 +702,7 @@ describe("MessagesAdapter - synthetic item IDs", () => {
 // ── 错误处理 ──────────────────────────────────────────────────
 
 describe("MessagesAdapter - error handling", () => {
-  it("should emit warning on HTTP error", async () => {
+  it("should throw on HTTP error", async () => {
     const errorResponse = new Response("Unauthorized", {
       status: 401,
       statusText: "Unauthorized",
@@ -693,10 +713,7 @@ describe("MessagesAdapter - error handling", () => {
       fetch: async () => errorResponse,
     });
 
-    const result = await collectStream(adapter.stream(makeRequest()));
-    expect(result.warnings).toBeDefined();
-    expect(result.warnings![0]).toContain("Messages API error 401");
-    expect(result.output).toEqual([]);
+    await expect(collectStream(adapter.stream(makeRequest()))).rejects.toBeInstanceOf(AIProviderError);
   });
 
   it("should emit warning on SSE error event", async () => {

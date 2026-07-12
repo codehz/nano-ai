@@ -9,7 +9,7 @@
  */
 
 import { AdapterBase } from "../helpers/adapter-base.js";
-import { AIRequestError } from "../core/errors.js";
+import { AIProviderError, AIRequestError, AIStreamError } from "../core/errors.js";
 import {
   textBlock,
   messageItem,
@@ -132,31 +132,40 @@ function assertChatToolResultOutcome(outcome: import("../index.js").ToolResultIt
  * - 每条 `data:` 行必须已经是一个完整 JSON 对象
  * - 允许传输层把单行拆成多个 chunk，但不接受 provider 把一个 JSON event 改写成多条 `data:` 行
  */
-function parseChatSSE(buffer: string): { chunks: ChatChunk[]; rest: string; malformedEvents: number } {
+function parseChatSSE(buffer: string, allowEOF = false): { chunks: ChatChunk[]; rest: string; malformedEvents: number } {
   const chunks: ChatChunk[] = [];
   let rest = buffer;
   let malformedEvents = 0;
 
-  while (true) {
-    const lineEnd = rest.indexOf("\n");
-    if (lineEnd === -1) {
-      // 没有更多完整行，剩余部分保留到下次
-      break;
-    }
+  const consumeLine = (rawLine: string): void => {
+    const line = rawLine.trim();
 
-    const line = rest.slice(0, lineEnd).trim();
-    rest = rest.slice(lineEnd + 1);
-
-    if (!line.startsWith("data: ")) continue;
+    if (!line.startsWith("data: ")) return;
 
     const data = line.slice(6).trim();
-    if (data === "[DONE]") continue;
+    if (data === "[DONE]") return;
 
     try {
       chunks.push(JSON.parse(data));
     } catch {
       malformedEvents++;
     }
+  };
+
+  while (true) {
+    const lineEnd = rest.indexOf("\n");
+    if (lineEnd === -1) {
+      if (allowEOF && rest.length > 0) {
+        consumeLine(rest);
+        rest = "";
+      }
+      break;
+    }
+
+    const line = rest.slice(0, lineEnd);
+    rest = rest.slice(lineEnd + 1);
+
+    consumeLine(line);
   }
 
   return { chunks, rest, malformedEvents };
@@ -392,23 +401,34 @@ export class ChatCompletionsAdapter extends AdapterBase {
     request: NormalizedRequest,
   ): AsyncIterable<AIStreamEvent> {
     const auxiliary = this.createAuxiliaryState(request);
-    const response = await this.fetchFn(`${this.baseUrl}/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${this.apiKey}`,
-      },
-      body: JSON.stringify(providerRequest),
-    });
+    let response: Response;
+
+    try {
+      response = await this.fetchFn(`${this.baseUrl}/chat/completions`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${this.apiKey}`,
+        },
+        body: JSON.stringify(providerRequest),
+      });
+    } catch (err) {
+      throw new AIProviderError(err instanceof Error ? err.message : String(err), "PROVIDER_ERROR");
+    }
 
     if (!response.ok) {
       const errorText = await response.text().catch(() => "unknown error");
-      throw new Error(`Chat Completions API error ${response.status}: ${errorText}`);
+      throw new AIProviderError(
+        `Chat Completions API error ${response.status}: ${errorText}`,
+        "PROVIDER_ERROR",
+        response.status,
+        errorText,
+      );
     }
 
     const reader = response.body?.getReader();
     if (!reader) {
-      throw new Error("Response body is not readable");
+      throw new AIStreamError("Response body is not readable", "STREAM_ERROR");
     }
 
     const output: OutputItem[] = [];
@@ -423,6 +443,8 @@ export class ChatCompletionsAdapter extends AdapterBase {
     let currentReasoningId = "";
     let hasMessageStarted = false;
     let hasReasoningStarted = false;
+    let completedEmitted = false;
+    const buildResponse = this.buildResponse.bind(this);
 
     // tool_calls 累积: tool call index → { id, name, args }
     const pendingToolCalls = new Map<number, PendingToolCall>();
@@ -469,13 +491,58 @@ export class ChatCompletionsAdapter extends AdapterBase {
       return { events, assistantReplayMessage };
     };
 
+    const emitCompleted = async function* (
+      stopReason: import("../index.js").StopReason | undefined,
+      assistantReplayMessage: ChatMessage | null,
+      rawResponseId: string | undefined,
+    ): AsyncIterable<AIStreamEvent> {
+      if (completedEmitted) {
+        yield factory.responseWarning("Duplicate finish signal ignored", "DUPLICATE_FINISH");
+        return;
+      }
+
+      completedEmitted = true;
+
+      const replay = [...replayFromOutput(output)];
+
+      if (assistantReplayMessage) {
+        replay.push(
+          opaqueItem("chat.completions", "replay", {
+            replaceCanonical: true,
+            messages: [assistantReplayMessage],
+          }),
+        );
+      }
+
+      const auxiliaryResult = await auxiliary.finalize(factory);
+      for (const event of auxiliaryResult.events) {
+        yield event;
+      }
+
+      yield factory.responseCompleted(
+        buildResponse(
+          request,
+          {
+            output,
+            replay,
+            stopReason,
+            usage: auxiliaryResult.usage,
+            billing: auxiliaryResult.billing,
+            auxiliary: auxiliaryResult.auxiliary,
+            warnings: auxiliaryResult.warnings,
+            metadataSources: auxiliaryResult.metadataSources,
+            rawResponseId,
+          },
+          factory,
+        ),
+      );
+    };
+
     try {
       while (true) {
         const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const { chunks, rest, malformedEvents } = parseChatSSE(buffer);
+        buffer += done ? decoder.decode() : decoder.decode(value, { stream: true });
+        const { chunks, rest, malformedEvents } = parseChatSSE(buffer, done);
         buffer = rest;
 
         const malformedWarning = emitMalformedStreamWarning(factory, {
@@ -497,6 +564,13 @@ export class ChatCompletionsAdapter extends AdapterBase {
 
           for (const choice of chunk.choices) {
             if (choice.index !== 0) continue;
+
+            if (completedEmitted) {
+              if (choice.finish_reason) {
+                yield factory.responseWarning("Duplicate finish signal ignored", "DUPLICATE_FINISH");
+              }
+              continue;
+            }
 
             const delta = choice.delta;
             const finishReason = choice.finish_reason;
@@ -583,47 +657,13 @@ export class ChatCompletionsAdapter extends AdapterBase {
                 yield event;
               }
 
-              // 构建 stop reason
               const stopReason = mapStopReason(finishReason);
-
-              // 构建 replay
-              const replay = [...replayFromOutput(output)];
-
-              // 附加 opaque replay
-              if (assistantReplayMessage) {
-                replay.push(
-                  opaqueItem("chat.completions", "replay", {
-                    replaceCanonical: true,
-                    messages: [assistantReplayMessage],
-                  }),
-                );
-              }
-
-              const auxiliaryResult = await auxiliary.finalize(factory);
-              for (const event of auxiliaryResult.events) {
-                yield event;
-              }
-
-              yield factory.responseCompleted(
-                this.buildResponse(
-                  request,
-                  {
-                    output,
-                    replay,
-                    stopReason,
-                    usage: auxiliaryResult.usage,
-                    billing: auxiliaryResult.billing,
-                    auxiliary: auxiliaryResult.auxiliary,
-                    warnings: auxiliaryResult.warnings,
-                    metadataSources: auxiliaryResult.metadataSources,
-                    rawResponseId: chunk.id,
-                  },
-                  factory,
-                ),
-              );
+              yield* emitCompleted(stopReason, assistantReplayMessage, chunk.id);
             }
           }
         }
+
+        if (done) break;
       }
     } finally {
       reader.releaseLock();
@@ -634,7 +674,7 @@ export class ChatCompletionsAdapter extends AdapterBase {
     }
 
     // 如果流结束时没有 finish_reason（断流），也尝试关闭
-    if (hasMessageStarted || hasReasoningStarted || pendingToolCalls.size > 0) {
+    if (!completedEmitted && (hasMessageStarted || hasReasoningStarted || pendingToolCalls.size > 0)) {
       yield factory.responseWarning("Stream ended without a finish_reason", "INCOMPLETE_STREAM");
 
       const { events, assistantReplayMessage } = finalizePendingTurn();
@@ -642,37 +682,7 @@ export class ChatCompletionsAdapter extends AdapterBase {
         yield event;
       }
 
-      const replay = [...replayFromOutput(output)];
-      if (assistantReplayMessage) {
-        replay.push(
-          opaqueItem("chat.completions", "replay", {
-            replaceCanonical: true,
-            messages: [assistantReplayMessage],
-          }),
-        );
-      }
-
-      const auxiliaryResult = await auxiliary.finalize(factory);
-      for (const event of auxiliaryResult.events) {
-        yield event;
-      }
-
-      yield factory.responseCompleted(
-        this.buildResponse(
-          request,
-          {
-            output,
-            replay,
-            usage: auxiliaryResult.usage,
-            billing: auxiliaryResult.billing,
-            auxiliary: auxiliaryResult.auxiliary,
-            warnings: auxiliaryResult.warnings,
-            metadataSources: auxiliaryResult.metadataSources,
-            rawResponseId: responseId,
-          },
-          factory,
-        ),
-      );
+      yield* emitCompleted(undefined, assistantReplayMessage, responseId);
     }
   }
 }

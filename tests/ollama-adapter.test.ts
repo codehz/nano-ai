@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect } from "bun:test";
-import { AIRequestError, OllamaAdapter, collectStream } from "../src/index.js";
+import { AIProviderError, AIRequestError, OllamaAdapter, collectStream } from "../src/index.js";
 
 import type { NormalizedRequest, FetchFn } from "../src/index.js";
 
@@ -121,6 +121,19 @@ describe("OllamaAdapter - text streaming", () => {
 
     const result = await collectStream(adapter.stream(makeRequest()));
     expect(result.text).toBe("Hi there");
+  });
+
+  it("should parse final NDJSON line without trailing newline", async () => {
+    const chunks = [
+      `{"model":"llama3.2","created_at":"2024-01-01T00:00:00Z","message":{"role":"assistant","content":"Hi"},"done":false}\n`,
+      `{"model":"llama3.2","created_at":"2024-01-01T00:00:01Z","message":{"role":"assistant","content":""},"done":true,"done_reason":"stop"}`,
+    ];
+
+    const adapter = new OllamaAdapter({ fetch: mockFetch(ndjsonResponse(...chunks)) });
+
+    const result = await collectStream(adapter.stream(makeRequest()));
+    expect(result.text).toBe("Hi");
+    expect(result.stopReason).toBe("end_turn");
   });
 });
 
@@ -414,18 +427,12 @@ describe("OllamaAdapter - request building", () => {
 // ── 错误处理 ──────────────────────────────────────────────────
 
 describe("OllamaAdapter - error handling", () => {
-  it("should emit warning on non-ok response", async () => {
+  it("should throw on non-ok response", async () => {
     const adapter = new OllamaAdapter({
       fetch: async () => new Response("Not Found", { status: 404 }),
     });
 
-    const events: string[] = [];
-    for await (const event of adapter.stream(makeRequest())) {
-      events.push(event.type);
-    }
-
-    expect(events).toContain("response.warning");
-    expect(events).toContain("response.completed");
+    await expect(collectStream(adapter.stream(makeRequest()))).rejects.toBeInstanceOf(AIProviderError);
   });
 
   it("should handle incomplete stream (no done signal)", async () => {
@@ -462,6 +469,23 @@ describe("OllamaAdapter - error handling", () => {
     const result = await collectStream(adapter.stream(makeRequest({ include: { billing: "off" } })));
     expect(result.warnings?.some((w) => w.includes("malformed Ollama NDJSON"))).toBe(true);
     expect(result.text).toBe("Hi");
+  });
+
+  it("should emit completed only once when done repeats", async () => {
+    const chunks = [
+      `{"model":"llama3.2","created_at":"2024-01-01T00:00:00Z","message":{"role":"assistant","content":"Hi"},"done":false}\n`,
+      `{"model":"llama3.2","created_at":"2024-01-01T00:00:01Z","message":{"role":"assistant","content":""},"done":true,"done_reason":"stop"}\n`,
+      `{"model":"llama3.2","created_at":"2024-01-01T00:00:02Z","message":{"role":"assistant","content":""},"done":true,"done_reason":"stop"}\n`,
+    ];
+
+    const adapter = new OllamaAdapter({ fetch: mockFetch(ndjsonResponse(...chunks)) });
+
+    const eventTypes: string[] = [];
+    for await (const event of adapter.stream(makeRequest())) {
+      eventTypes.push(event.type);
+    }
+
+    expect(eventTypes.filter((type) => type === "response.completed")).toHaveLength(1);
   });
 });
 

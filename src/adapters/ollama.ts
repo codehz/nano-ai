@@ -16,7 +16,7 @@
  */
 
 import { AdapterBase } from "../helpers/adapter-base.js";
-import { AIRequestError } from "../core/errors.js";
+import { AIProviderError, AIRequestError, AIStreamError } from "../core/errors.js";
 import {
   textBlock,
   messageItem,
@@ -171,23 +171,21 @@ type OllamaChatChunk = {
 
 // ── NDJSON 解析 ───────────────────────────────────────────────
 
-function parseOllamaNDJSON(buffer: string): { chunks: OllamaChatChunk[]; rest: string; malformedLines: number } {
+function parseOllamaNDJSON(
+  buffer: string,
+  allowEOF = false,
+): { chunks: OllamaChatChunk[]; rest: string; malformedLines: number } {
   const chunks: OllamaChatChunk[] = [];
   let rest = buffer;
   let malformedLines = 0;
 
-  while (true) {
-    const lineEnd = rest.indexOf("\n");
-    if (lineEnd === -1) break;
+  const consumeLine = (rawLine: string): void => {
+    const line = rawLine.trim();
 
-    const line = rest.slice(0, lineEnd).trim();
-    rest = rest.slice(lineEnd + 1);
-
-    if (!line) continue;
+    if (!line) return;
 
     try {
       const parsed = JSON.parse(line);
-      // Ollama chunks have a "message" field in streaming mode
       if (parsed && typeof parsed === "object" && "message" in parsed) {
         chunks.push(parsed as OllamaChatChunk);
       } else {
@@ -196,6 +194,22 @@ function parseOllamaNDJSON(buffer: string): { chunks: OllamaChatChunk[]; rest: s
     } catch {
       malformedLines++;
     }
+  };
+
+  while (true) {
+    const lineEnd = rest.indexOf("\n");
+    if (lineEnd === -1) {
+      if (allowEOF && rest.length > 0) {
+        consumeLine(rest);
+        rest = "";
+      }
+      break;
+    }
+
+    const line = rest.slice(0, lineEnd);
+    rest = rest.slice(lineEnd + 1);
+
+    consumeLine(line);
   }
 
   return { chunks, rest, malformedLines };
@@ -358,6 +372,7 @@ export class OllamaAdapter extends AdapterBase {
     request: NormalizedRequest,
   ): AsyncIterable<AIStreamEvent> {
     const auxiliary = this.createAuxiliaryState(request);
+    let completedEmitted = false;
     if (request.metadata) {
       yield factory.responseWarning("Request metadata is not supported by the Ollama adapter", "UNSUPPORTED_METADATA");
     }
@@ -369,20 +384,31 @@ export class OllamaAdapter extends AdapterBase {
       headers.Authorization = `Bearer ${this.apiKey}`;
     }
 
-    const response = await this.fetchFn(`${this.baseUrl}/api/chat`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(providerRequest),
-    });
+    let response: Response;
+
+    try {
+      response = await this.fetchFn(`${this.baseUrl}/api/chat`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(providerRequest),
+      });
+    } catch (err) {
+      throw new AIProviderError(err instanceof Error ? err.message : String(err), "PROVIDER_ERROR");
+    }
 
     if (!response.ok) {
       const errorText = await response.text().catch(() => "unknown error");
-      throw new Error(`Ollama API error ${response.status}: ${errorText}`);
+      throw new AIProviderError(
+        `Ollama API error ${response.status}: ${errorText}`,
+        "PROVIDER_ERROR",
+        response.status,
+        errorText,
+      );
     }
 
     const reader = response.body?.getReader();
     if (!reader) {
-      throw new Error("Response body is not readable");
+      throw new AIStreamError("Response body is not readable", "STREAM_ERROR");
     }
 
     const output: OutputItem[] = [];
@@ -397,14 +423,62 @@ export class OllamaAdapter extends AdapterBase {
 
     // tool_calls 累积（于 final chunk 到达）
     let pendingToolCalls: Array<{ id: string; name: string; argumentsText: string; argumentsJson?: unknown }> = [];
+    const buildResponse = this.buildResponse.bind(this);
+
+    const emitCompleted = async function* (
+      stopReason: import("../index.js").StopReason | undefined,
+      rawResponseId: string | undefined,
+    ): AsyncIterable<AIStreamEvent> {
+      if (completedEmitted) {
+        yield factory.responseWarning("Duplicate finish signal ignored", "DUPLICATE_FINISH");
+        return;
+      }
+
+      completedEmitted = true;
+
+      const replay = replayFromOutput(output);
+
+      if (accumulatedContent || pendingToolCalls.length > 0) {
+        replay.push(
+          opaqueItem("ollama", "replay", {
+            role: "assistant",
+            content: accumulatedContent,
+            tool_calls: pendingToolCalls.map((tc) => ({
+              function: { name: tc.name, arguments: tc.argumentsJson },
+            })),
+          }),
+        );
+      }
+
+      const auxiliaryResult = await auxiliary.finalize(factory);
+      for (const event of auxiliaryResult.events) {
+        yield event;
+      }
+
+      yield factory.responseCompleted(
+        buildResponse(
+          request,
+          {
+            output,
+            replay,
+            stopReason,
+            usage: auxiliaryResult.usage,
+            billing: auxiliaryResult.billing,
+            auxiliary: auxiliaryResult.auxiliary,
+            warnings: auxiliaryResult.warnings,
+            metadataSources: auxiliaryResult.metadataSources,
+            rawResponseId,
+          },
+          factory,
+        ),
+      );
+    };
 
     try {
       while (true) {
         const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const { chunks, rest, malformedLines } = parseOllamaNDJSON(buffer);
+        buffer += done ? decoder.decode() : decoder.decode(value, { stream: true });
+        const { chunks, rest, malformedLines } = parseOllamaNDJSON(buffer, done);
         buffer = rest;
 
         const malformedWarning = emitMalformedStreamWarning(factory, {
@@ -418,6 +492,13 @@ export class OllamaAdapter extends AdapterBase {
 
         for (const chunk of chunks) {
           responseId = chunk.created_at;
+
+          if (completedEmitted) {
+            if (chunk.done) {
+              yield factory.responseWarning("Duplicate finish signal ignored", "DUPLICATE_FINISH");
+            }
+            continue;
+          }
 
           const msg = chunk.message;
 
@@ -494,44 +575,7 @@ export class OllamaAdapter extends AdapterBase {
             // 构建 stop reason
             const stopReason = chunk.done_reason ? mapStopReason(chunk.done_reason) : undefined;
 
-            // 构建 replay
-            const replay = replayFromOutput(output);
-
-            // 附加 opaque replay（若有关联的 assistant 消息）
-            if (accumulatedContent || pendingToolCalls.length > 0) {
-              replay.push(
-                opaqueItem("ollama", "replay", {
-                  role: "assistant",
-                  content: accumulatedContent,
-                  tool_calls: pendingToolCalls.map((tc) => ({
-                    function: { name: tc.name, arguments: tc.argumentsJson },
-                  })),
-                }),
-              );
-            }
-
-            const auxiliaryResult = await auxiliary.finalize(factory);
-            for (const event of auxiliaryResult.events) {
-              yield event;
-            }
-
-            yield factory.responseCompleted(
-              this.buildResponse(
-                request,
-                {
-                  output,
-                  replay,
-                  stopReason,
-                  usage: auxiliaryResult.usage,
-                  billing: auxiliaryResult.billing,
-                  auxiliary: auxiliaryResult.auxiliary,
-                  warnings: auxiliaryResult.warnings,
-                  metadataSources: auxiliaryResult.metadataSources,
-                  rawResponseId: chunk.created_at,
-                },
-                factory,
-              ),
-            );
+            yield* emitCompleted(stopReason, chunk.created_at);
 
             // 重置累积状态
             accumulatedContent = "";
@@ -540,6 +584,8 @@ export class OllamaAdapter extends AdapterBase {
             pendingToolCalls = [];
           }
         }
+
+        if (done) break;
       }
     } finally {
       reader.releaseLock();
@@ -550,7 +596,7 @@ export class OllamaAdapter extends AdapterBase {
     }
 
     // 流结束但无 done=true（断流保护）
-    if (hasMessageStarted || pendingToolCalls.length > 0) {
+    if (!completedEmitted && (hasMessageStarted || pendingToolCalls.length > 0)) {
       yield factory.responseWarning("Stream ended without a done signal", "INCOMPLETE_STREAM");
 
       if (hasMessageStarted) {
@@ -569,27 +615,7 @@ export class OllamaAdapter extends AdapterBase {
         output.push(toolCall);
       }
 
-      const replay = replayFromOutput(output);
-      const auxiliaryResult = await auxiliary.finalize(factory);
-      for (const event of auxiliaryResult.events) {
-        yield event;
-      }
-      yield factory.responseCompleted(
-        this.buildResponse(
-          request,
-          {
-            output,
-            replay,
-            usage: auxiliaryResult.usage,
-            billing: auxiliaryResult.billing,
-            auxiliary: auxiliaryResult.auxiliary,
-            warnings: auxiliaryResult.warnings,
-            metadataSources: auxiliaryResult.metadataSources,
-            rawResponseId: responseId,
-          },
-          factory,
-        ),
-      );
+      yield* emitCompleted(undefined, responseId);
     }
   }
 }

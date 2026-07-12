@@ -173,8 +173,7 @@ describe("Stream interruption semantics", () => {
     expect(() => aggregateEvents(events)).toThrow();
   });
 
-  it("adapter provider error should emit warning + empty completed (not throw)", async () => {
-    // 使用 TestAdapter 模拟 provider 错误
+  it("adapter provider error should throw", async () => {
     class ErrorAdapter extends AdapterBase {
       readonly kind = "responses" as const;
       readonly nativeStreaming = false;
@@ -187,25 +186,16 @@ describe("Stream interruption semantics", () => {
     }
 
     const adapter = new ErrorAdapter();
-    const events: AIStreamEvent[] = [];
-    for await (const event of adapter.stream({
-      model: "gpt-4",
-      requestId: "r",
-      input: [],
-    })) {
-      events.push(event);
-    }
-
-    // 应该有 warning
-    const warnings = events.filter((e) => e.type === "response.warning");
-    expect(warnings.length).toBeGreaterThanOrEqual(1);
-
-    // 应该有 completed（不挂起调用方）
-    const completed = events.find((e) => e.type === "response.completed");
-    expect(completed).toBeDefined();
-    if (completed?.type === "response.completed") {
-      expect(completed.response.output).toEqual([]);
-    }
+    await expect((async () => {
+      for await (const ignoredEvent of adapter.stream({
+        model: "gpt-4",
+        requestId: "r",
+        input: [],
+      })) {
+        void ignoredEvent;
+        // consume
+      }
+    })()).rejects.toBeInstanceOf(AIProviderError);
   });
 
   it("should distinguish normal completion from interruption", async () => {
@@ -365,7 +355,7 @@ describe("Normal vs abnormal termination", () => {
     expect(result.stopReason).toBe("end_turn");
   });
 
-  it("abnormal: provider throws -> warning + empty completed", async () => {
+  it("abnormal: provider throws -> reject stream", async () => {
     class FailAdapter extends AdapterBase {
       readonly kind = "responses" as const;
       readonly nativeStreaming = false;
@@ -378,18 +368,11 @@ describe("Normal vs abnormal termination", () => {
     }
 
     const adapter = new FailAdapter();
-    const events: AIStreamEvent[] = [];
-    for await (const e of adapter.stream({ model: "gpt-4", requestId: "r", input: [] })) {
-      events.push(e);
-    }
-
-    const warning = events.find((e) => e.type === "response.warning");
-    expect(warning).toBeDefined();
-    if (warning?.type === "response.warning") {
-      expect(warning.message).toContain("Connection refused");
-    }
-
-    const completed = events.find((e) => e.type === "response.completed");
-    expect(completed).toBeDefined();
+    await expect((async () => {
+      for await (const ignoredEvent of adapter.stream({ model: "gpt-4", requestId: "r", input: [] })) {
+        void ignoredEvent;
+        // consume
+      }
+    })()).rejects.toThrow("Connection refused");
   });
 });
