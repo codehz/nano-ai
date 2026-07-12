@@ -222,7 +222,7 @@ describe("ChatCompletionsAdapter - tool calls", () => {
   it("should handle legacy function_call format", async () => {
     const chunks = [
       'data: {"id":"chatcmpl-fc1","choices":[{"index":0,"delta":{"role":"assistant","content":null,"function_call":{"name":"search","arguments":""}},"finish_reason":null}]}\n',
-      'data: {"id":"chatcmpl-fc1","choices":[{"index":0,"delta":{"function_call":{"arguments":"{\\"q\\":"}}","finish_reason":null}]}\n',
+      'data: {"id":"chatcmpl-fc1","choices":[{"index":0,"delta":{"function_call":{"arguments":"{\\"q\\":"}},"finish_reason":null}]}\n',
       'data: {"id":"chatcmpl-fc1","choices":[{"index":0,"delta":{"function_call":{"arguments":"\\"hello\\"}"}},"finish_reason":null}]}\n',
       'data: {"id":"chatcmpl-fc1","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}\n',
       "data: [DONE]\n",
