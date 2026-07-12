@@ -44,6 +44,7 @@ type ChatRequest = {
   temperature?: number;
   max_tokens?: number;
   stream: true;
+  n: 1;
 };
 
 type ChatMessage = {
@@ -363,6 +364,7 @@ export class ChatCompletionsAdapter extends AdapterBase {
       model: request.model,
       messages,
       stream: true,
+      n: 1,
     };
 
     if (request.tools && request.tools.length > 0) {
@@ -444,6 +446,7 @@ export class ChatCompletionsAdapter extends AdapterBase {
     let hasMessageStarted = false;
     let hasReasoningStarted = false;
     let completedEmitted = false;
+    let warnedNonZeroChoice = false;
     const buildResponse = this.buildResponse.bind(this);
 
     // tool_calls 累积: tool call index → { id, name, args }
@@ -461,10 +464,12 @@ export class ChatCompletionsAdapter extends AdapterBase {
         output.push(reasoning);
       }
 
-      if (hasMessageStarted && accumulatedContent) {
+      if (hasMessageStarted) {
         const message = messageItem([textBlock(accumulatedContent)], { id: currentMessageId });
         events.push(factory.messageCompleted(message));
-        output.push(message);
+        if (accumulatedContent) {
+          output.push(message);
+        }
       }
 
       for (const pending of finalizedToolCalls) {
@@ -563,7 +568,16 @@ export class ChatCompletionsAdapter extends AdapterBase {
           }
 
           for (const choice of chunk.choices) {
-            if (choice.index !== 0) continue;
+            if (choice.index !== 0) {
+              if (!warnedNonZeroChoice) {
+                yield factory.responseWarning(
+                  `Chat Completions returned choice index ${choice.index}; only the first choice (index 0) is supported. This choice is ignored.`,
+                  "MULTIPLE_CHOICES_IGNORED",
+                );
+                warnedNonZeroChoice = true;
+              }
+              continue;
+            }
 
             if (completedEmitted) {
               if (choice.finish_reason) {
@@ -576,11 +590,16 @@ export class ChatCompletionsAdapter extends AdapterBase {
             const finishReason = choice.finish_reason;
             const reasoningDeltas = extractReasoningDeltas(delta);
 
-            // 处理 role: assistant (首块标识)
-            if (delta.role === "assistant" && typeof delta.content === "string" && !hasMessageStarted) {
+            const ensureMessageStarted = (): void => {
+              if (hasMessageStarted) return;
               currentMessageId = `msg-${chunk.id}`;
               hasMessageStarted = true;
               accumulatedContent = "";
+            };
+
+            // 处理 role: assistant（首块标识；不要求 content）
+            if (delta.role === "assistant" && !hasMessageStarted) {
+              ensureMessageStarted();
               yield factory.messageStarted(currentMessageId);
             }
 
@@ -606,8 +625,7 @@ export class ChatCompletionsAdapter extends AdapterBase {
             // 处理 content delta
             if (delta.content) {
               if (!hasMessageStarted) {
-                currentMessageId = `msg-${chunk.id}`;
-                hasMessageStarted = true;
+                ensureMessageStarted();
                 yield factory.messageStarted(currentMessageId);
               }
               accumulatedContent += delta.content;
@@ -616,6 +634,11 @@ export class ChatCompletionsAdapter extends AdapterBase {
 
             // 处理 tool_calls delta
             if (delta.tool_calls) {
+              if (!hasMessageStarted) {
+                ensureMessageStarted();
+                yield factory.messageStarted(currentMessageId);
+              }
+
               for (const tc of delta.tool_calls) {
                 const idx = tc.index;
 
@@ -636,6 +659,11 @@ export class ChatCompletionsAdapter extends AdapterBase {
 
             // 处理 function_call delta (legacy format)
             if (delta.function_call) {
+              if (!hasMessageStarted) {
+                ensureMessageStarted();
+                yield factory.messageStarted(currentMessageId);
+              }
+
               if (delta.function_call.name) {
                 const fcId = `fc-${chunk.id}-0`;
                 pendingToolCalls.set(0, { id: fcId, name: delta.function_call.name, args: "" });
