@@ -177,7 +177,14 @@ describe("Stream interruption semantics", () => {
   it("adapter provider error should throw", async () => {
     class ErrorAdapter extends AdapterBase {
       readonly kind = "responses" as const;
-      readonly nativeStreaming = false;
+      readonly capabilities = {
+        textStreaming: "synthetic",
+        reasoningStreaming: "synthetic",
+        toolCallStreaming: "synthetic",
+        replay: "canonical",
+        usage: "final",
+        toolResultOutcomes: ["success", "error", "rejected"],
+      } as const;
       protected buildRequest(): never {
         throw new AIProviderError("API key invalid", "AUTH_ERROR", 401);
       }
@@ -359,7 +366,14 @@ describe("Normal vs abnormal termination", () => {
   it("abnormal: provider throws -> reject stream", async () => {
     class FailAdapter extends AdapterBase {
       readonly kind = "responses" as const;
-      readonly nativeStreaming = false;
+      readonly capabilities = {
+        textStreaming: "synthetic",
+        reasoningStreaming: "synthetic",
+        toolCallStreaming: "synthetic",
+        replay: "canonical",
+        usage: "final",
+        toolResultOutcomes: ["success", "error", "rejected"],
+      } as const;
       protected buildRequest(): never {
         throw new Error("Connection refused");
       }

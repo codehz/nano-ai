@@ -259,7 +259,14 @@ function toWireOllamaToolCalls(toolCalls: OllamaReplayToolCall[]): OllamaToolCal
 
 export class OllamaAdapter extends AdapterBase {
   readonly kind = "ollama" as const;
-  readonly nativeStreaming = true;
+  readonly capabilities = {
+    textStreaming: "native",
+    reasoningStreaming: "none",
+    toolCallStreaming: "synthetic",
+    replay: "opaque",
+    usage: "final",
+    toolResultOutcomes: ["success"],
+  } as const;
 
   private baseUrl: string;
   private apiKey: string | undefined;

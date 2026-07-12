@@ -227,7 +227,14 @@ function canonicalToResponsesBlock(b: import("../index.js").ContentBlock): Respo
 
 export class ResponsesAdapter extends AdapterBase {
   readonly kind = "responses" as const;
-  readonly nativeStreaming = true;
+  readonly capabilities = {
+    textStreaming: "native",
+    reasoningStreaming: "native",
+    toolCallStreaming: "native",
+    replay: "opaque",
+    usage: "final",
+    toolResultOutcomes: ["success"],
+  } as const;
 
   private apiKey: string;
   private baseUrl: string;

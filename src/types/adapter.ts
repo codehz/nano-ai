@@ -21,9 +21,20 @@ export type NormalizedRequest = AIRequest & {
 
 // ── Adapter 接口 ──────────────────────────────────────────────
 
+export type StreamingCapability = "native" | "synthetic" | "none";
+
+export type AdapterCapabilities = {
+  readonly textStreaming: StreamingCapability;
+  readonly reasoningStreaming: StreamingCapability;
+  readonly toolCallStreaming: StreamingCapability;
+  readonly replay: "canonical" | "opaque" | "none";
+  readonly usage: "stream" | "final" | "none";
+  readonly toolResultOutcomes: ReadonlyArray<"success" | "error" | "rejected">;
+};
+
 export interface BackendAdapter {
   readonly kind: "chat-completions" | "messages" | "responses" | "ollama" | "mock";
-  readonly nativeStreaming: boolean;
+  readonly capabilities: AdapterCapabilities;
   stream(request: NormalizedRequest): AsyncIterable<AIStreamEvent>;
 }
 

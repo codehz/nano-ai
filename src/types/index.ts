@@ -46,4 +46,12 @@ export type {
 } from "./events.js";
 
 // Adapter 协议和 client 类型
-export type { BackendAdapter, FetchFn, NormalizedRequest, CreateAIClientOptions, AIClient } from "./adapter.js";
+export type {
+  AdapterCapabilities,
+  StreamingCapability,
+  BackendAdapter,
+  FetchFn,
+  NormalizedRequest,
+  CreateAIClientOptions,
+  AIClient,
+} from "./adapter.js";

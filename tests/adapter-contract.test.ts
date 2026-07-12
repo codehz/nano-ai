@@ -5,6 +5,7 @@ import {
   ChatCompletionsAdapter,
   collectStream,
   MessagesAdapter,
+  MockAdapter,
   OllamaAdapter,
   ResponsesAdapter,
 } from "../src/index.js";
@@ -309,6 +310,53 @@ function buildMalformedAdapters() {
 }
 
 describe("Adapter contracts", () => {
+  it("should declare stable capabilities for built-in adapters", () => {
+    expect(new ChatCompletionsAdapter({ apiKey: "test-key" }).capabilities).toEqual({
+      textStreaming: "native",
+      reasoningStreaming: "native",
+      toolCallStreaming: "native",
+      replay: "opaque",
+      usage: "final",
+      toolResultOutcomes: ["success"],
+    });
+    expect(new MessagesAdapter({ apiKey: "test-key" }).capabilities).toEqual({
+      textStreaming: "native",
+      reasoningStreaming: "native",
+      toolCallStreaming: "synthetic",
+      replay: "opaque",
+      usage: "stream",
+      toolResultOutcomes: ["success", "error"],
+    });
+    expect(new ResponsesAdapter({ apiKey: "test-key" }).capabilities).toEqual({
+      textStreaming: "native",
+      reasoningStreaming: "native",
+      toolCallStreaming: "native",
+      replay: "opaque",
+      usage: "final",
+      toolResultOutcomes: ["success"],
+    });
+    expect(new OllamaAdapter().capabilities).toEqual({
+      textStreaming: "native",
+      reasoningStreaming: "none",
+      toolCallStreaming: "synthetic",
+      replay: "opaque",
+      usage: "final",
+      toolResultOutcomes: ["success"],
+    });
+    expect(
+      new MockAdapter({
+        handler: async function* () {},
+      }).capabilities,
+    ).toEqual({
+      textStreaming: "synthetic",
+      reasoningStreaming: "synthetic",
+      toolCallStreaming: "synthetic",
+      replay: "canonical",
+      usage: "final",
+      toolResultOutcomes: ["success", "error", "rejected"],
+    });
+  });
+
   it("should reject unsupported image content consistently across adapters", async () => {
     const request = makeRequest({
       input: [
