@@ -76,6 +76,38 @@ describe("ResponsesAdapter - text streaming", () => {
     expect(result.backend.rawResponseId).toBe("resp-123");
   });
 
+  it("should map input/output token details in completed usage", async () => {
+    const sse = [
+      'event: response.output_item.added\ndata: {"item":{"id":"m1","type":"message"}}\n\n',
+      'event: response.output_text.done\ndata: {"item_id":"m1","text":"Hi"}\n\n',
+      `event: response.completed\ndata: ${JSON.stringify({
+        response: {
+          id: "resp-usage-details",
+          model: "gpt-4o",
+          output: [{ id: "m1", type: "message" }],
+          usage: {
+            input_tokens: 50,
+            output_tokens: 20,
+            total_tokens: 70,
+            input_tokens_details: { cached_tokens: 5 },
+            output_tokens_details: { reasoning_tokens: 8 },
+          },
+        },
+      })}\n\n`,
+    ];
+
+    const adapter = new ResponsesAdapter({
+      apiKey: "test-key",
+      fetch: mockFetch(sseResponse(...sse)),
+    });
+
+    const result = await collectStream(adapter.stream(makeRequest()));
+    expect(result.usage?.cachedInputTokens).toBe(5);
+    expect(result.usage?.reasoningTokens).toBe(8);
+    expect(result.usage?.billableInputTokens).toBe(45);
+    expect(result.usage?.billableOutputTokens).toBe(12);
+  });
+
   it("should handle streaming multiple messages", async () => {
     const sse = [
       'event: response.output_item.added\ndata: {"item":{"id":"m1","type":"message"}}\n\n',

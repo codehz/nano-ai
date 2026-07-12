@@ -27,6 +27,7 @@ import {
   contentBlocksToText,
 } from "../helpers/mapping.js";
 import { emitMalformedStreamWarning } from "../helpers/adapter-auxiliary.js";
+import { usageFromOllama } from "../helpers/usage-mapping.js";
 
 import type { NormalizedRequest, AIStreamEvent, EventFactory, OutputItem, FetchFn } from "../index.js";
 
@@ -478,14 +479,10 @@ export class OllamaAdapter extends AdapterBase {
               (chunk.prompt_eval_count !== undefined || chunk.eval_count !== undefined)
             ) {
               auxiliary.recordUsage(
-                {
-                  inputTokens: chunk.prompt_eval_count,
-                  outputTokens: chunk.eval_count,
-                  totalTokens:
-                    chunk.prompt_eval_count !== undefined && chunk.eval_count !== undefined
-                      ? chunk.prompt_eval_count + chunk.eval_count
-                      : undefined,
-                },
+                usageFromOllama({
+                  prompt_eval_count: chunk.prompt_eval_count,
+                  eval_count: chunk.eval_count,
+                }),
                 "final",
                 {
                   prompt_eval_count: chunk.prompt_eval_count,

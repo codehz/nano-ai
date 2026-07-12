@@ -22,6 +22,7 @@ import {
   contentBlocksToText,
 } from "../helpers/mapping.js";
 import { emitMalformedStreamWarning } from "../helpers/adapter-auxiliary.js";
+import { usageFromOpenAIResponses } from "../helpers/usage-mapping.js";
 
 import { parseSSEEvents } from "../helpers/sse-parser.js";
 
@@ -448,15 +449,7 @@ export class ResponsesAdapter extends AdapterBase {
     if (completedResponse) {
       rawResponseId = completedResponse.id;
       if (completedResponse.usage) {
-        auxiliary.recordUsage(
-          {
-            inputTokens: completedResponse.usage.input_tokens,
-            outputTokens: completedResponse.usage.output_tokens,
-            totalTokens: completedResponse.usage.total_tokens,
-          },
-          "final",
-          completedResponse.usage,
-        );
+        auxiliary.recordUsage(usageFromOpenAIResponses(completedResponse.usage), "final", completedResponse.usage);
       }
     }
 

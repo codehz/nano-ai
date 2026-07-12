@@ -24,6 +24,7 @@ import {
   contentBlocksToText,
 } from "../helpers/mapping.js";
 import { emitMalformedStreamWarning } from "../helpers/adapter-auxiliary.js";
+import { usageFromAnthropicMessages } from "../helpers/usage-mapping.js";
 
 import { parseSSEEvents } from "../helpers/sse-parser.js";
 
@@ -131,7 +132,12 @@ type MessagesSSEEvent =
       type: "message_delta";
       data: {
         delta: { stop_reason?: string; stop_sequence?: string | null };
-        usage: { input_tokens: number; output_tokens: number };
+        usage: {
+          input_tokens: number;
+          output_tokens: number;
+          cache_creation_input_tokens?: number;
+          cache_read_input_tokens?: number;
+        };
       };
     }
   | { type: "message_stop"; data: Record<string, never> }
@@ -616,15 +622,7 @@ export class MessagesAdapter extends AdapterBase {
               stopSequence = sseEvent.data.delta.stop_sequence;
               const u = sseEvent.data.usage;
               if (u) {
-                auxiliary.recordUsage(
-                  {
-                    inputTokens: u.input_tokens,
-                    outputTokens: u.output_tokens,
-                    totalTokens: u.input_tokens + u.output_tokens,
-                  },
-                  "stream",
-                  u,
-                );
+                auxiliary.recordUsage(usageFromAnthropicMessages(u), "stream", u);
               }
               continue;
             }

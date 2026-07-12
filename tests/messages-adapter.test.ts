@@ -77,6 +77,56 @@ describe("MessagesAdapter - text streaming", () => {
     expect(result.stopReason).toBe("end_turn");
   });
 
+  it("should map cache token fields from message_delta usage", async () => {
+    const sse = [
+      `event: message_start\ndata: ${JSON.stringify({
+        type: "message_start",
+        message: {
+          id: "msg_cache",
+          type: "message",
+          role: "assistant",
+          model: "claude-3-opus",
+          content: [],
+          stop_reason: null,
+          usage: { input_tokens: 10, output_tokens: 0 },
+        },
+      })}\n\n`,
+      `event: content_block_start\ndata: ${JSON.stringify({
+        type: "content_block_start",
+        index: 0,
+        content_block: { type: "text", text: "" },
+      })}\n\n`,
+      `event: content_block_delta\ndata: ${JSON.stringify({
+        type: "content_block_delta",
+        index: 0,
+        delta: { type: "text_delta", text: "Hi" },
+      })}\n\n`,
+      `event: content_block_stop\ndata: ${JSON.stringify({ type: "content_block_stop", index: 0 })}\n\n`,
+      `event: message_delta\ndata: ${JSON.stringify({
+        type: "message_delta",
+        delta: { stop_reason: "end_turn", stop_sequence: null },
+        usage: {
+          input_tokens: 10,
+          output_tokens: 4,
+          cache_creation_input_tokens: 3,
+          cache_read_input_tokens: 7,
+        },
+      })}\n\n`,
+      messageStopSSE(),
+    ];
+
+    const adapter = new MessagesAdapter({
+      apiKey: "test-key",
+      fetch: mockFetch(sseResponse(...sse)),
+    });
+
+    const result = await collectStream(adapter.stream(makeRequest()));
+    expect(result.usage?.cachedInputTokens).toBe(7);
+    expect(result.usage?.cacheWriteInputTokens).toBe(3);
+    expect(result.usage?.totalTokens).toBe(24);
+    expect(result.usage?.billableInputTokens).toBe(13);
+  });
+
   it("should handle SSE events split across transport chunks", async () => {
     const chunks = [
       `event: message_start\ndata: ${JSON.stringify({ type: "message_start", message: { id: "msg_split", type: "message", role: "assistant", model: "claude-3-opus", content: [], stop_reason: null, usage: { input_tokens: 8, output_tokens: 0 } } }).slice(0, 90)}`,

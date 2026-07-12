@@ -13,13 +13,20 @@ export type StopReason = "end_turn" | "tool_call" | "max_output_tokens" | "conte
 // ── 辅助信息类型 ──────────────────────────────────────────────
 
 export type Usage = {
+  /** Provider prompt / input token count */
   inputTokens?: number;
+  /** Provider completion / output token count */
   outputTokens?: number;
+  /** Reasoning tokens when provider exposes output breakdown (e.g. OpenAI Responses) */
   reasoningTokens?: number;
   totalTokens?: number;
+  /** Tokens read from prompt cache (OpenAI cached_tokens, Anthropic cache_read_input_tokens) */
   cachedInputTokens?: number;
+  /** Tokens written to prompt cache (Anthropic cache_creation_input_tokens) */
   cacheWriteInputTokens?: number;
+  /** Best-effort billable input (full-rate input; excludes discounted cache reads where known) */
   billableInputTokens?: number;
+  /** Best-effort billable output (non-reasoning slice when provider gives reasoning breakdown) */
   billableOutputTokens?: number;
 };
 

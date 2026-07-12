@@ -222,7 +222,7 @@ describe("ChatCompletionsAdapter - tool calls", () => {
   it("should handle legacy function_call format", async () => {
     const chunks = [
       'data: {"id":"chatcmpl-fc1","choices":[{"index":0,"delta":{"role":"assistant","content":null,"function_call":{"name":"search","arguments":""}},"finish_reason":null}]}\n',
-      'data: {"id":"chatcmpl-fc1","choices":[{"index":0,"delta":{"function_call":{"arguments":"{\\"q\\":"}},"finish_reason":null}]}\n',
+      'data: {"id":"chatcmpl-fc1","choices":[{"index":0,"delta":{"function_call":{"arguments":"{\\"q\\":"}}","finish_reason":null}]}\n',
       'data: {"id":"chatcmpl-fc1","choices":[{"index":0,"delta":{"function_call":{"arguments":"\\"hello\\"}"}},"finish_reason":null}]}\n',
       'data: {"id":"chatcmpl-fc1","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}\n',
       "data: [DONE]\n",
@@ -255,6 +255,25 @@ describe("ChatCompletionsAdapter - tool calls", () => {
     expect(result.usage?.inputTokens).toBe(10);
     expect(result.usage?.outputTokens).toBe(2);
     expect(result.usage?.totalTokens).toBe(12);
+  });
+
+  it("should map prompt/completion token details into canonical usage", async () => {
+    const chunks = [
+      'data: {"id":"chatcmpl-u2","choices":[{"index":0,"delta":{"role":"assistant","content":"Hi"},"finish_reason":null}]}\n',
+      'data: {"id":"chatcmpl-u2","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":100,"completion_tokens":40,"total_tokens":140,"prompt_tokens_details":{"cached_tokens":30},"completion_tokens_details":{"reasoning_tokens":10}}}\n',
+      "data: [DONE]\n",
+    ];
+
+    const adapter = new ChatCompletionsAdapter({
+      apiKey: "test-key",
+      fetch: mockFetch(sseResponse(...chunks)),
+    });
+
+    const result = await collectStream(adapter.stream(makeRequest()));
+    expect(result.usage?.cachedInputTokens).toBe(30);
+    expect(result.usage?.reasoningTokens).toBe(10);
+    expect(result.usage?.billableInputTokens).toBe(70);
+    expect(result.usage?.billableOutputTokens).toBe(30);
   });
 
   it("should produce message + tool calls in same response", async () => {
