@@ -226,6 +226,31 @@ function validateToolChoice(toolChoice: unknown, issues: ValidationIssue[]): voi
   }
 }
 
+/** Validate include settings, appending issues to the given array. */
+export function validateInclude(include: unknown, issues: ValidationIssue[]): void {
+  if (!isRecord(include)) {
+    pushIssue(issues, "include", "INCLUDE_INVALID", "include must be an object");
+    return;
+  }
+  if (include.usage !== undefined && (typeof include.usage !== "string" || !INCLUDE_MODES.has(include.usage))) {
+    pushIssue(issues, "include.usage", "INCLUDE_USAGE_INVALID", "include.usage must be off or best_effort");
+  }
+  if (include.billing !== undefined && (typeof include.billing !== "string" || !INCLUDE_MODES.has(include.billing))) {
+    pushIssue(issues, "include.billing", "INCLUDE_BILLING_INVALID", "include.billing must be off or best_effort");
+  }
+  if (
+    include.providerMetadata !== undefined &&
+    (typeof include.providerMetadata !== "string" || !INCLUDE_MODES.has(include.providerMetadata))
+  ) {
+    pushIssue(
+      issues,
+      "include.providerMetadata",
+      "INCLUDE_PROVIDER_METADATA_INVALID",
+      "include.providerMetadata must be off or best_effort",
+    );
+  }
+}
+
 /**
  * 校验 AIRequest，返回校验问题列表。
  * 空数组表示无问题。
@@ -257,7 +282,7 @@ export function validateRequest(request: AIRequest): ValidationIssue[] {
 
   // temperature 范围
   if (request.temperature !== undefined) {
-    if (typeof request.temperature !== "number" || isNaN(request.temperature)) {
+    if (typeof request.temperature !== "number" || !Number.isFinite(request.temperature)) {
       issues.push({
         field: "temperature",
         code: "TEMPERATURE_NOT_NUMBER",
@@ -274,7 +299,7 @@ export function validateRequest(request: AIRequest): ValidationIssue[] {
 
   // maxOutputTokens 合法性
   if (request.maxOutputTokens !== undefined) {
-    if (typeof request.maxOutputTokens !== "number" || isNaN(request.maxOutputTokens)) {
+    if (typeof request.maxOutputTokens !== "number" || !Number.isFinite(request.maxOutputTokens)) {
       issues.push({
         field: "maxOutputTokens",
         code: "MAX_OUTPUT_TOKENS_NOT_NUMBER",
@@ -290,24 +315,7 @@ export function validateRequest(request: AIRequest): ValidationIssue[] {
   }
 
   if (request.include !== undefined) {
-    if (!isRecord(request.include)) {
-      pushIssue(issues, "include", "INCLUDE_INVALID", "include must be an object");
-    } else {
-      if (request.include.usage !== undefined && !INCLUDE_MODES.has(request.include.usage)) {
-        pushIssue(issues, "include.usage", "INCLUDE_USAGE_INVALID", "include.usage must be off or best_effort");
-      }
-      if (request.include.billing !== undefined && !INCLUDE_MODES.has(request.include.billing)) {
-        pushIssue(issues, "include.billing", "INCLUDE_BILLING_INVALID", "include.billing must be off or best_effort");
-      }
-      if (request.include.providerMetadata !== undefined && !INCLUDE_MODES.has(request.include.providerMetadata)) {
-        pushIssue(
-          issues,
-          "include.providerMetadata",
-          "INCLUDE_PROVIDER_METADATA_INVALID",
-          "include.providerMetadata must be off or best_effort",
-        );
-      }
-    }
+    validateInclude(request.include, issues);
   }
 
   if (request.metadata !== undefined) {
@@ -359,6 +367,6 @@ export function assertValidRequest(request: AIRequest): void {
   const issues = validateRequest(request);
   const first = issues[0];
   if (first) {
-    throw new AIRequestError(first.message, first.code);
+    throw new AIRequestError(first.message, first.code, issues);
   }
 }

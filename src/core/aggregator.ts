@@ -26,6 +26,8 @@ import type {
   BackendTrace,
   StopReason,
 } from "../types/index.js";
+import { AIStreamError } from "./errors.js";
+import { mergeAuxiliary } from "./merge-auxiliary.js";
 
 // ── 聚合器状态 ────────────────────────────────────────────────
 
@@ -43,6 +45,9 @@ export interface AggregatorState {
   textParts: string[];
   toolCalls: ToolCallItem[];
   lastEventType?: AIStreamEvent["type"];
+  started: boolean;
+  completed: boolean;
+  nextSequence?: number;
 
   /** adapter 在 response.completed 中提供的 replay */
   replayFromAdapter?: import("../types/index.js").ReplayItem[];
@@ -59,12 +64,18 @@ export function createAggregatorState(): AggregatorState {
     output: [],
     textParts: [],
     toolCalls: [],
+    started: false,
+    completed: false,
   };
 }
 
 // ── Event handlers ────────────────────────────────────────────
 
 function handleResponseStarted(state: AggregatorState, event: AIStreamEvent & { type: "response.started" }): void {
+  if (state.started) {
+    throw streamProtocolError("Stream must contain exactly one response.started event");
+  }
+  state.started = true;
   state.responseId = event.responseId;
   state.model = event.model;
   state.backendInfo = event.backend;
@@ -82,7 +93,7 @@ function handleResponseAuxiliary(state: AggregatorState, event: AIStreamEvent & 
     state.billing = { ...state.billing, ...event.billing };
   }
   if (event.auxiliary) {
-    state.auxiliary = mergeAuxiliary(state.auxiliary, event.auxiliary);
+    state.auxiliary = mergeAuxiliary(state.auxiliary, event.auxiliary) ?? {};
   }
 }
 
@@ -104,6 +115,7 @@ function handleToolCallCompleted(state: AggregatorState, event: AIStreamEvent & 
 }
 
 function handleResponseCompleted(state: AggregatorState, event: AIStreamEvent & { type: "response.completed" }): void {
+  state.completed = true;
   state.replayFromAdapter = event.response.replay;
   state.responseIdFromAdapter = event.response.id;
   state.stopReasonFromAdapter = event.response.stopReason;
@@ -117,7 +129,7 @@ function handleResponseCompleted(state: AggregatorState, event: AIStreamEvent & 
     state.billing = { ...state.billing, ...event.response.billing };
   }
   if (event.response.auxiliary) {
-    state.auxiliary = mergeAuxiliary(state.auxiliary, event.response.auxiliary);
+    state.auxiliary = mergeAuxiliary(state.auxiliary, event.response.auxiliary) ?? {};
   }
   if (event.response.warnings) {
     pushWarnings(state, event.response.warnings);
@@ -159,7 +171,7 @@ function buildResponse(state: AggregatorState): AIResponse {
  * 将事件数组聚合为 AIResponse。
  * 适用于测试和离线处理场景。
  */
-export function aggregateEvents(events: AIStreamEvent[]): AIResponse {
+export function aggregateEvents(events: readonly AIStreamEvent[]): AIResponse {
   const state = createAggregatorState();
   for (const event of events) {
     aggregateEvent(state, event);
@@ -168,6 +180,7 @@ export function aggregateEvents(events: AIStreamEvent[]): AIResponse {
 }
 
 export function aggregateEvent(state: AggregatorState, event: AIStreamEvent): void {
+  validateEventEnvelope(state, event);
   state.lastEventType = event.type;
 
   switch (event.type) {
@@ -203,27 +216,14 @@ export function aggregateEvent(state: AggregatorState, event: AIStreamEvent): vo
 }
 
 export function finalizeAggregation(state: AggregatorState): AIResponse {
-  if (state.lastEventType !== "response.completed") {
-    throw new Error("Stream must end with response.completed event to produce a valid AIResponse");
+  if (!state.started) {
+    throw streamProtocolError("Stream must start with response.started event");
+  }
+  if (!state.completed || state.lastEventType !== "response.completed") {
+    throw streamProtocolError("Stream must end with response.completed event to produce a valid AIResponse");
   }
 
   return buildResponse(state);
-}
-
-function mergeAuxiliary(base: AuxiliaryInfo, patch: Partial<AuxiliaryInfo>): AuxiliaryInfo {
-  const merged: AuxiliaryInfo = {
-    ...base,
-    ...patch,
-  };
-
-  if (base.providerMetadata || patch.providerMetadata) {
-    merged.providerMetadata = {
-      ...base.providerMetadata,
-      ...patch.providerMetadata,
-    };
-  }
-
-  return merged;
 }
 
 function pushWarnings(state: AggregatorState, warnings: readonly string[]): void {
@@ -233,6 +233,26 @@ function pushWarnings(state: AggregatorState, warnings: readonly string[]): void
       state.warnings.push(warning);
     }
   }
+}
+
+function validateEventEnvelope(state: AggregatorState, event: AIStreamEvent): void {
+  if (state.completed) {
+    throw streamProtocolError("response.completed must be the final stream event");
+  }
+  if (!state.started && event.type !== "response.started") {
+    throw streamProtocolError("Stream must start with response.started event");
+  }
+  if (state.responseId !== undefined && event.responseId !== state.responseId) {
+    throw streamProtocolError("All stream events must use the same responseId");
+  }
+  if (state.nextSequence !== undefined && event.sequence !== state.nextSequence) {
+    throw streamProtocolError(`Expected event sequence ${state.nextSequence}, received ${event.sequence}`);
+  }
+  state.nextSequence = event.sequence + 1;
+}
+
+function streamProtocolError(message: string): AIStreamError {
+  return new AIStreamError(message, "STREAM_ERROR");
 }
 
 function pushMessageText(state: AggregatorState, item: MessageItem): void {

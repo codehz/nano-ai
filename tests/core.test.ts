@@ -38,6 +38,17 @@ describe("AIRequestError", () => {
     expect(err.code).toBe("INVALID");
     expect(err.message).toBe("bad request");
   });
+
+  it("should carry optional issues array", () => {
+    const issues = [{ field: "input", code: "INPUT_EMPTY", message: "input must be a non-empty array" }];
+    const err = new AIRequestError("bad", "INPUT_EMPTY", issues);
+    expect(err.issues).toBe(issues);
+  });
+
+  it("should have undefined issues when not provided", () => {
+    const err = new AIRequestError("bad", "INPUT_EMPTY");
+    expect(err.issues).toBeUndefined();
+  });
 });
 
 // ── validateRequest ───────────────────────────────────────────
@@ -157,6 +168,11 @@ describe("validateRequest", () => {
     expect(issues.some((i) => i.code === "TEMPERATURE_NOT_NUMBER")).toBe(true);
   });
 
+  it("should detect Infinity temperature", () => {
+    const issues = validateRequest(validRequest({ temperature: Infinity }));
+    expect(issues.some((i) => i.code === "TEMPERATURE_NOT_NUMBER")).toBe(true);
+  });
+
   it("should detect non-integer maxOutputTokens", () => {
     const issues = validateRequest(validRequest({ maxOutputTokens: 1.5 }));
     expect(issues.some((i) => i.code === "MAX_OUTPUT_TOKENS_INVALID")).toBe(true);
@@ -174,6 +190,11 @@ describe("validateRequest", () => {
 
   it("should accept valid maxOutputTokens", () => {
     expect(validateRequest(validRequest({ maxOutputTokens: 100 }))).toHaveLength(0);
+  });
+
+  it("should detect Infinity maxOutputTokens", () => {
+    const issues = validateRequest(validRequest({ maxOutputTokens: Infinity }));
+    expect(issues.some((i) => i.code === "MAX_OUTPUT_TOKENS_NOT_NUMBER")).toBe(true);
   });
 
   it("should detect duplicate tool names", () => {
@@ -243,6 +264,22 @@ describe("assertValidRequest", () => {
   it("should throw AIRequestError for invalid request", () => {
     expect(() => assertValidRequest(validRequest({ input: [] }))).toThrow(AIRequestError);
   });
+
+  it("should pass all issues via AIRequestError.issues", () => {
+    let error: unknown;
+    try {
+      assertValidRequest(validRequest({ input: [], temperature: -1 }));
+    } catch (err) {
+      error = err;
+    }
+    expect(error).toBeInstanceOf(AIRequestError);
+    const aie = error as AIRequestError;
+    expect(aie.issues).toBeArray();
+    expect(aie.issues!.length).toBeGreaterThan(1);
+    expect(aie.issues![0]).toHaveProperty("field");
+    expect(aie.issues![0]).toHaveProperty("code");
+    expect(aie.issues![0]).toHaveProperty("message");
+  });
 });
 
 // ── normalizeRequest ──────────────────────────────────────────
@@ -307,6 +344,36 @@ describe("normalizeRequest", () => {
 
   it("should throw on invalid request after normalization", () => {
     expect(() => normalizeRequest({ input: [] }, { model: "gpt-4" })).toThrow(AIRequestError);
+  });
+
+  it("should reject non-object request.include before merging", () => {
+    expect(() =>
+      normalizeRequest(validRequest({ include: "bad" as unknown as AIRequest["include"] }), { model: "gpt-4" }),
+    ).toThrow(AIRequestError);
+  });
+
+  it("should reject invalid request.include.usage before merging", () => {
+    expect(() =>
+      normalizeRequest(validRequest({ include: { usage: "invalid_mode" as "off" } }), { model: "gpt-4" }),
+    ).toThrow(AIRequestError);
+  });
+
+  it("should reject non-object defaults.include before merging", () => {
+    expect(() =>
+      normalizeRequest(validRequest(), {
+        model: "gpt-4",
+        defaults: { include: "bad" as unknown as AIRequest["include"] },
+      }),
+    ).toThrow(AIRequestError);
+  });
+
+  it("should reject invalid defaults.include.usage before merging", () => {
+    expect(() =>
+      normalizeRequest(validRequest(), {
+        model: "gpt-4",
+        defaults: { include: { usage: "invalid_mode" as "off" } },
+      }),
+    ).toThrow(AIRequestError);
   });
 });
 

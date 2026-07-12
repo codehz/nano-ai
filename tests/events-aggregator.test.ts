@@ -428,6 +428,47 @@ describe("aggregateEvents", () => {
     expect(() => aggregateEvents(events)).toThrow();
   });
 
+  it("should reject a stream without response.started", () => {
+    const f = makeFactory();
+    expect(() => aggregateEvents([f.responseCompleted(makeCompletedResponse())])).toThrow("response.started");
+  });
+
+  it("should reject duplicate response.started events", () => {
+    const f = makeFactory();
+    expect(() => aggregateEvents([f.responseStarted("gpt-4"), f.responseStarted("gpt-4")])).toThrow(
+      "exactly one response.started",
+    );
+  });
+
+  it("should reject non-contiguous event sequences", () => {
+    const f = makeFactory();
+    const started = f.responseStarted("gpt-4");
+    const completed = f.responseCompleted(makeCompletedResponse());
+    completed.sequence += 1;
+
+    expect(() => aggregateEvents([started, completed])).toThrow("Expected event sequence");
+  });
+
+  it("should reject inconsistent response IDs", () => {
+    const f = makeFactory();
+    const started = f.responseStarted("gpt-4");
+    const completed = f.responseCompleted(makeCompletedResponse());
+    completed.responseId = "different-response";
+
+    expect(() => aggregateEvents([started, completed])).toThrow("same responseId");
+  });
+
+  it("should reject events after response.completed", () => {
+    const f = makeFactory();
+    const events = [
+      f.responseStarted("gpt-4"),
+      f.responseCompleted(makeCompletedResponse()),
+      f.responseWarning("too late"),
+    ];
+
+    expect(() => aggregateEvents(events)).toThrow("final stream event");
+  });
+
   it("should handle empty output", () => {
     const f = makeFactory();
     const events: AIStreamEvent[] = [
