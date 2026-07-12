@@ -664,6 +664,96 @@ describe("ChatCompletionsAdapter - error handling", () => {
     await expect(collectStream(adapter.stream(makeRequest()))).rejects.toBeInstanceOf(AIProviderError);
   });
 
+  it("should sanitize HTML HTTP error bodies", async () => {
+    const html = "<!DOCTYPE html><html><body>/var/secrets/key</body></html>";
+    const adapter = new ChatCompletionsAdapter({
+      apiKey: "bad-key",
+      fetch: async () => new Response(html, { status: 502 }),
+    });
+
+    try {
+      await collectStream(adapter.stream(makeRequest()));
+      expect.unreachable("expected throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(AIProviderError);
+      const e = err as AIProviderError;
+      expect(e.statusCode).toBe(502);
+      expect(e.responseBody).toContain("Body omitted");
+      expect(e.responseBody).not.toContain("/var/secrets");
+      expect(e.message).toContain("Provider returned 502");
+    }
+  });
+
+  it("should surface JSON provider error.message without raw dump", async () => {
+    const body = JSON.stringify({ error: { message: "Rate limit exceeded" } });
+    const adapter = new ChatCompletionsAdapter({
+      apiKey: "bad-key",
+      fetch: async () => new Response(body, { status: 429 }),
+    });
+
+    try {
+      await collectStream(adapter.stream(makeRequest()));
+      expect.unreachable("expected throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(AIProviderError);
+      const e = err as AIProviderError;
+      expect(e.responseBody).toBe("Rate limit exceeded");
+      expect(e.message).toContain("Rate limit exceeded");
+    }
+  });
+
+  it("should reject oversized opaque replay payloads", async () => {
+    const adapter = new ChatCompletionsAdapter({
+      apiKey: "test-key",
+      fetch: async () => {
+        throw new Error("fetch should not be called");
+      },
+    });
+
+    await expect(
+      collectStream(
+        adapter.stream(
+          makeRequest({
+            input: [
+              {
+                type: "opaque",
+                source: "chat-completions",
+                purpose: "replay",
+                payload: { messages: [{ role: "assistant", content: "x".repeat(70000) }] },
+              },
+            ],
+          }),
+        ),
+      ),
+    ).rejects.toMatchObject({ name: "AIRequestError", code: "INVALID_OPAQUE_REPLAY" });
+  });
+
+  it("should reject invalid chat opaque messages shape", async () => {
+    const adapter = new ChatCompletionsAdapter({
+      apiKey: "test-key",
+      fetch: async () => {
+        throw new Error("fetch should not be called");
+      },
+    });
+
+    await expect(
+      collectStream(
+        adapter.stream(
+          makeRequest({
+            input: [
+              {
+                type: "opaque",
+                source: "chat-completions",
+                purpose: "replay",
+                payload: { messages: [{ role: "hacker", content: 123 }] },
+              },
+            ],
+          }),
+        ),
+      ),
+    ).rejects.toBeInstanceOf(AIRequestError);
+  });
+
   it("should handle incomplete stream gracefully", async () => {
     const chunks = [
       'data: {"id":"chatcmpl-inc","choices":[{"index":0,"delta":{"role":"assistant","content":"Partial"},"finish_reason":null}]}\n',

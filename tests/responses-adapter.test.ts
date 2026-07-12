@@ -486,6 +486,50 @@ describe("ResponsesAdapter - error handling", () => {
     await expect(collectStream(adapter.stream(makeRequest()))).rejects.toBeInstanceOf(AIProviderError);
   });
 
+  it("should sanitize HTML HTTP error bodies", async () => {
+    const html = "<!DOCTYPE html><html>secret</html>";
+    const adapter = new ResponsesAdapter({
+      apiKey: "bad-key",
+      fetch: async () => new Response(html, { status: 502 }),
+    });
+
+    try {
+      await collectStream(adapter.stream(makeRequest()));
+      expect.unreachable("expected throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(AIProviderError);
+      const e = err as AIProviderError;
+      expect(e.responseBody).toContain("Body omitted");
+      expect(e.message).toContain("Provider returned 502");
+    }
+  });
+
+  it("should reject non-string opaque continuation id", async () => {
+    const adapter = new ResponsesAdapter({
+      apiKey: "test-key",
+      fetch: async () => {
+        throw new Error("fetch should not be called");
+      },
+    });
+
+    await expect(
+      collectStream(
+        adapter.stream(
+          makeRequest({
+            input: [
+              {
+                type: "opaque",
+                source: "responses",
+                purpose: "replay",
+                payload: { id: 12345 },
+              },
+            ],
+          }),
+        ),
+      ),
+    ).rejects.toMatchObject({ name: "AIRequestError", code: "INVALID_OPAQUE_REPLAY" });
+  });
+
   it("should emit warning on SSE error event", async () => {
     const sse = [
       'event: error\ndata: {"message":"Rate limit exceeded","code":"RATE_LIMITED"}\n\n',

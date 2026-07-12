@@ -24,6 +24,7 @@ import {
   contentBlocksToText,
 } from "../helpers/mapping.js";
 import { emitMalformedStreamWarning } from "../helpers/adapter-auxiliary.js";
+import { assertOpaqueReplayEnvelope, providerHttpError } from "../helpers/adapter-security.js";
 import { usageFromAnthropicMessages } from "../helpers/usage-mapping.js";
 
 import { parseSSEEvents } from "../helpers/sse-parser.js";
@@ -110,6 +111,53 @@ function instructionsToMessagesText(instructions: string | import("../index.js")
   return typeof instructions === "string"
     ? instructions
     : contentBlocksToText(ensureMessagesTextBlocks(instructions, "instructions"));
+}
+
+function isMessagesReplayContentBlock(value: unknown): value is MessagesAPIContentBlock {
+  if (!value || typeof value !== "object" || !("type" in value)) return false;
+  const block = value as Record<string, unknown>;
+  switch (block.type) {
+    case "text":
+      return typeof block.text === "string";
+    case "thinking":
+      return typeof block.thinking === "string" && (block.signature === undefined || typeof block.signature === "string");
+    case "redacted_thinking":
+      return typeof block.data === "string";
+    case "tool_use":
+      return (
+        typeof block.id === "string" &&
+        typeof block.name === "string" &&
+        !!block.input &&
+        typeof block.input === "object" &&
+        !Array.isArray(block.input)
+      );
+    case "tool_result": {
+      if (typeof block.tool_use_id !== "string") return false;
+      if (block.is_error !== undefined && typeof block.is_error !== "boolean") return false;
+      if (typeof block.content === "string") return true;
+      if (!Array.isArray(block.content)) return false;
+      return block.content.every(isMessagesReplayContentBlock);
+    }
+    default:
+      return false;
+  }
+}
+
+function assertMessagesReplayContent(content: unknown): asserts content is MessagesAPIContentBlock[] {
+  if (!Array.isArray(content)) {
+    throw new AIRequestError(
+      "Invalid opaque replay payload: content must be an array",
+      "INVALID_OPAQUE_REPLAY",
+    );
+  }
+  for (let i = 0; i < content.length; i++) {
+    if (!isMessagesReplayContentBlock(content[i])) {
+      throw new AIRequestError(
+        `Invalid opaque replay payload: content[${i}] is not a valid Messages content block`,
+        "INVALID_OPAQUE_REPLAY",
+      );
+    }
+  }
 }
 
 function assertMessagesToolResultOutcome(outcome: import("../index.js").ToolResultItem["outcome"]): void {
@@ -344,29 +392,16 @@ export class MessagesAdapter extends AdapterBase {
         }
         case "opaque": {
           // 尝试从 opaque replay item 中提取 assistant message
-          if (item.purpose === "replay" && typeof item.payload === "object" && item.payload !== null) {
-            const payload = item.payload as Record<string, unknown>;
-            if (payload.role === "assistant" && Array.isArray(payload.content)) {
-              // 验证 content 是合法的 MessagesAPIContentBlock[]
-              const isValidContent = payload.content.every(
-                (b): b is MessagesAPIContentBlock =>
-                  typeof b === "object" &&
-                  b !== null &&
-                  "type" in b &&
-                  (b.type === "text" ||
-                    b.type === "thinking" ||
-                    b.type === "redacted_thinking" ||
-                    b.type === "tool_use" ||
-                    b.type === "tool_result"),
-              );
-              if (isValidContent) {
-                rollbackTrailingAssistantMessages(messages);
-                messages.push({
-                  role: "assistant",
-                  content: payload.content as MessagesAPIContentBlock[],
-                });
-              }
-            }
+          if (item.purpose !== "replay") break;
+          assertOpaqueReplayEnvelope(item.payload);
+          const payload = item.payload as Record<string, unknown>;
+          if (payload.role === "assistant" && "content" in payload) {
+            assertMessagesReplayContent(payload.content);
+            rollbackTrailingAssistantMessages(messages);
+            messages.push({
+              role: "assistant",
+              content: payload.content,
+            });
           }
           break;
         }
@@ -439,13 +474,8 @@ export class MessagesAdapter extends AdapterBase {
     }
 
     if (!response.ok) {
-      const errorText = await response.text().catch(() => "unknown error");
-      throw new AIProviderError(
-        `Messages API error ${response.status}: ${errorText}`,
-        "PROVIDER_ERROR",
-        response.status,
-        errorText,
-      );
+      const errorBody = await response.text().catch(() => "");
+      throw providerHttpError(response.status, errorBody);
     }
 
     const reader = response.body?.getReader();
