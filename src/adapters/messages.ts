@@ -26,8 +26,8 @@ import {
 import { emitMalformedStreamWarning } from "../helpers/adapter-auxiliary.js";
 import { assertOpaqueReplayEnvelope, providerHttpError } from "../helpers/adapter-security.js";
 import { usageFromAnthropicMessages } from "../helpers/usage-mapping.js";
-
-import { parseSSEEvents } from "../helpers/sse-parser.js";
+import { NormalizedRequestMapper, splitSSEFrames, IncrementalStreamParser } from "../helpers/index.js";
+import type { ProviderProfile } from "../helpers/index.js";
 
 import type { NormalizedRequest, AIStreamEvent, EventFactory, OutputItem, FetchFn } from "../index.js";
 
@@ -73,45 +73,24 @@ type MessagesAPITool = {
   input_schema: Record<string, unknown>;
 };
 
-function ensureMessagesTextBlocks(
-  blocks: import("../index.js").ContentBlock[],
-  field: string,
-): import("../index.js").ContentBlock[] {
-  for (let i = 0; i < blocks.length; i++) {
-    const block = blocks[i];
-    if (!block) continue;
-    if (block.type !== "text" && block.type !== "json") {
-      throw new AIRequestError(
-        `messages does not support ${field}[${i}] of type "${block.type}"; only text/json blocks are supported`,
-        "UNSUPPORTED_CONTENT_BLOCK",
-      );
-    }
-  }
+// ── ProviderProfile & Mapper ────────────────────────────────────
 
-  return blocks;
-}
+const profile: ProviderProfile = {
+  kind: "messages",
+  instructionsMode: "system_message",
+  supportedBlockTypes: ["text", "json"] as const,
+  reasoningBlockTypes: ["text"] as const,
+  capabilities: {
+    textStreaming: "native",
+    reasoningStreaming: "native",
+    toolCallStreaming: "synthetic",
+    replay: "opaque",
+    usage: "stream",
+    toolResultOutcomes: ["success", "error"],
+  },
+};
 
-function ensureMessagesReasoningBlocks(
-  blocks: import("../index.js").ContentBlock[],
-  field: string,
-): Array<Extract<import("../index.js").ContentBlock, { type: "text" }>> {
-  return blocks.map((block, index) => {
-    if (block.type !== "text") {
-      throw new AIRequestError(
-        `messages does not support ${field}[${index}] of type "${block.type}"; reasoning only supports text blocks`,
-        "UNSUPPORTED_CONTENT_BLOCK",
-      );
-    }
-
-    return block;
-  });
-}
-
-function instructionsToMessagesText(instructions: string | import("../index.js").InstructionBlock[]): string {
-  return typeof instructions === "string"
-    ? instructions
-    : contentBlocksToText(ensureMessagesTextBlocks(instructions, "instructions"));
-}
+const mapper = new NormalizedRequestMapper(profile);
 
 function isMessagesReplayContentBlock(value: unknown): value is MessagesAPIContentBlock {
   if (!value || typeof value !== "object" || !("type" in value)) return false;
@@ -159,15 +138,6 @@ function assertMessagesReplayContent(content: unknown): asserts content is Messa
   }
 }
 
-function assertMessagesToolResultOutcome(outcome: import("../index.js").ToolResultItem["outcome"]): void {
-  if (outcome === "rejected") {
-    throw new AIRequestError(
-      'messages does not preserve tool_result outcome "rejected"; only "success" and "error" are supported',
-      "UNSUPPORTED_TOOL_RESULT_OUTCOME",
-    );
-  }
-}
-
 // ── SSE 事件类型 ──────────────────────────────────────────────
 
 type MessagesSSEEvent =
@@ -201,22 +171,6 @@ type MessagesAPIMessageResponse = {
   stop_sequence?: string | null;
   usage: { input_tokens: number; output_tokens: number };
 };
-
-// ── SSE 解析 ──────────────────────────────────────────────────
-
-function parseMessagesSSE(
-  chunk: string,
-  allowEOF = false,
-): { events: MessagesSSEEvent[]; rest: string; malformedEvents: number } {
-  const result = parseSSEEvents(chunk, { allowEOF });
-  return { events: result.events as MessagesSSEEvent[], rest: result.rest, malformedEvents: result.malformedEvents };
-}
-
-function rollbackTrailingAssistantMessages(messages: MessagesAPIMessage[]): void {
-  while (messages.length > 0 && messages[messages.length - 1]?.role === "assistant") {
-    messages.pop();
-  }
-}
 
 /** 用 response 级别的命名空间合成 content block 的 item ID，避免多轮工具循环 ID 碰撞 */
 function synthesizeItemId(kind: "msg" | "reason" | "reason-redacted", blockIndex: number, responseId: string): string {
@@ -297,14 +251,7 @@ function buildStreamMetadata(options: {
 
 export class MessagesAdapter extends AdapterBase {
   readonly kind = "messages" as const;
-  readonly capabilities = {
-    textStreaming: "native",
-    reasoningStreaming: "native",
-    toolCallStreaming: "synthetic",
-    replay: "opaque",
-    usage: "stream",
-    toolResultOutcomes: ["success", "error"],
-  } as const;
+  readonly capabilities = profile.capabilities;
 
   private apiKey: string;
   private apiVersion: string;
@@ -328,7 +275,7 @@ export class MessagesAdapter extends AdapterBase {
 
     // 处理 instructions → system prompt
     if (request.instructions) {
-      systemPrompt = instructionsToMessagesText(request.instructions);
+      systemPrompt = mapper.mapInstructions(request.instructions);
     }
 
     // 处理 input items
@@ -340,7 +287,7 @@ export class MessagesAdapter extends AdapterBase {
       switch (item.type) {
         case "message": {
           const role = item.role === "user" ? "user" : "assistant";
-          const supportedContent = ensureMessagesTextBlocks(item.content, `input message (${item.role}) content`);
+          const supportedContent = mapper.ensureTextBlocks(item.content, `input message (${item.role}) content`);
           if (supportedContent.length === 1 && supportedContent[0]?.type === "text") {
             messages.push({ role, content: supportedContent[0].text });
           } else {
@@ -366,8 +313,9 @@ export class MessagesAdapter extends AdapterBase {
           break;
         }
         case "tool_result": {
-          assertMessagesToolResultOutcome(item.outcome);
-          const content = ensureMessagesTextBlocks(item.content, `tool_result ${item.callId} content`)
+          mapper.assertToolResultOutcome(item.outcome);
+          const content = mapper
+            .ensureTextBlocks(item.content, `tool_result ${item.callId} content`)
             .map(blockToText)
             .join("\n");
           const block: MessagesAPIContentBlock = {
@@ -386,7 +334,7 @@ export class MessagesAdapter extends AdapterBase {
         }
         case "reasoning": {
           // 将 reasoning item 转为 thinking block 在 assistant message 中
-          const text = contentBlocksToText(ensureMessagesReasoningBlocks(item.content, "reasoning content"));
+          const text = contentBlocksToText(mapper.ensureReasoningBlocks(item.content, "reasoning content"));
           const block: MessagesAPIContentBlock = { type: "thinking", thinking: text };
           const lastMsg = messages[messages.length - 1];
           if (lastMsg && lastMsg.role === "assistant" && typeof lastMsg.content !== "string") {
@@ -403,7 +351,7 @@ export class MessagesAdapter extends AdapterBase {
           const payload = item.payload as Record<string, unknown>;
           if (payload.role === "assistant" && "content" in payload) {
             assertMessagesReplayContent(payload.content);
-            rollbackTrailingAssistantMessages(messages);
+            mapper.rollbackTrailingAssistantMessages(messages);
             messages.push({
               role: "assistant",
               content: payload.content,
@@ -490,9 +438,24 @@ export class MessagesAdapter extends AdapterBase {
     }
 
     // 流累积状态
+    const parser = new IncrementalStreamParser<MessagesSSEEvent>(splitSSEFrames, (frame: string) => {
+      let eventType = "";
+      let dataStr = "";
+      for (const rawLine of frame.split("\n")) {
+        const line = rawLine.trim();
+        if (line.startsWith("event: ")) eventType = line.slice(7).trim();
+        else if (line.startsWith("data: ")) dataStr += line.slice(6);
+      }
+      if (!eventType) return { status: "ignored" };
+      try {
+        const data = JSON.parse(dataStr);
+        return { status: "parsed", value: { type: eventType, data } as MessagesSSEEvent };
+      } catch {
+        return { status: "malformed" };
+      }
+    });
+
     const output: OutputItem[] = [];
-    const decoder = new TextDecoder();
-    let buffer = "";
     let streamDone = false;
     let messageResponse: MessagesAPIMessageResponse | undefined;
     let currentContentBlockIndex = -1;
@@ -531,9 +494,7 @@ export class MessagesAdapter extends AdapterBase {
           );
         });
         const { done, value } = readResult;
-        buffer += done ? decoder.decode() : decoder.decode(value, { stream: true });
-        const { events, rest, malformedEvents } = parseMessagesSSE(buffer, done);
-        buffer = rest;
+        const { items: events, malformed: malformedEvents } = done ? parser.flush() : parser.feed(value as Uint8Array);
 
         const malformedWarning = emitMalformedStreamWarning(factory, {
           count: malformedEvents,
@@ -705,7 +666,7 @@ export class MessagesAdapter extends AdapterBase {
       }
     }
 
-    if (buffer.trim().length > 0) {
+    if (parser.getRemaining().trim().length > 0) {
       yield factory.responseWarning("Stream ended with an incomplete Messages SSE frame", "STREAM_ERROR");
     }
 
