@@ -273,6 +273,7 @@ export class MessagesAdapter extends AdapterBase {
   protected buildRequest(request: NormalizedRequest): MessagesAPIRequest {
     const messages: MessagesAPIMessage[] = [];
     let systemPrompt: string | undefined;
+    let pendingToolResultMessage: MessagesAPIMessage | undefined;
 
     // 处理 instructions → system prompt
     if (request.instructions) {
@@ -281,6 +282,10 @@ export class MessagesAdapter extends AdapterBase {
 
     // 处理 input items
     for (const item of request.input) {
+      if (item.type !== "tool_result") {
+        pendingToolResultMessage = undefined;
+      }
+
       switch (item.type) {
         case "message": {
           const role = item.role === "user" ? "user" : "assistant";
@@ -320,7 +325,12 @@ export class MessagesAdapter extends AdapterBase {
             content,
             is_error: item.outcome === "error",
           };
-          messages.push({ role: "user", content: [block] });
+          if (pendingToolResultMessage && typeof pendingToolResultMessage.content !== "string") {
+            pendingToolResultMessage.content.push(block);
+          } else {
+            pendingToolResultMessage = { role: "user", content: [block] };
+            messages.push(pendingToolResultMessage);
+          }
           break;
         }
         case "reasoning": {

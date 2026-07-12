@@ -437,6 +437,45 @@ describe("MessagesAdapter - request building", () => {
     expect(content[0]?.type).toBe("tool_result");
   });
 
+  it("should merge consecutive parallel tool results into one user message", async () => {
+    const { captured, fetch } = captureRequest();
+    const adapter = new MessagesAdapter({ apiKey: "test-key", fetch });
+
+    await collectStream(
+      adapter.stream(
+        makeRequest({
+          input: [
+            {
+              type: "tool_result" as const,
+              callId: "tc1",
+              toolName: "get_weather",
+              outcome: "success" as const,
+              content: [{ type: "text" as const, text: "sunny" }],
+            },
+            {
+              type: "tool_result" as const,
+              callId: "tc2",
+              toolName: "get_temperature",
+              outcome: "error" as const,
+              content: [{ type: "text" as const, text: "sensor unavailable" }],
+            },
+          ],
+        }),
+      ),
+    );
+
+    const body = captured.current as Record<string, unknown> | null;
+    expect(body?.messages).toEqual([
+      {
+        role: "user",
+        content: [
+          { type: "tool_result", tool_use_id: "tc1", content: "sunny", is_error: false },
+          { type: "tool_result", tool_use_id: "tc2", content: "sensor unavailable", is_error: true },
+        ],
+      },
+    ]);
+  });
+
   it("should include tool_choice when provided", async () => {
     const { captured, fetch } = captureRequest();
     const adapter = new MessagesAdapter({ apiKey: "test-key", fetch });
