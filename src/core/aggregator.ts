@@ -116,12 +116,25 @@ function getActiveItem(state: AggregatorState, itemId: string, expectedType: Act
   return item;
 }
 
+function coalesceContentBlocks(blocks: readonly ContentBlock[]): ContentBlock[] {
+  const result: ContentBlock[] = [];
+  for (const block of blocks) {
+    const previous = result[result.length - 1];
+    if (block.type === "text" && previous?.type === "text") {
+      previous.text += block.text;
+    } else {
+      result.push({ ...block });
+    }
+  }
+  return result;
+}
+
 function finalizeMessage(active: ActiveMessage): MessageItem {
   return {
     type: "message",
     id: active.id,
     role: active.role,
-    content: active.content,
+    content: coalesceContentBlocks(active.content),
   };
 }
 
@@ -130,7 +143,7 @@ function finalizeReasoning(active: ActiveReasoning): import("../types/index.js")
     type: "reasoning",
     id: active.id,
     visibility: active.visibility,
-    content: active.content,
+    content: coalesceContentBlocks(active.content),
   };
 }
 

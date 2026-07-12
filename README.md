@@ -107,6 +107,10 @@ console.log(response.replay); // 续接材料
 | `warnings`   | `string[]`       | 非致命警告               |
 | `backend`    | `BackendTrace`   | 调用链路元数据           |
 
+流式 `message.delta` / `reasoning.delta` 保持后端分片粒度；完成态 `output` 中的
+`message` / `reasoning` 会合并相邻 `text` content blocks（直接拼接且不添加分隔符），
+非文本 block 仍保留原有边界。
+
 ## 后端 Adapter
 
 | Adapter                 | 类                       | 说明                    |

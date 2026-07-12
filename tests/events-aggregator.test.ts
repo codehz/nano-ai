@@ -98,6 +98,33 @@ describe("aggregateEvents", () => {
     expect(result.text).toBe("Hello world");
     expect(result.output).toHaveLength(1);
     expect(result.output[0]!.type).toBe("message");
+    if (result.output[0]!.type === "message") {
+      expect(result.output[0]!.content).toEqual([textBlock("Hello world")]);
+    }
+  });
+
+  it("should coalesce adjacent message text while preserving non-text boundaries", () => {
+    const f = makeFactory();
+    const events: AIStreamEvent[] = [
+      f.responseStarted("gpt-4"),
+      f.messageStarted("m1"),
+      f.messageDelta("m1", textBlock("before")),
+      f.messageDelta("m1", textBlock(" text")),
+      f.messageDelta("m1", { type: "json", json: { boundary: true } }),
+      f.messageDelta("m1", textBlock("after")),
+      f.messageDelta("m1", textBlock(" text")),
+      f.messageCompleted("m1"),
+      f.responseCompleted({ replay: [] }),
+    ];
+
+    const result = aggregateEvents(events);
+    expect(result.text).toBe("before textafter text");
+    expect(result.output[0]).toEqual({
+      type: "message",
+      id: "m1",
+      role: "assistant",
+      content: [textBlock("before text"), { type: "json", json: { boundary: true } }, textBlock("after text")],
+    });
   });
 
   it("should aggregate reasoning events", () => {
@@ -105,7 +132,8 @@ describe("aggregateEvents", () => {
     const events: AIStreamEvent[] = [
       f.responseStarted("gpt-4"),
       f.reasoningStarted("r1", "full"),
-      f.reasoningDelta("r1", textBlock("Thinking step 1...")),
+      f.reasoningDelta("r1", textBlock("Thinking ")),
+      f.reasoningDelta("r1", textBlock("step 1...")),
       f.reasoningCompleted("r1"),
       f.responseCompleted({ replay: [] }),
     ];
@@ -115,6 +143,7 @@ describe("aggregateEvents", () => {
     expect(result.output[0]!.type).toBe("reasoning");
     if (result.output[0]!.type === "reasoning") {
       expect(result.output[0]!.visibility).toBe("full");
+      expect(result.output[0]!.content).toEqual([textBlock("Thinking step 1...")]);
     }
   });
 
