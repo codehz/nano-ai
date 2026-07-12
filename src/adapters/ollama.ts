@@ -514,7 +514,13 @@ export class OllamaAdapter extends AdapterBase {
 
     try {
       while (true) {
-        const { done, value } = await reader.read();
+        const readResult = await reader.read().catch((err: unknown) => {
+          throw new AIStreamError(
+            `Failed to read response stream: ${err instanceof Error ? err.message : String(err)}`,
+            "STREAM_ERROR",
+          );
+        });
+        const { done, value } = readResult;
         buffer += done ? decoder.decode() : decoder.decode(value, { stream: true });
         const { chunks, rest, malformedLines } = parseOllamaNDJSON(buffer, done);
         buffer = rest;
@@ -637,7 +643,7 @@ export class OllamaAdapter extends AdapterBase {
       }
     } finally {
       try {
-        if (!streamDone) await reader.cancel();
+        if (!streamDone) await reader.cancel().catch(() => undefined);
       } finally {
         reader.releaseLock();
       }
