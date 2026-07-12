@@ -102,21 +102,21 @@ export function usageFromAnthropicMessages(raw: {
   cache_read_input_tokens?: number;
   [key: string]: unknown;
 }): Partial<Usage> {
-  const inputTokens = num(raw.input_tokens);
+  const uncachedInputTokens = num(raw.input_tokens);
   const outputTokens = num(raw.output_tokens);
   const cacheWriteInputTokens = num(raw.cache_creation_input_tokens);
   const cachedInputTokens = num(raw.cache_read_input_tokens);
 
-  const inputParts = [inputTokens, cacheWriteInputTokens, cachedInputTokens].filter(
+  const inputParts = [uncachedInputTokens, cacheWriteInputTokens, cachedInputTokens].filter(
     (n): n is number => n !== undefined,
   );
-  const summedInput = inputParts.length > 0 ? inputParts.reduce((sum, n) => sum + n, 0) : undefined;
+  const inputTokens = inputParts.length > 0 ? inputParts.reduce((sum, n) => sum + n, 0) : undefined;
   const totalTokens =
-    summedInput !== undefined && outputTokens !== undefined ? summedInput + outputTokens : undefined;
+    inputTokens !== undefined && outputTokens !== undefined ? inputTokens + outputTokens : undefined;
 
   let billableInputTokens: number | undefined;
-  if (inputTokens !== undefined || cacheWriteInputTokens !== undefined) {
-    billableInputTokens = (inputTokens ?? 0) + (cacheWriteInputTokens ?? 0);
+  if (uncachedInputTokens !== undefined || cacheWriteInputTokens !== undefined) {
+    billableInputTokens = (uncachedInputTokens ?? 0) + (cacheWriteInputTokens ?? 0);
   }
 
   return record({
