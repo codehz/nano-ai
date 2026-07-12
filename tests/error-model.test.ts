@@ -87,6 +87,7 @@ describe("WarningCode", () => {
     expect(WarningCode.USAGE_MISSING).toBe("USAGE_MISSING");
     expect(WarningCode.STREAM_INCOMPLETE).toBe("STREAM_INCOMPLETE");
     expect(WarningCode.SYNTHETIC_STREAM).toBe("SYNTHETIC_STREAM");
+    expect(WarningCode.TOOL_CALL_BATCHED).toBe("TOOL_CALL_BATCHED");
   });
 });
 

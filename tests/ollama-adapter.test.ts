@@ -167,6 +167,43 @@ describe("OllamaAdapter - tool calls", () => {
     expect(result.toolCalls[1]!.name).toBe("get_time");
   });
 
+  it("should assign unique ids for same-name tool calls in one response", async () => {
+    const chunks = [
+      `{"model":"llama3.2","created_at":"2024-01-01T00:00:00Z","message":{"role":"assistant","content":"","tool_calls":[{"function":{"name":"get_weather","arguments":{"city":"Hangzhou"}}},{"function":{"name":"get_weather","arguments":{"city":"Shanghai"}}}]},"done":true,"done_reason":"stop"}\n`,
+    ];
+
+    const adapter = new OllamaAdapter({ fetch: mockFetch(ndjsonResponse(...chunks)) });
+    const result = await collectStream(adapter.stream(makeRequest()));
+
+    expect(result.toolCalls).toHaveLength(2);
+    expect(result.toolCalls[0]!.id).toBe("ollama-tc-test-ollama-1-0");
+    expect(result.toolCalls[1]!.id).toBe("ollama-tc-test-ollama-1-1");
+    expect(result.toolCalls[0]!.id).not.toBe(result.toolCalls[1]!.id);
+  });
+
+  it("should warn that tool calls arrived as a batch", async () => {
+    const chunks = [
+      `{"model":"llama3.2","created_at":"2024-01-01T00:00:00Z","message":{"role":"assistant","content":"","tool_calls":[{"function":{"name":"get_weather","arguments":{"city":"Hangzhou"}}}]},"done":true,"done_reason":"stop"}\n`,
+    ];
+
+    const adapter = new OllamaAdapter({ fetch: mockFetch(ndjsonResponse(...chunks)) });
+    const result = await collectStream(adapter.stream(makeRequest({ include: { billing: "off" } })));
+
+    expect(result.warnings?.some((w) => w.includes("tool call(s) as a batch"))).toBe(true);
+    expect(result.backend.isSyntheticStream).toBe(false);
+  });
+
+  it("should not emit tool-call batch warning for text-only streams", async () => {
+    const chunks = [
+      `{"model":"llama3.2","created_at":"2024-01-01T00:00:00Z","message":{"role":"assistant","content":"Hi"},"done":true,"done_reason":"stop"}\n`,
+    ];
+
+    const adapter = new OllamaAdapter({ fetch: mockFetch(ndjsonResponse(...chunks)) });
+    const result = await collectStream(adapter.stream(makeRequest({ include: { billing: "off" } })));
+
+    expect(result.warnings?.some((w) => w.includes("tool call(s) as a batch"))).toBeFalsy();
+  });
+
   it("should handle tool call with content", async () => {
     const chunks = [
       `{"model":"llama3.2","created_at":"2024-01-01T00:00:00Z","message":{"role":"assistant","content":"Let me check the weather."},"done":false}\n`,
@@ -420,6 +457,77 @@ describe("OllamaAdapter - request building", () => {
         tool_calls: [{ function: { name: "search", arguments: { q: "weather" } } }],
       },
       { role: "tool", content: "sunny" },
+    ]);
+    // Wire payload must not carry local call ids
+    expect(body.messages[1]!.tool_calls[0]!.id).toBeUndefined();
+
+    const opaque = round1.replay.find((item) => item.type === "opaque" && item.source === "ollama");
+    expect(opaque).toBeDefined();
+    if (opaque?.type === "opaque") {
+      const payload = opaque.payload as {
+        tool_calls?: Array<{ id?: string; function: { name: string } }>;
+      };
+      expect(payload.tool_calls?.[0]?.id).toBe(round1.toolCalls[0]!.id);
+      expect(payload.tool_calls?.[0]?.function.name).toBe("search");
+    }
+  });
+
+  it("should round-trip multiple tool results without crashing", async () => {
+    const round1Chunks = [
+      `{"model":"llama3.2","created_at":"2024-01-01T00:00:00Z","message":{"role":"assistant","content":"","tool_calls":[{"function":{"name":"get_weather","arguments":{"city":"Hangzhou"}}},{"function":{"name":"get_time","arguments":{"tz":"UTC"}}}]},"done":true,"done_reason":"stop"}\n`,
+    ];
+
+    const round1Adapter = new OllamaAdapter({ fetch: mockFetch(ndjsonResponse(...round1Chunks)) });
+    const round1 = await collectStream(round1Adapter.stream(makeRequest()));
+
+    let capturedBody: string | undefined;
+    const round2Adapter = new OllamaAdapter({
+      fetch: async (_url, init) => {
+        capturedBody = init.body as string;
+        return ndjsonResponse(
+          `{"model":"llama3.2","created_at":"2024-01-01T00:00:02Z","message":{"role":"assistant","content":"done"},"done":true,"done_reason":"stop"}\n`,
+        );
+      },
+    });
+
+    await collectStream(
+      round2Adapter.stream(
+        makeRequest({
+          input: [
+            { type: "message" as const, role: "user" as const, content: [{ type: "text" as const, text: "both?" }] },
+            ...round1.replay,
+            {
+              type: "tool_result" as const,
+              callId: round1.toolCalls[0]!.id,
+              toolName: round1.toolCalls[0]!.name,
+              outcome: "success" as const,
+              content: [{ type: "text" as const, text: "sunny" }],
+            },
+            {
+              type: "tool_result" as const,
+              callId: round1.toolCalls[1]!.id,
+              toolName: round1.toolCalls[1]!.name,
+              outcome: "success" as const,
+              content: [{ type: "text" as const, text: "12:00" }],
+            },
+          ],
+        }),
+      ),
+    );
+
+    const body = JSON.parse(capturedBody!);
+    expect(body.messages).toEqual([
+      { role: "user", content: "both?" },
+      {
+        role: "assistant",
+        content: "",
+        tool_calls: [
+          { function: { name: "get_weather", arguments: { city: "Hangzhou" } } },
+          { function: { name: "get_time", arguments: { tz: "UTC" } } },
+        ],
+      },
+      { role: "tool", content: "sunny" },
+      { role: "tool", content: "12:00" },
     ]);
   });
 });

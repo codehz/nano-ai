@@ -96,4 +96,6 @@ export const WarningCode = {
   CAPABILITY_DOWNGRADE: "CAPABILITY_DOWNGRADE",
   /** 模拟流式 */
   SYNTHETIC_STREAM: "SYNTHETIC_STREAM",
+  /** 工具调用以批量方式到达（非 token 级流式） */
+  TOOL_CALL_BATCHED: "TOOL_CALL_BATCHED",
 } as const;

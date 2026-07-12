@@ -16,7 +16,7 @@
  */
 
 import { AdapterBase } from "../helpers/adapter-base.js";
-import { AIProviderError, AIRequestError, AIStreamError } from "../core/errors.js";
+import { AIProviderError, AIRequestError, AIStreamError, WarningCode } from "../core/errors.js";
 import {
   textBlock,
   messageItem,
@@ -221,12 +221,17 @@ function rollbackTrailingAssistantMessages(messages: OllamaMessage[]): void {
   }
 }
 
-function isOllamaToolCalls(value: unknown): value is OllamaToolCall[] {
+/** Opaque replay may carry optional local `id`s; wire tool_calls never include them. */
+type OllamaReplayToolCall = OllamaToolCall & { id?: string };
+
+function isOllamaReplayToolCalls(value: unknown): value is OllamaReplayToolCall[] {
   return (
     Array.isArray(value) &&
     value.every((entry) => {
       if (!entry || typeof entry !== "object" || !("function" in entry)) return false;
       const fn = (entry as { function?: unknown }).function;
+      const id = (entry as { id?: unknown }).id;
+      if (id !== undefined && typeof id !== "string") return false;
       return (
         !!fn &&
         typeof fn === "object" &&
@@ -238,6 +243,15 @@ function isOllamaToolCalls(value: unknown): value is OllamaToolCall[] {
       );
     })
   );
+}
+
+function toWireOllamaToolCalls(toolCalls: OllamaReplayToolCall[]): OllamaToolCall[] {
+  return toolCalls.map((tc) => ({
+    function: {
+      name: tc.function.name,
+      arguments: tc.function.arguments,
+    },
+  }));
 }
 
 // ── Adapter ───────────────────────────────────────────────────
@@ -265,6 +279,8 @@ export class OllamaAdapter extends AdapterBase {
     }
 
     const messages: OllamaMessage[] = [];
+    /** Local-only name → call id queue for best-effort tool_result association (not sent to Ollama). */
+    const callIdsByName = new Map<string, string[]>();
 
     // handle instructions → system message
     if (request.instructions) {
@@ -290,6 +306,9 @@ export class OllamaAdapter extends AdapterBase {
               arguments: parseOllamaToolArguments(item),
             },
           };
+          const queue = callIdsByName.get(item.name) ?? [];
+          queue.push(item.id);
+          callIdsByName.set(item.name, queue);
           if (lastAssistant) {
             lastAssistant.tool_calls = [...(lastAssistant.tool_calls ?? []), tc];
           } else {
@@ -299,6 +318,11 @@ export class OllamaAdapter extends AdapterBase {
         }
         case "tool_result": {
           assertOllamaToolResultOutcome(item.outcome);
+          // Best-effort: consume matching id from name queue when present (no wire call_id)
+          const queue = callIdsByName.get(item.toolName);
+          if (queue && queue.length > 0) {
+            queue.shift();
+          }
           messages.push({
             role: "tool",
             content: contentBlocksToText(ensureOllamaTextBlocks(item.content, `tool_result ${item.callId} content`)),
@@ -314,7 +338,7 @@ export class OllamaAdapter extends AdapterBase {
           break;
         }
         case "opaque": {
-          // Best-effort restore from opaque replay
+          // Best-effort restore from opaque replay (local ids stripped before wire)
           if (
             item.source === "ollama" &&
             item.purpose === "replay" &&
@@ -324,10 +348,23 @@ export class OllamaAdapter extends AdapterBase {
             const payload = item.payload as Record<string, unknown>;
             if (payload.role === "assistant" && typeof payload.content === "string") {
               rollbackTrailingAssistantMessages(messages);
+              const replayToolCalls = isOllamaReplayToolCalls(payload.tool_calls)
+                ? payload.tool_calls
+                : undefined;
+              // Record name → id order for best-effort tool_result correlation (local only)
+              if (replayToolCalls) {
+                for (const tc of replayToolCalls) {
+                  if (tc.id) {
+                    const queue = callIdsByName.get(tc.function.name) ?? [];
+                    queue.push(tc.id);
+                    callIdsByName.set(tc.function.name, queue);
+                  }
+                }
+              }
               messages.push({
                 role: "assistant",
                 content: payload.content,
-                tool_calls: isOllamaToolCalls(payload.tool_calls) ? payload.tool_calls : undefined,
+                tool_calls: replayToolCalls ? toWireOllamaToolCalls(replayToolCalls) : undefined,
               });
             }
           }
@@ -423,6 +460,7 @@ export class OllamaAdapter extends AdapterBase {
 
     // tool_calls 累积（于 final chunk 到达）
     let pendingToolCalls: Array<{ id: string; name: string; argumentsText: string; argumentsJson?: unknown }> = [];
+    let toolCallIndex = 0;
     const buildResponse = this.buildResponse.bind(this);
 
     const emitCompleted = async function* (
@@ -444,6 +482,7 @@ export class OllamaAdapter extends AdapterBase {
             role: "assistant",
             content: accumulatedContent,
             tool_calls: pendingToolCalls.map((tc) => ({
+              id: tc.id,
               function: { name: tc.name, arguments: tc.argumentsJson },
             })),
           }),
@@ -516,7 +555,7 @@ export class OllamaAdapter extends AdapterBase {
           // 处理 tool_calls (整块到达，在最终 chunk 中)
           if (msg.tool_calls && msg.tool_calls.length > 0) {
             for (const tc of msg.tool_calls) {
-              const tcId = `tc-${chunk.created_at}-${tc.function.name}`;
+              const tcId = `ollama-tc-${request.requestId}-${toolCallIndex++}`;
               const argsText = JSON.stringify(tc.function.arguments);
               pendingToolCalls.push({
                 id: tcId,
@@ -543,6 +582,13 @@ export class OllamaAdapter extends AdapterBase {
               if (accumulatedContent) {
                 output.push(message);
               }
+            }
+
+            if (pendingToolCalls.length > 0) {
+              yield factory.responseWarning(
+                `Ollama delivered ${pendingToolCalls.length} tool call(s) as a batch; tool_call streaming is not supported`,
+                WarningCode.TOOL_CALL_BATCHED,
+              );
             }
 
             // 发出 tool_call 完成事件
@@ -605,6 +651,13 @@ export class OllamaAdapter extends AdapterBase {
         if (accumulatedContent) {
           output.push(message);
         }
+      }
+
+      if (pendingToolCalls.length > 0) {
+        yield factory.responseWarning(
+          `Ollama delivered ${pendingToolCalls.length} tool call(s) as a batch; tool_call streaming is not supported`,
+          WarningCode.TOOL_CALL_BATCHED,
+        );
       }
 
       for (const pending of pendingToolCalls) {
