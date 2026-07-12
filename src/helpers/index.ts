@@ -53,3 +53,9 @@ export {
   PROVIDER_ERROR_RAW_BODY_THRESHOLD,
 } from "./adapter-security.js";
 export type { OpaqueEnvelopeResult } from "./adapter-security.js";
+
+export { IncrementalStreamParser, splitLines, splitSSEFrames } from "./incremental-stream-parser.js";
+export type { StreamSplitResult, StreamParseResult } from "./incremental-stream-parser.js";
+
+export { NormalizedRequestMapper } from "./request-mapper.js";
+export type { ProviderProfile } from "./request-mapper.js";

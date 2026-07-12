@@ -23,6 +23,8 @@ import {
 import { emitMalformedStreamWarning } from "../helpers/adapter-auxiliary.js";
 import { assertOpaqueReplayEnvelope, providerHttpError } from "../helpers/adapter-security.js";
 import { usageFromChatCompletions } from "../helpers/usage-mapping.js";
+import { NormalizedRequestMapper, splitLines, IncrementalStreamParser } from "../helpers/index.js";
+import type { ProviderProfile } from "../helpers/index.js";
 
 import type { NormalizedRequest, AIStreamEvent, EventFactory, OutputItem, FetchFn } from "../index.js";
 
@@ -116,87 +118,24 @@ type ReasoningFieldName = "reasoning" | "reasoning_content";
 
 const REASONING_FIELDS: readonly ReasoningFieldName[] = ["reasoning_content", "reasoning"];
 
-function assertChatToolResultOutcome(outcome: import("../index.js").ToolResultItem["outcome"]): void {
-  if (outcome !== "success") {
-    throw new AIRequestError(
-      `chat-completions does not preserve tool_result outcome "${outcome}"; only "success" is supported`,
-      "UNSUPPORTED_TOOL_RESULT_OUTCOME",
-    );
-  }
-}
+// ── ProviderProfile & Mapper ────────────────────────────────────
 
-// ── SSE 解析 ──────────────────────────────────────────────────
+const profile: ProviderProfile = {
+  kind: "chat-completions",
+  instructionsMode: "system_message",
+  supportedBlockTypes: ["text", "json"] as const,
+  reasoningBlockTypes: ["text"] as const,
+  capabilities: {
+    textStreaming: "native",
+    reasoningStreaming: "native",
+    toolCallStreaming: "native",
+    replay: "opaque",
+    usage: "final",
+    toolResultOutcomes: ["success"],
+  },
+};
 
-/**
- * Chat Completions 的简化 SSE 解析器。
- *
- * 约束：
- * - 每条 `data:` 行必须已经是一个完整 JSON 对象
- * - 允许传输层把单行拆成多个 chunk，但不接受 provider 把一个 JSON event 改写成多条 `data:` 行
- */
-function parseChatSSE(
-  buffer: string,
-  allowEOF = false,
-): { chunks: ChatChunk[]; rest: string; malformedEvents: number } {
-  const chunks: ChatChunk[] = [];
-  let rest = buffer;
-  let malformedEvents = 0;
-
-  const consumeLine = (rawLine: string): void => {
-    const line = rawLine.trim();
-
-    if (!line.startsWith("data: ")) return;
-
-    const data = line.slice(6).trim();
-    if (data === "[DONE]") return;
-
-    try {
-      chunks.push(JSON.parse(data));
-    } catch {
-      malformedEvents++;
-    }
-  };
-
-  while (true) {
-    const lineEnd = rest.indexOf("\n");
-    if (lineEnd === -1) {
-      if (allowEOF && rest.length > 0) {
-        consumeLine(rest);
-        rest = "";
-      }
-      break;
-    }
-
-    const line = rest.slice(0, lineEnd);
-    rest = rest.slice(lineEnd + 1);
-
-    consumeLine(line);
-  }
-
-  return { chunks, rest, malformedEvents };
-}
-
-function ensureTextCompatibleBlocks(
-  blocks: import("../index.js").ContentBlock[],
-  field: string,
-): import("../index.js").ContentBlock[] {
-  for (let i = 0; i < blocks.length; i++) {
-    const block = blocks[i];
-    if (!block) continue;
-    if (block.type !== "text" && block.type !== "json") {
-      throw new AIRequestError(
-        `chat-completions does not support ${field}[${i}] of type "${block.type}"; only text/json blocks are supported`,
-        "UNSUPPORTED_CONTENT_BLOCK",
-      );
-    }
-  }
-
-  return blocks;
-}
-
-function contentBlocksToChatText(blocks: import("../index.js").ContentBlock[], field: string): string {
-  return contentBlocksToText(ensureTextCompatibleBlocks(blocks, field));
-}
+const mapper = new NormalizedRequestMapper(profile);
 
 function extractReasoningText(value: unknown): string {
   if (typeof value === "string") return value;
@@ -227,12 +166,6 @@ function extractReasoningDeltas(delta: ChatChunkChoice["delta"]): Array<{ field:
   }
 
   return deltas;
-}
-
-function rollbackTrailingAssistantMessages(messages: ChatMessage[]): void {
-  while (messages.length > 0 && messages[messages.length - 1]?.role === "assistant") {
-    messages.pop();
-  }
 }
 
 function isChatReplayToolCall(value: unknown): value is ChatToolCall {
@@ -318,14 +251,7 @@ function buildAssistantReplayMessage(params: {
 
 export class ChatCompletionsAdapter extends AdapterBase {
   readonly kind = "chat-completions" as const;
-  readonly capabilities = {
-    textStreaming: "native",
-    reasoningStreaming: "native",
-    toolCallStreaming: "native",
-    replay: "opaque",
-    usage: "final",
-    toolResultOutcomes: ["success"],
-  } as const;
+  readonly capabilities = profile.capabilities;
 
   private apiKey: string;
   private baseUrl: string;
@@ -345,18 +271,16 @@ export class ChatCompletionsAdapter extends AdapterBase {
 
     // handle instructions → system message
     if (request.instructions) {
-      const content =
-        typeof request.instructions === "string"
-          ? request.instructions
-          : contentBlocksToChatText(request.instructions, "instructions");
-      messages.push({ role: "system", content });
+      messages.push({ role: "system", content: mapper.mapInstructions(request.instructions) });
     }
 
     for (const item of request.input) {
       switch (item.type) {
         case "message": {
           const role = item.role;
-          const text = contentBlocksToChatText(item.content, `input message (${item.role}) content`);
+          const text = contentBlocksToText(
+            mapper.ensureTextBlocks(item.content, `input message (${item.role}) content`),
+          );
           messages.push({ role, content: text || null });
           break;
         }
@@ -379,12 +303,12 @@ export class ChatCompletionsAdapter extends AdapterBase {
           break;
         }
         case "tool_result": {
-          assertChatToolResultOutcome(item.outcome);
+          mapper.assertToolResultOutcome(item.outcome);
           messages.push({
             role: "tool",
             tool_call_id: item.callId,
             name: item.toolName,
-            content: contentBlocksToChatText(item.content, `tool_result ${item.callId} content`),
+            content: contentBlocksToText(mapper.ensureTextBlocks(item.content, `tool_result ${item.callId} content`)),
           });
           break;
         }
@@ -393,7 +317,7 @@ export class ChatCompletionsAdapter extends AdapterBase {
           // Convert to a text message for best-effort
           messages.push({
             role: "assistant",
-            content: contentBlocksToChatText(item.content, "reasoning content"),
+            content: contentBlocksToText(mapper.ensureTextBlocks(item.content, "reasoning content")),
           });
           break;
         }
@@ -406,7 +330,7 @@ export class ChatCompletionsAdapter extends AdapterBase {
             messages.push({ role: "assistant", content: payload.content });
           } else if (payload.replaceCanonical === true && "messages" in payload) {
             assertChatReplayMessages(payload.messages, "messages");
-            rollbackTrailingAssistantMessages(messages);
+            mapper.rollbackTrailingAssistantMessages(messages);
             for (const m of payload.messages) {
               messages.push(m);
             }
@@ -489,9 +413,19 @@ export class ChatCompletionsAdapter extends AdapterBase {
       throw new AIStreamError("Response body is not readable", "STREAM_ERROR");
     }
 
+    const parser = new IncrementalStreamParser<ChatChunk>(splitLines, (item: string) => {
+      const trimmed = item.trim();
+      if (!trimmed.startsWith("data: ")) return { status: "ignored" };
+      const data = trimmed.slice(6).trim();
+      if (data === "[DONE]") return { status: "ignored" };
+      try {
+        return { status: "parsed", value: JSON.parse(data) as ChatChunk };
+      } catch {
+        return { status: "malformed" };
+      }
+    });
+
     const output: OutputItem[] = [];
-    const decoder = new TextDecoder();
-    let buffer = "";
     let streamDone = false;
 
     // 累积状态 — 支持多 choice，此处只取 index 0
@@ -609,9 +543,7 @@ export class ChatCompletionsAdapter extends AdapterBase {
           );
         });
         const { done, value } = readResult;
-        buffer += done ? decoder.decode() : decoder.decode(value, { stream: true });
-        const { chunks, rest, malformedEvents } = parseChatSSE(buffer, done);
-        buffer = rest;
+        const { items: chunks, malformed: malformedEvents } = done ? parser.flush() : parser.feed(value as Uint8Array);
 
         const malformedWarning = emitMalformedStreamWarning(factory, {
           count: malformedEvents,
@@ -767,7 +699,7 @@ export class ChatCompletionsAdapter extends AdapterBase {
       }
     }
 
-    if (buffer.trim().length > 0) {
+    if (parser.getRemaining().trim().length > 0) {
       yield factory.responseWarning("Stream ended with an incomplete Chat Completions SSE frame", "STREAM_ERROR");
     }
 

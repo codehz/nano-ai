@@ -24,8 +24,8 @@ import {
 import { emitMalformedStreamWarning } from "../helpers/adapter-auxiliary.js";
 import { assertOpaqueReplayEnvelope, providerHttpError } from "../helpers/adapter-security.js";
 import { usageFromOpenAIResponses } from "../helpers/usage-mapping.js";
-
-import { parseSSEEvents } from "../helpers/sse-parser.js";
+import { NormalizedRequestMapper, splitSSEFrames, IncrementalStreamParser } from "../helpers/index.js";
+import type { ProviderProfile } from "../helpers/index.js";
 
 import type { NormalizedRequest, AIStreamEvent, EventFactory, OutputItem, FetchFn } from "../index.js";
 
@@ -72,54 +72,24 @@ type ResponsesTool = {
   input_schema: Record<string, unknown>;
 };
 
-function ensureResponsesTextBlocks(
-  blocks: import("../index.js").ContentBlock[],
-  field: string,
-): import("../index.js").ContentBlock[] {
-  for (let i = 0; i < blocks.length; i++) {
-    const block = blocks[i];
-    if (!block) continue;
-    if (block.type !== "text" && block.type !== "json") {
-      throw new AIRequestError(
-        `responses does not support ${field}[${i}] of type "${block.type}"; only text/json blocks are supported`,
-        "UNSUPPORTED_CONTENT_BLOCK",
-      );
-    }
-  }
+// ── ProviderProfile & Mapper ────────────────────────────────────
 
-  return blocks;
-}
+const profile: ProviderProfile = {
+  kind: "responses",
+  instructionsMode: "instructions_field",
+  supportedBlockTypes: ["text", "json"] as const,
+  reasoningBlockTypes: ["text"] as const,
+  capabilities: {
+    textStreaming: "native",
+    reasoningStreaming: "native",
+    toolCallStreaming: "native",
+    replay: "opaque",
+    usage: "final",
+    toolResultOutcomes: ["success"],
+  },
+};
 
-function ensureResponsesReasoningBlocks(
-  blocks: import("../index.js").ContentBlock[],
-  field: string,
-): Array<Extract<import("../index.js").ContentBlock, { type: "text" }>> {
-  return blocks.map((block, index) => {
-    if (block.type !== "text") {
-      throw new AIRequestError(
-        `responses does not support ${field}[${index}] of type "${block.type}"; reasoning only supports text blocks`,
-        "UNSUPPORTED_CONTENT_BLOCK",
-      );
-    }
-
-    return block;
-  });
-}
-
-function instructionsToResponsesText(instructions: string | import("../index.js").InstructionBlock[]): string {
-  return typeof instructions === "string"
-    ? instructions
-    : contentBlocksToText(ensureResponsesTextBlocks(instructions, "instructions"));
-}
-
-function assertResponsesToolResultOutcome(outcome: import("../index.js").ToolResultItem["outcome"]): void {
-  if (outcome !== "success") {
-    throw new AIRequestError(
-      `responses does not preserve tool_result outcome "${outcome}"; only "success" is supported`,
-      "UNSUPPORTED_TOOL_RESULT_OUTCOME",
-    );
-  }
-}
+const mapper = new NormalizedRequestMapper(profile);
 
 // ── SSE 事件类型 ──────────────────────────────────────────────
 
@@ -188,16 +158,6 @@ type ResponsesAPIOutputItem = {
   status?: string;
 };
 
-// ── SSE 解析 ──────────────────────────────────────────────────
-
-function parseSSE(
-  chunk: string,
-  allowEOF = false,
-): { events: ResponsesSSEEvent[]; rest: string; malformedEvents: number } {
-  const result = parseSSEEvents(chunk, { allowEOF });
-  return { events: result.events as ResponsesSSEEvent[], rest: result.rest, malformedEvents: result.malformedEvents };
-}
-
 function isReplayCanonicalInput(item: ResponsesInputItem): boolean {
   return (
     (item.type === "message" && item.role === "assistant") || item.type === "reasoning" || item.type === "function_call"
@@ -227,14 +187,7 @@ function canonicalToResponsesBlock(b: import("../index.js").ContentBlock): Respo
 
 export class ResponsesAdapter extends AdapterBase {
   readonly kind = "responses" as const;
-  readonly capabilities = {
-    textStreaming: "native",
-    reasoningStreaming: "native",
-    toolCallStreaming: "native",
-    replay: "opaque",
-    usage: "final",
-    toolResultOutcomes: ["success"],
-  } as const;
+  readonly capabilities = profile.capabilities;
 
   private apiKey: string;
   private baseUrl: string;
@@ -257,25 +210,25 @@ export class ResponsesAdapter extends AdapterBase {
         case "message": {
           // Responses API 中只有 assistant 角色支持 content blocks
           if (item.role === "assistant") {
-            const blocks = ensureResponsesTextBlocks(item.content, `assistant message (${item.role}) content`).map(
-              canonicalToResponsesBlock,
-            );
+            const blocks = mapper
+              .ensureTextBlocks(item.content, `assistant message (${item.role}) content`)
+              .map(canonicalToResponsesBlock);
             input.push({ type: "message", role: item.role, content: blocks });
           } else {
             input.push({
               type: "message",
               role: item.role,
               content: contentBlocksToText(
-                ensureResponsesTextBlocks(item.content, `input message (${item.role}) content`),
+                mapper.ensureTextBlocks(item.content, `input message (${item.role}) content`),
               ),
             });
           }
           break;
         }
         case "reasoning": {
-          const blocks = ensureResponsesReasoningBlocks(item.content, "reasoning content").map(
-            (b): ResponsesContentBlock => ({ type: "reasoning", text: b.text }),
-          );
+          const blocks = mapper
+            .ensureReasoningBlocks(item.content, "reasoning content")
+            .map((b): ResponsesContentBlock => ({ type: "reasoning", text: b.text }));
           input.push({ type: "reasoning", content: blocks });
           break;
         }
@@ -289,8 +242,9 @@ export class ResponsesAdapter extends AdapterBase {
           break;
         }
         case "tool_result": {
-          assertResponsesToolResultOutcome(item.outcome);
-          const output = ensureResponsesTextBlocks(item.content, `tool_result ${item.callId} content`)
+          mapper.assertToolResultOutcome(item.outcome);
+          const output = mapper
+            .ensureTextBlocks(item.content, `tool_result ${item.callId} content`)
             .map(blockToText)
             .join("\n");
           input.push({
@@ -329,7 +283,7 @@ export class ResponsesAdapter extends AdapterBase {
     };
 
     if (request.instructions) {
-      body.instructions = instructionsToResponsesText(request.instructions);
+      body.instructions = mapper.mapInstructions(request.instructions);
     }
 
     if (request.tools && request.tools.length > 0) {
@@ -392,9 +346,24 @@ export class ResponsesAdapter extends AdapterBase {
     }
 
     // 流式累积状态
+    const parser = new IncrementalStreamParser<ResponsesSSEEvent>(splitSSEFrames, (frame: string) => {
+      let eventType = "";
+      let dataStr = "";
+      for (const rawLine of frame.split("\n")) {
+        const line = rawLine.trim();
+        if (line.startsWith("event: ")) eventType = line.slice(7).trim();
+        else if (line.startsWith("data: ")) dataStr += line.slice(6);
+      }
+      if (!eventType) return { status: "ignored" };
+      try {
+        const data = JSON.parse(dataStr);
+        return { status: "parsed", value: { type: eventType, data } as ResponsesSSEEvent };
+      } catch {
+        return { status: "malformed" };
+      }
+    });
+
     const output: OutputItem[] = [];
-    const decoder = new TextDecoder();
-    let buffer = "";
     let streamDone = false;
     let completedResponse: ResponsesAPIResponse | undefined;
     let completedEmitted = false;
@@ -409,9 +378,7 @@ export class ResponsesAdapter extends AdapterBase {
           );
         });
         const { done, value } = readResult;
-        buffer += done ? decoder.decode() : decoder.decode(value, { stream: true });
-        const { events, rest, malformedEvents } = parseSSE(buffer, done);
-        buffer = rest;
+        const { items: events, malformed: malformedEvents } = done ? parser.flush() : parser.feed(value as Uint8Array);
 
         const malformedWarning = emitMalformedStreamWarning(factory, {
           count: malformedEvents,
@@ -532,7 +499,7 @@ export class ResponsesAdapter extends AdapterBase {
       }
     }
 
-    if (buffer.trim().length > 0) {
+    if (parser.getRemaining().trim().length > 0) {
       yield factory.responseWarning("Stream ended with an incomplete Responses SSE frame", "STREAM_ERROR");
     }
 

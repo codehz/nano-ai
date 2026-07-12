@@ -29,6 +29,8 @@ import {
 import { emitMalformedStreamWarning } from "../helpers/adapter-auxiliary.js";
 import { assertOpaqueReplayEnvelope, providerHttpError } from "../helpers/adapter-security.js";
 import { usageFromOllama } from "../helpers/usage-mapping.js";
+import { NormalizedRequestMapper, splitLines, IncrementalStreamParser } from "../helpers/index.js";
+import type { ProviderProfile } from "../helpers/index.js";
 
 import type { NormalizedRequest, AIStreamEvent, EventFactory, OutputItem, FetchFn } from "../index.js";
 
@@ -80,45 +82,24 @@ type OllamaTool = {
   };
 };
 
-function ensureOllamaTextBlocks(
-  blocks: import("../index.js").ContentBlock[],
-  field: string,
-): import("../index.js").ContentBlock[] {
-  for (let i = 0; i < blocks.length; i++) {
-    const block = blocks[i];
-    if (!block) continue;
-    if (block.type !== "text" && block.type !== "json") {
-      throw new AIRequestError(
-        `ollama does not support ${field}[${i}] of type "${block.type}"; only text/json blocks are supported`,
-        "UNSUPPORTED_CONTENT_BLOCK",
-      );
-    }
-  }
+// ── ProviderProfile & Mapper ────────────────────────────────────
 
-  return blocks;
-}
+const profile: ProviderProfile = {
+  kind: "ollama",
+  instructionsMode: "system_message",
+  supportedBlockTypes: ["text", "json"] as const,
+  reasoningBlockTypes: ["text"] as const,
+  capabilities: {
+    textStreaming: "native",
+    reasoningStreaming: "none",
+    toolCallStreaming: "synthetic",
+    replay: "opaque",
+    usage: "final",
+    toolResultOutcomes: ["success"],
+  },
+};
 
-function ensureOllamaReasoningBlocks(
-  blocks: import("../index.js").ContentBlock[],
-  field: string,
-): Array<Extract<import("../index.js").ContentBlock, { type: "text" }>> {
-  return blocks.map((block, index) => {
-    if (block.type !== "text") {
-      throw new AIRequestError(
-        `ollama does not support ${field}[${index}] of type "${block.type}"; reasoning only supports text blocks`,
-        "UNSUPPORTED_CONTENT_BLOCK",
-      );
-    }
-
-    return block;
-  });
-}
-
-function instructionsToOllamaText(instructions: string | import("../index.js").InstructionBlock[]): string {
-  return typeof instructions === "string"
-    ? instructions
-    : contentBlocksToText(ensureOllamaTextBlocks(instructions, "instructions"));
-}
+const mapper = new NormalizedRequestMapper(profile);
 
 function parseOllamaToolArguments(item: import("../index.js").ToolCallItem): Record<string, unknown> {
   if (item.argumentsJson && typeof item.argumentsJson === "object" && item.argumentsJson !== null) {
@@ -138,15 +119,6 @@ function parseOllamaToolArguments(item: import("../index.js").ToolCallItem): Rec
     "ollama tool_call argumentsText must be valid JSON object when argumentsJson is absent",
     "TOOL_CALL_ARGUMENTS_INVALID",
   );
-}
-
-function assertOllamaToolResultOutcome(outcome: import("../index.js").ToolResultItem["outcome"]): void {
-  if (outcome !== "success") {
-    throw new AIRequestError(
-      `ollama does not preserve tool_result outcome "${outcome}"; only "success" is supported`,
-      "UNSUPPORTED_TOOL_RESULT_OUTCOME",
-    );
-  }
 }
 
 // ── Ollama 流式 chunk ─────────────────────────────────────────
@@ -169,58 +141,6 @@ type OllamaChatChunk = {
   eval_count?: number;
   eval_duration?: number;
 };
-
-// ── NDJSON 解析 ───────────────────────────────────────────────
-
-function parseOllamaNDJSON(
-  buffer: string,
-  allowEOF = false,
-): { chunks: OllamaChatChunk[]; rest: string; malformedLines: number } {
-  const chunks: OllamaChatChunk[] = [];
-  let rest = buffer;
-  let malformedLines = 0;
-
-  const consumeLine = (rawLine: string): void => {
-    const line = rawLine.trim();
-
-    if (!line) return;
-
-    try {
-      const parsed = JSON.parse(line);
-      if (parsed && typeof parsed === "object" && "message" in parsed) {
-        chunks.push(parsed as OllamaChatChunk);
-      } else {
-        malformedLines++;
-      }
-    } catch {
-      malformedLines++;
-    }
-  };
-
-  while (true) {
-    const lineEnd = rest.indexOf("\n");
-    if (lineEnd === -1) {
-      if (allowEOF && rest.length > 0) {
-        consumeLine(rest);
-        rest = "";
-      }
-      break;
-    }
-
-    const line = rest.slice(0, lineEnd);
-    rest = rest.slice(lineEnd + 1);
-
-    consumeLine(line);
-  }
-
-  return { chunks, rest, malformedLines };
-}
-
-function rollbackTrailingAssistantMessages(messages: OllamaMessage[]): void {
-  while (messages.length > 0 && messages[messages.length - 1]?.role === "assistant") {
-    messages.pop();
-  }
-}
 
 /** Opaque replay may carry optional local `id`s; wire tool_calls never include them. */
 type OllamaReplayToolCall = OllamaToolCall & { id?: string };
@@ -259,14 +179,7 @@ function toWireOllamaToolCalls(toolCalls: OllamaReplayToolCall[]): OllamaToolCal
 
 export class OllamaAdapter extends AdapterBase {
   readonly kind = "ollama" as const;
-  readonly capabilities = {
-    textStreaming: "native",
-    reasoningStreaming: "none",
-    toolCallStreaming: "synthetic",
-    replay: "opaque",
-    usage: "final",
-    toolResultOutcomes: ["success"],
-  } as const;
+  readonly capabilities = profile.capabilities;
 
   private baseUrl: string;
   private apiKey: string | undefined;
@@ -292,7 +205,7 @@ export class OllamaAdapter extends AdapterBase {
 
     // handle instructions → system message
     if (request.instructions) {
-      messages.push({ role: "system", content: instructionsToOllamaText(request.instructions) });
+      messages.push({ role: "system", content: mapper.mapInstructions(request.instructions) });
     }
 
     for (const item of request.input) {
@@ -301,7 +214,7 @@ export class OllamaAdapter extends AdapterBase {
           const role = item.role;
           messages.push({
             role,
-            content: contentBlocksToText(ensureOllamaTextBlocks(item.content, `input message (${item.role}) content`)),
+            content: contentBlocksToText(mapper.ensureTextBlocks(item.content, `input message (${item.role}) content`)),
           });
           break;
         }
@@ -325,7 +238,7 @@ export class OllamaAdapter extends AdapterBase {
           break;
         }
         case "tool_result": {
-          assertOllamaToolResultOutcome(item.outcome);
+          mapper.assertToolResultOutcome(item.outcome);
           // Best-effort: consume matching id from name queue when present (no wire call_id)
           const queue = callIdsByName.get(item.toolName);
           if (queue && queue.length > 0) {
@@ -333,7 +246,7 @@ export class OllamaAdapter extends AdapterBase {
           }
           messages.push({
             role: "tool",
-            content: contentBlocksToText(ensureOllamaTextBlocks(item.content, `tool_result ${item.callId} content`)),
+            content: contentBlocksToText(mapper.ensureTextBlocks(item.content, `tool_result ${item.callId} content`)),
           });
           break;
         }
@@ -341,7 +254,7 @@ export class OllamaAdapter extends AdapterBase {
           // Ollama doesn't support reasoning in input; convert to text message
           messages.push({
             role: "assistant",
-            content: contentBlocksToText(ensureOllamaReasoningBlocks(item.content, "reasoning content")),
+            content: contentBlocksToText(mapper.ensureReasoningBlocks(item.content, "reasoning content")),
           });
           break;
         }
@@ -351,7 +264,7 @@ export class OllamaAdapter extends AdapterBase {
           assertOpaqueReplayEnvelope(item.payload);
           const payload = item.payload as Record<string, unknown>;
           if (payload.role === "assistant" && typeof payload.content === "string") {
-            rollbackTrailingAssistantMessages(messages);
+            mapper.rollbackTrailingAssistantMessages(messages);
             let replayToolCalls: OllamaReplayToolCall[] | undefined;
             if ("tool_calls" in payload && payload.tool_calls !== undefined) {
               if (!isOllamaReplayToolCalls(payload.tool_calls)) {
@@ -453,9 +366,21 @@ export class OllamaAdapter extends AdapterBase {
       throw new AIStreamError("Response body is not readable", "STREAM_ERROR");
     }
 
+    const parser = new IncrementalStreamParser<OllamaChatChunk>(splitLines, (item: string) => {
+      const trimmed = item.trim();
+      if (!trimmed) return { status: "ignored" };
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (parsed && typeof parsed === "object" && "message" in parsed) {
+          return { status: "parsed", value: parsed as OllamaChatChunk };
+        }
+        return { status: "malformed" };
+      } catch {
+        return { status: "malformed" };
+      }
+    });
+
     const output: OutputItem[] = [];
-    const decoder = new TextDecoder();
-    let buffer = "";
     let streamDone = false;
 
     // 累积状态
@@ -528,9 +453,7 @@ export class OllamaAdapter extends AdapterBase {
           );
         });
         const { done, value } = readResult;
-        buffer += done ? decoder.decode() : decoder.decode(value, { stream: true });
-        const { chunks, rest, malformedLines } = parseOllamaNDJSON(buffer, done);
-        buffer = rest;
+        const { items: chunks, malformed: malformedLines } = done ? parser.flush() : parser.feed(value as Uint8Array);
 
         const malformedWarning = emitMalformedStreamWarning(factory, {
           count: malformedLines,
@@ -656,7 +579,7 @@ export class OllamaAdapter extends AdapterBase {
       }
     }
 
-    if (buffer.trim().length > 0) {
+    if (parser.getRemaining().trim().length > 0) {
       yield factory.responseWarning("Stream ended with an incomplete Ollama NDJSON line", "STREAM_ERROR");
     }
 
