@@ -189,12 +189,17 @@ describe("ChatCompletionsAdapter - text streaming", () => {
       fetch: async () => sseResponse(...chunks),
     });
 
+    const warningCodes: string[] = [];
     const eventTypes: string[] = [];
     for await (const event of adapter.stream(makeRequest())) {
       eventTypes.push(event.type);
+      if (event.type === "response.warning" && event.code) {
+        warningCodes.push(event.code);
+      }
     }
 
     expect(eventTypes.filter((type) => type === "response.completed")).toHaveLength(1);
+    expect(warningCodes.filter((code) => code === "MULTIPLE_CHOICES_IGNORED")).toHaveLength(1);
 
     const result = await collectStream(adapter.stream(makeRequest()));
     expect(result.text).toBe("A");
@@ -260,8 +265,24 @@ describe("ChatCompletionsAdapter - tool calls", () => {
 
     const adapter = new ChatCompletionsAdapter({
       apiKey: "test-key",
-      fetch: mockFetch(sseResponse(...chunks)),
+      fetch: async () => sseResponse(...chunks),
     });
+
+    const eventTypes: string[] = [];
+    let completedOutputTypes: string[] = [];
+    for await (const event of adapter.stream(makeRequest())) {
+      eventTypes.push(event.type);
+      if (event.type === "response.completed") {
+        completedOutputTypes = event.response.output.map((item) => item.type);
+      }
+    }
+
+    expect(eventTypes).toContain("message.started");
+    expect(eventTypes).toContain("message.completed");
+    expect(eventTypes).toContain("tool_call.started");
+    expect(eventTypes).toContain("tool_call.completed");
+    // 空 content 的 message 只走事件生命周期，不进入 response.output
+    expect(completedOutputTypes).toEqual(["tool_call"]);
 
     const result = await collectStream(adapter.stream(makeRequest()));
     expect(result.toolCalls).toHaveLength(1);
@@ -281,8 +302,16 @@ describe("ChatCompletionsAdapter - tool calls", () => {
 
     const adapter = new ChatCompletionsAdapter({
       apiKey: "test-key",
-      fetch: mockFetch(sseResponse(...chunks)),
+      fetch: async () => sseResponse(...chunks),
     });
+
+    const eventTypes: string[] = [];
+    for await (const event of adapter.stream(makeRequest())) {
+      eventTypes.push(event.type);
+    }
+
+    expect(eventTypes).toContain("message.started");
+    expect(eventTypes).toContain("message.completed");
 
     const result = await collectStream(adapter.stream(makeRequest()));
     expect(result.toolCalls).toHaveLength(1);
@@ -364,6 +393,16 @@ describe("ChatCompletionsAdapter - request building", () => {
       },
     };
   }
+
+  it("should request a single completion candidate", async () => {
+    const { captured, fetch } = captureRequest();
+    const adapter = new ChatCompletionsAdapter({ apiKey: "test-key", fetch });
+
+    await collectStream(adapter.stream(makeRequest()));
+    const body = captured.current as Record<string, unknown> | null;
+    expect(body?.n).toBe(1);
+    expect(body?.stream).toBe(true);
+  });
 
   it("should convert instructions to system message", async () => {
     const { captured, fetch } = captureRequest();
