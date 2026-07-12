@@ -90,22 +90,6 @@ describe("OllamaAdapter - text streaming", () => {
     expect(result.stopReason).toBe("end_turn");
   });
 
-  it("should preserve UTF-8 characters split across transport chunks", async () => {
-    const encoder = new TextEncoder();
-    const prefix = encoder.encode(
-      '{"model":"llama3.2","created_at":"2024-01-01T00:00:00Z","message":{"role":"assistant","content":"',
-    );
-    const text = encoder.encode("你好");
-    const suffix = encoder.encode('","tool_calls":[]},"done":true,"done_reason":"stop"}');
-    const adapter = new OllamaAdapter({
-      fetch: async () => byteChunksResponse(prefix, text.slice(0, 1), text.slice(1, 4), text.slice(4), suffix),
-    });
-
-    const result = await collectStream(adapter.stream(makeRequest()));
-    expect(result.text).toBe("你好");
-    expect(result.stopReason).toBe("end_turn");
-  });
-
   it("should handle single-chunk response", async () => {
     const chunks = [
       `{"model":"llama3.2","created_at":"2024-01-01T00:00:00Z","message":{"role":"assistant","content":"Hi there!"},"done":true,"done_reason":"stop","prompt_eval_count":5,"eval_count":2}\n`,

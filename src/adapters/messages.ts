@@ -487,6 +487,7 @@ export class MessagesAdapter extends AdapterBase {
     const output: OutputItem[] = [];
     const decoder = new TextDecoder();
     let buffer = "";
+    let streamDone = false;
     let messageResponse: MessagesAPIMessageResponse | undefined;
     let currentContentBlockIndex = -1;
     let currentItemType: "message" | "reasoning" | "tool_call" | null = null;
@@ -679,10 +680,17 @@ export class MessagesAdapter extends AdapterBase {
           }
         }
 
-        if (done) break;
+        if (done) {
+          streamDone = true;
+          break;
+        }
       }
     } finally {
-      reader.releaseLock();
+      try {
+        if (!streamDone) await reader.cancel();
+      } finally {
+        reader.releaseLock();
+      }
     }
 
     if (buffer.trim().length > 0) {
