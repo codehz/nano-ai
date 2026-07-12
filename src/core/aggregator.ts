@@ -78,6 +78,8 @@ export interface AggregatorState {
   completed: boolean;
   nextSequence?: number;
   activeItems: Map<string, ActiveItem>;
+  itemOrder: string[];
+  completedItems: Map<string, OutputItem>;
 
   /** adapter 在 response.completed 中提供的 replay */
   replayFromAdapter?: import("../types/index.js").ReplayItem[];
@@ -96,6 +98,8 @@ export function createAggregatorState(): AggregatorState {
     started: false,
     completed: false,
     activeItems: new Map(),
+    itemOrder: [],
+    completedItems: new Map(),
   };
 }
 
@@ -178,6 +182,7 @@ function handleMessageStarted(state: AggregatorState, event: AIStreamEvent & { t
     role: event.item.role,
     content: [],
   });
+  state.itemOrder.push(id);
 }
 
 function handleMessageDelta(state: AggregatorState, event: AIStreamEvent & { type: "message.delta" }): void {
@@ -189,7 +194,7 @@ function handleMessageCompleted(state: AggregatorState, event: AIStreamEvent & {
   const active = getActiveItem(state, event.itemId, "message") as ActiveMessage;
   state.activeItems.delete(event.itemId);
   const item = finalizeMessage(active);
-  state.output.push(item);
+  state.completedItems.set(event.itemId, item);
   pushMessageText(state, item);
 }
 
@@ -204,6 +209,7 @@ function handleReasoningStarted(state: AggregatorState, event: AIStreamEvent & {
     visibility: event.item.visibility,
     content: [],
   });
+  state.itemOrder.push(id);
 }
 
 function handleReasoningDelta(state: AggregatorState, event: AIStreamEvent & { type: "reasoning.delta" }): void {
@@ -217,7 +223,7 @@ function handleReasoningCompleted(
 ): void {
   const active = getActiveItem(state, event.itemId, "reasoning") as ActiveReasoning;
   state.activeItems.delete(event.itemId);
-  state.output.push(finalizeReasoning(active));
+  state.completedItems.set(event.itemId, finalizeReasoning(active));
 }
 
 function handleToolCallStarted(state: AggregatorState, event: AIStreamEvent & { type: "tool_call.started" }): void {
@@ -231,6 +237,7 @@ function handleToolCallStarted(state: AggregatorState, event: AIStreamEvent & { 
     name: event.item.name,
     argumentsText: "",
   });
+  state.itemOrder.push(id);
 }
 
 function handleToolCallDelta(state: AggregatorState, event: AIStreamEvent & { type: "tool_call.delta" }): void {
@@ -244,7 +251,7 @@ function handleToolCallCompleted(state: AggregatorState, event: AIStreamEvent & 
   const active = getActiveItem(state, event.itemId, "tool_call") as ActiveToolCall;
   state.activeItems.delete(event.itemId);
   const item = finalizeToolCall(active);
-  state.output.push(item);
+  state.completedItems.set(event.itemId, item);
   state.toolCalls.push(item);
 }
 
@@ -275,10 +282,17 @@ function buildResponse(state: AggregatorState): AIResponse {
     metadataSources: backendFromCompleted?.metadataSources,
     warnings: backendFromCompleted?.warnings,
   };
+  const orderedOutput = state.itemOrder.map((id) => {
+    const item = state.completedItems.get(id);
+    if (!item) {
+      throw streamProtocolError(`Item ${id} was started but not completed`);
+    }
+    return item;
+  });
 
   return {
     id: state.responseId,
-    output: state.output,
+    output: [...orderedOutput, ...state.output],
     replay: state.replayFromAdapter ?? [],
     text: state.textParts.join(""),
     toolCalls: state.toolCalls,

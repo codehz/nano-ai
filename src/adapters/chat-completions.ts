@@ -458,9 +458,7 @@ export class ChatCompletionsAdapter extends AdapterBase {
       if (hasMessageStarted) {
         const message = messageItem([textBlock(accumulatedContent)], { id: currentMessageId });
         events.push(factory.messageCompleted(currentMessageId));
-        if (accumulatedContent) {
-          output.push(message);
-        }
+        output.push(message);
       }
 
       for (const pending of finalizedToolCalls) {
@@ -598,12 +596,6 @@ export class ChatCompletionsAdapter extends AdapterBase {
               hasMessageStarted = true;
               accumulatedContent = "";
             };
-
-            // 处理 role: assistant（首块标识；不要求 content）
-            if (delta.role === "assistant" && !hasMessageStarted) {
-              ensureMessageStarted();
-              yield factory.messageStarted(currentMessageId);
-            }
 
             // 处理 third-party reasoning delta
             if (reasoningDeltas.length > 0) {

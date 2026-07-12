@@ -248,6 +248,23 @@ describe("aggregateEvents", () => {
     expect(result.text).toBe("Answer.");
   });
 
+  it("should preserve item start order when completion order differs", () => {
+    const f = makeFactory();
+    const events: AIStreamEvent[] = [
+      f.responseStarted("gpt-4"),
+      f.reasoningStarted("r1", "full"),
+      f.reasoningDelta("r1", textBlock("think")),
+      f.messageStarted("m1"),
+      f.messageDelta("m1", textBlock("answer")),
+      f.messageCompleted("m1"),
+      f.reasoningCompleted("r1"),
+      f.responseCompleted({ replay: [] }),
+    ];
+
+    const result = aggregateEvents(events);
+    expect(result.output.map((item) => item.type)).toEqual(["reasoning", "message"]);
+  });
+
   it("should preserve stopReason from response.completed", () => {
     const f = makeFactory();
     const events: AIStreamEvent[] = [

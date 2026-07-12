@@ -256,6 +256,31 @@ describe("ChatCompletionsAdapter - text streaming", () => {
       });
     }
   });
+
+  it("should start reasoning before message after a role-only chunk", async () => {
+    const chunks = [
+      'data: {"id":"chatcmpl-r2","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}\n',
+      'data: {"id":"chatcmpl-r2","choices":[{"index":0,"delta":{"reasoning":"分析"},"finish_reason":null}]}\n',
+      'data: {"id":"chatcmpl-r2","choices":[{"index":0,"delta":{"content":"答案"},"finish_reason":null}]}\n',
+      'data: {"id":"chatcmpl-r2","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n',
+      "data: [DONE]\n",
+    ];
+    const adapter = new ChatCompletionsAdapter({
+      apiKey: "test-key",
+      fetch: async () => sseResponse(...chunks),
+    });
+
+    const startedTypes: string[] = [];
+    for await (const event of adapter.stream(makeRequest())) {
+      if (event.type.endsWith(".started") && event.type !== "response.started") {
+        startedTypes.push(event.type);
+      }
+    }
+    const result = await collectStream(adapter.stream(makeRequest()));
+
+    expect(startedTypes).toEqual(["reasoning.started", "message.started"]);
+    expect(result.output.map((item) => item.type)).toEqual(["reasoning", "message"]);
+  });
 });
 
 // ── 工具调用流 ────────────────────────────────────────────────
