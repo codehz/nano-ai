@@ -732,6 +732,41 @@ describe("MessagesAdapter - error handling", () => {
     expect(result.warnings!.some((w) => w.includes("Overloaded"))).toBe(true);
   });
 
+  it("should isolate warnings between concurrent streams on the same adapter", async () => {
+    let fetchCount = 0;
+    let releaseFetches!: () => void;
+    const bothFetchesStarted = new Promise<void>((resolve) => {
+      releaseFetches = resolve;
+    });
+
+    const adapter = new MessagesAdapter({
+      apiKey: "test-key",
+      fetch: async () => {
+        const requestNumber = ++fetchCount;
+        if (fetchCount === 2) releaseFetches();
+        await bothFetchesStarted;
+
+        const warning = requestNumber === 1 ? "warning-from-a" : "warning-from-b";
+        return sseResponse(
+          `event: error\ndata: ${JSON.stringify({ type: "error", error: { type: "test_error", message: warning } })}\n\n`,
+          messageStopSSE(),
+        );
+      },
+    });
+
+    const [resultA, resultB] = await Promise.all([
+      collectStream(adapter.stream(makeRequest({ requestId: "request-a" }))),
+      collectStream(adapter.stream(makeRequest({ requestId: "request-b" }))),
+    ]);
+
+    expect(resultA.warnings).toContain("warning-from-a");
+    expect(resultA.warnings).not.toContain("warning-from-b");
+    expect(resultB.warnings).toContain("warning-from-b");
+    expect(resultB.warnings).not.toContain("warning-from-a");
+    expect(resultA.backend.warnings).toEqual(resultA.warnings);
+    expect(resultB.backend.warnings).toEqual(resultB.warnings);
+  });
+
   it("should emit warning for malformed SSE data", async () => {
     const sse = [
       `event: message_start\ndata: {bad json}\n\n`,

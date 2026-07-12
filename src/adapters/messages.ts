@@ -256,7 +256,6 @@ export class MessagesAdapter extends AdapterBase {
   private apiVersion: string;
   private baseUrl: string;
   private fetchFn: FetchFn;
-  private warningAccumulator: string[];
 
   constructor(options: MessagesAdapterOptions) {
     super();
@@ -264,11 +263,6 @@ export class MessagesAdapter extends AdapterBase {
     this.apiVersion = options.apiVersion ?? "2023-06-01";
     this.baseUrl = options.baseUrl ?? "https://api.anthropic.com/v1";
     this.fetchFn = options.fetch ?? globalThis.fetch;
-    this.warningAccumulator = [];
-  }
-
-  protected warn(message: string, _code?: string): void {
-    this.warningAccumulator.push(message);
   }
 
   // ── buildRequest ──────────────────────────────────────────
@@ -418,7 +412,6 @@ export class MessagesAdapter extends AdapterBase {
     factory: EventFactory,
     request: NormalizedRequest,
   ): AsyncIterable<AIStreamEvent> {
-    this.warningAccumulator = [];
     const auxiliary = this.createAuxiliaryState(request);
     let completedEmitted = false;
 
@@ -516,7 +509,6 @@ export class MessagesAdapter extends AdapterBase {
             case "error": {
               const err = sseEvent.data.error;
               yield factory.responseWarning(err.message, err.type);
-              this.warn(err.message, err.type);
               continue;
             }
 
