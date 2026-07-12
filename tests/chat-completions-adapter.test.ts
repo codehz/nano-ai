@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect } from "bun:test";
-import { AIProviderError, AIRequestError, ChatCompletionsAdapter, collectStream } from "../src/index.js";
+import { AIProviderError, AIRequestError, AIStreamError, ChatCompletionsAdapter, collectStream } from "../src/index.js";
 
 import type { NormalizedRequest, FetchFn } from "../src/index.js";
 
@@ -654,32 +654,24 @@ describe("ChatCompletionsAdapter - request building", () => {
 // ── 错误处理 ──────────────────────────────────────────────────
 
 describe("ChatCompletionsAdapter - error handling", () => {
-  it("should cancel the response body when the consumer stops early", async () => {
-    let cancelled = false;
-    const encoder = new TextEncoder();
-    const body = new ReadableStream<Uint8Array>({
-      start(controller) {
-        controller.enqueue(
-          encoder.encode(
-            'data: {"id":"chatcmpl-cancel","choices":[{"index":0,"delta":{"content":"Hi"},"finish_reason":null}]}\n',
-          ),
-        );
-      },
-      cancel() {
-        cancelled = true;
+  it("should wrap response body read failures and release the reader", async () => {
+    let body!: ReadableStream<Uint8Array>;
+    body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        controller.error(new Error("socket reset"));
       },
     });
     const adapter = new ChatCompletionsAdapter({
       apiKey: "test-key",
       fetch: async () => new Response(body, { status: 200 }),
     });
-    const iterator = adapter.stream(makeRequest())[Symbol.asyncIterator]();
 
-    await iterator.next();
-    await iterator.next();
-    await iterator.return?.();
-
-    expect(cancelled).toBe(true);
+    const result = collectStream(adapter.stream(makeRequest()));
+    await expect(result).rejects.toBeInstanceOf(AIStreamError);
+    await expect(result).rejects.toMatchObject({
+      code: "STREAM_ERROR",
+      message: "Failed to read response stream: socket reset",
+    });
     expect(body.locked).toBe(false);
   });
 
