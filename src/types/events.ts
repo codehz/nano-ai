@@ -7,8 +7,8 @@
  */
 
 import type { ContentBlock } from "./content.js";
-import type { MessageItem, ReasoningItem, ToolCallItem } from "./items.js";
-import type { AIResponse, Usage, BillingInfo, AuxiliaryInfo } from "./response.js";
+import type { Usage, BillingInfo, AuxiliaryInfo, BackendTrace, StopReason } from "./response.js";
+import type { OpaqueItem, ReplayItem } from "./items.js";
 
 // ── 事件基类 ──────────────────────────────────────────────────
 
@@ -45,7 +45,14 @@ export type ResponseAuxiliaryEvent = StreamEventBase & {
 
 export type ResponseCompletedEvent = StreamEventBase & {
   type: "response.completed";
-  response: AIResponse;
+  replay: ReplayItem[];
+  stopReason?: StopReason;
+  usage?: Usage;
+  billing?: BillingInfo;
+  auxiliary?: AuxiliaryInfo;
+  warnings?: string[];
+  opaqueOutput?: OpaqueItem[];
+  trace?: Partial<BackendTrace>;
 };
 
 // ── 消息流事件 ────────────────────────────────────────────────
@@ -61,15 +68,12 @@ export type MessageStartedEvent = StreamEventBase & {
 export type MessageDeltaEvent = StreamEventBase & {
   type: "message.delta";
   itemId: string;
-  delta: {
-    type: "text";
-    text: string;
-  };
+  delta: ContentBlock;
 };
 
 export type MessageCompletedEvent = StreamEventBase & {
   type: "message.completed";
-  item: MessageItem;
+  itemId: string;
 };
 
 // ── 思维链流事件 ──────────────────────────────────────────────
@@ -90,7 +94,7 @@ export type ReasoningDeltaEvent = StreamEventBase & {
 
 export type ReasoningCompletedEvent = StreamEventBase & {
   type: "reasoning.completed";
-  item: ReasoningItem;
+  itemId: string;
 };
 
 // ── 工具调用流事件 ────────────────────────────────────────────
@@ -113,7 +117,7 @@ export type ToolCallDeltaEvent = StreamEventBase & {
 
 export type ToolCallCompletedEvent = StreamEventBase & {
   type: "tool_call.completed";
-  item: ToolCallItem;
+  itemId: string;
 };
 
 // ── 统一事件联合 ──────────────────────────────────────────────

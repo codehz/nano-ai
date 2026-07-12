@@ -368,6 +368,7 @@ export class ResponsesAdapter extends AdapterBase {
     let completedResponse: ResponsesAPIResponse | undefined;
     let completedEmitted = false;
     let unknownEventsWarned = false;
+    const messageItemsWithDelta = new Set<string>();
 
     try {
       while (true) {
@@ -415,13 +416,17 @@ export class ResponsesAdapter extends AdapterBase {
 
           if (sseEvent.type === "response.output_text.delta") {
             const data = sseEvent.data as { item_id: string; delta: string };
-            yield factory.messageDelta(data.item_id, data.delta);
+            yield factory.messageDelta(data.item_id, textBlock(data.delta));
+            messageItemsWithDelta.add(data.item_id);
             continue;
           }
 
           if (sseEvent.type === "response.output_text.done") {
             const data = sseEvent.data as { item_id: string; text: string };
-            yield factory.messageCompleted(messageItem([textBlock(data.text)], { id: data.item_id }));
+            if (!messageItemsWithDelta.has(data.item_id) && data.text) {
+              yield factory.messageDelta(data.item_id, textBlock(data.text));
+            }
+            yield factory.messageCompleted(data.item_id);
             output.push(messageItem([textBlock(data.text)], { id: data.item_id }));
             continue;
           }
@@ -434,7 +439,7 @@ export class ResponsesAdapter extends AdapterBase {
 
           if (sseEvent.type === "response.reasoning.done") {
             const data = sseEvent.data as { item_id: string; text: string };
-            yield factory.reasoningCompleted(reasoningItem([textBlock(data.text)], "full", data.item_id));
+            yield factory.reasoningCompleted(data.item_id);
             output.push(reasoningItem([textBlock(data.text)], "full", data.item_id));
             continue;
           }
@@ -450,7 +455,7 @@ export class ResponsesAdapter extends AdapterBase {
           if (sseEvent.type === "response.tool_call.done") {
             const data = sseEvent.data as { item_id: string; arguments?: string; name?: string };
             const tcItem = toolCallItem(data.item_id, data.name ?? "unknown", data.arguments ?? "");
-            yield factory.toolCallCompleted(tcItem);
+            yield factory.toolCallCompleted(data.item_id);
             output.push(tcItem);
             continue;
           }
@@ -531,23 +536,30 @@ export class ResponsesAdapter extends AdapterBase {
 
     if (!completedEmitted) {
       completedEmitted = true;
-      yield factory.responseCompleted(
-        this.buildResponse(
-          request,
-          {
-            output,
-            replay,
-            stopReason,
-            usage: auxiliaryResult.usage,
-            billing: auxiliaryResult.billing,
-            auxiliary: auxiliaryResult.auxiliary,
-            warnings: auxiliaryResult.warnings,
-            metadataSources: auxiliaryResult.metadataSources,
-            rawResponseId,
-          },
-          factory,
-        ),
+      const finalResponse = this.buildResponse(
+        request,
+        {
+          output,
+          replay,
+          stopReason,
+          usage: auxiliaryResult.usage,
+          billing: auxiliaryResult.billing,
+          auxiliary: auxiliaryResult.auxiliary,
+          warnings: auxiliaryResult.warnings,
+          metadataSources: auxiliaryResult.metadataSources,
+          rawResponseId,
+        },
+        factory,
       );
+      yield factory.responseCompleted({
+        replay: finalResponse.replay,
+        stopReason: finalResponse.stopReason,
+        trace: finalResponse.backend,
+        usage: finalResponse.usage,
+        billing: finalResponse.billing,
+        auxiliary: finalResponse.auxiliary,
+        warnings: finalResponse.warnings,
+      });
     }
   }
 

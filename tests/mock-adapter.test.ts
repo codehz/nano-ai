@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 
 import {
   AIRequestError,
+  aggregateEvents,
   MockAdapter,
   assertMockRequest,
   collectStream,
@@ -280,18 +281,15 @@ describe("MockAdapter", () => {
     const deltas = events.filter((event) => event.type === "message.delta");
 
     expect(deltas).toHaveLength(3);
-    expect(deltas.map((event) => (event.type === "message.delta" ? event.delta.text : undefined))).toEqual([
-      "ab",
-      "cd",
-      "ef",
-    ]);
+    expect(
+      deltas.map((event) =>
+        event.type === "message.delta" && event.delta.type === "text" ? event.delta.text : undefined,
+      ),
+    ).toEqual(["ab", "cd", "ef"]);
     expect(elapsedMs).toBeGreaterThanOrEqual(35);
 
-    const completed = events.at(-1);
-    expect(completed?.type).toBe("response.completed");
-    if (completed?.type === "response.completed") {
-      expect(completed.response.text).toBe("abcdef");
-    }
+    const result = aggregateEvents(events);
+    expect(result.text).toBe("abcdef");
   });
 
   it("should allow a step to disable wrapped chunked streaming", async () => {

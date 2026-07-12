@@ -425,23 +425,30 @@ export class OllamaAdapter extends AdapterBase {
         yield event;
       }
 
-      yield factory.responseCompleted(
-        buildResponse(
-          request,
-          {
-            output,
-            replay,
-            stopReason,
-            usage: auxiliaryResult.usage,
-            billing: auxiliaryResult.billing,
-            auxiliary: auxiliaryResult.auxiliary,
-            warnings: auxiliaryResult.warnings,
-            metadataSources: auxiliaryResult.metadataSources,
-            rawResponseId,
-          },
-          factory,
-        ),
+      const finalResponse = buildResponse(
+        request,
+        {
+          output,
+          replay,
+          stopReason,
+          usage: auxiliaryResult.usage,
+          billing: auxiliaryResult.billing,
+          auxiliary: auxiliaryResult.auxiliary,
+          warnings: auxiliaryResult.warnings,
+          metadataSources: auxiliaryResult.metadataSources,
+          rawResponseId,
+        },
+        factory,
       );
+      yield factory.responseCompleted({
+        replay: finalResponse.replay,
+        stopReason: finalResponse.stopReason,
+        trace: finalResponse.backend,
+        usage: finalResponse.usage,
+        billing: finalResponse.billing,
+        auxiliary: finalResponse.auxiliary,
+        warnings: finalResponse.warnings,
+      });
     };
 
     try {
@@ -484,7 +491,7 @@ export class OllamaAdapter extends AdapterBase {
               yield factory.messageStarted(currentMessageId);
             }
             accumulatedContent += msg.content;
-            yield factory.messageDelta(currentMessageId, msg.content);
+            yield factory.messageDelta(currentMessageId, textBlock(msg.content));
           }
 
           // 处理 tool_calls (整块到达，在最终 chunk 中)
@@ -513,7 +520,7 @@ export class OllamaAdapter extends AdapterBase {
             // 完成消息（如果有累积的内容或正在进行的消息）
             if (hasMessageStarted) {
               const message = messageItem([textBlock(accumulatedContent)], { id: currentMessageId });
-              yield factory.messageCompleted(message);
+              yield factory.messageCompleted(currentMessageId);
               if (accumulatedContent) {
                 output.push(message);
               }
@@ -531,7 +538,7 @@ export class OllamaAdapter extends AdapterBase {
               const toolCall = toolCallItem(pending.id, pending.name, pending.argumentsText, pending.argumentsJson);
               yield factory.toolCallStarted(pending.id, pending.name);
               yield factory.toolCallDelta(pending.id, { argumentsText: pending.argumentsText });
-              yield factory.toolCallCompleted(toolCall);
+              yield factory.toolCallCompleted(pending.id);
               output.push(toolCall);
             }
 
@@ -589,7 +596,7 @@ export class OllamaAdapter extends AdapterBase {
 
       if (hasMessageStarted) {
         const message = messageItem([textBlock(accumulatedContent)], { id: currentMessageId });
-        yield factory.messageCompleted(message);
+        yield factory.messageCompleted(currentMessageId);
         if (accumulatedContent) {
           output.push(message);
         }
@@ -606,7 +613,7 @@ export class OllamaAdapter extends AdapterBase {
         const toolCall = toolCallItem(pending.id, pending.name, pending.argumentsText, pending.argumentsJson);
         yield factory.toolCallStarted(pending.id, pending.name);
         yield factory.toolCallDelta(pending.id, { argumentsText: pending.argumentsText });
-        yield factory.toolCallCompleted(toolCall);
+        yield factory.toolCallCompleted(pending.id);
         output.push(toolCall);
       }
 

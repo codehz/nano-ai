@@ -277,20 +277,19 @@ describe("ChatCompletionsAdapter - tool calls", () => {
     });
 
     const eventTypes: string[] = [];
-    let completedOutputTypes: string[] = [];
     for await (const event of adapter.stream(makeRequest())) {
       eventTypes.push(event.type);
-      if (event.type === "response.completed") {
-        completedOutputTypes = event.response.output.map((item) => item.type);
-      }
     }
 
     expect(eventTypes).toContain("message.started");
     expect(eventTypes).toContain("message.completed");
     expect(eventTypes).toContain("tool_call.started");
     expect(eventTypes).toContain("tool_call.completed");
-    // 空 content 的 message 只走事件生命周期，不进入 response.output
-    expect(completedOutputTypes).toEqual(["tool_call"]);
+
+    // 聚合器以事件生命周期为唯一事实来源，空 content message 也会进入 output。
+    const aggregated = await collectStream(adapter.stream(makeRequest()));
+    const completedOutputTypes = aggregated.output.map((item) => item.type);
+    expect(completedOutputTypes).toEqual(["message", "tool_call"]);
 
     const result = await collectStream(adapter.stream(makeRequest()));
     expect(result.toolCalls).toHaveLength(1);

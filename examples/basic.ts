@@ -67,7 +67,7 @@ async function main() {
         console.log(`[started] model: ${event.model}`);
         break;
       case "message.delta":
-        process.stdout.write(event.delta.text);
+        if (event.delta.type === "text") process.stdout.write(event.delta.text);
         break;
       case "response.warning":
         console.warn(`[warning] ${event.message}`);
@@ -79,7 +79,7 @@ async function main() {
         break;
       case "response.completed":
         console.log(`\n\n--- Done ---`);
-        console.log(`stopReason: ${event.response.stopReason}`);
+        console.log(`stopReason: ${event.stopReason}`);
         break;
     }
   }

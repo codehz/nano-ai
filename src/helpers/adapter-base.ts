@@ -82,7 +82,16 @@ export abstract class AdapterBase implements BackendAdapter {
 
       if (err instanceof AIMappingError) {
         yield factory.responseWarning(err.message, "MAPPING_ERROR");
-        yield factory.responseCompleted(this.buildResponse(request, { output: [], replay: [] }, factory));
+        const errorResp = this.buildResponse(request, { output: [], replay: [] }, factory);
+        yield factory.responseCompleted({
+          replay: errorResp.replay,
+          stopReason: errorResp.stopReason,
+          trace: errorResp.backend,
+          usage: errorResp.usage,
+          billing: errorResp.billing,
+          auxiliary: errorResp.auxiliary,
+          warnings: errorResp.warnings,
+        });
         return;
       }
 

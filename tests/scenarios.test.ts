@@ -96,15 +96,11 @@ describe("Scenario: tool call flow", () => {
       f.toolCallStarted("tc1", "get_weather"),
       f.toolCallDelta("tc1", { argumentsText: '{"city":"' }),
       f.toolCallDelta("tc1", { argumentsText: 'Hangzhou"}' }),
-      f.toolCallCompleted(tc),
+      f.toolCallCompleted("tc1"),
       f.responseCompleted({
-        id: "tool-only",
-        output: [tc],
         replay: [tc],
-        text: "",
-        toolCalls: [tc],
         stopReason: "tool_call",
-        backend: { adapter: "responses", isSyntheticStream: false },
+        trace: { adapter: "responses", isSyntheticStream: false },
       }),
     ];
 
@@ -193,15 +189,11 @@ describe("Scenario: manual tool loop", () => {
             f.responseStarted("gpt-4o"),
             f.toolCallStarted("tc1", "get_weather"),
             f.toolCallDelta("tc1", { argumentsText: '{"city":"Hangzhou"}' }),
-            f.toolCallCompleted(tc),
+            f.toolCallCompleted("tc1"),
             f.responseCompleted({
-              id: "round-1",
-              output: [tc],
               replay: [tc],
-              text: "",
-              toolCalls: [tc],
               stopReason: "tool_call",
-              backend: { adapter: "responses", isSyntheticStream: false },
+              trace: { adapter: "responses", isSyntheticStream: false },
             }),
           ]);
         }
@@ -210,16 +202,12 @@ describe("Scenario: manual tool loop", () => {
         return iter([
           f.responseStarted("gpt-4o"),
           f.messageStarted("m2"),
-          f.messageDelta("m2", "The weather is sunny and 28°C."),
-          f.messageCompleted(m2),
+          f.messageDelta("m2", textBlock("The weather is sunny and 28°C.")),
+          f.messageCompleted("m2"),
           f.responseCompleted({
-            id: "round-2",
-            output: [m2],
             replay: [m2],
-            text: "The weather is sunny and 28°C.",
-            toolCalls: [],
             stopReason: "end_turn",
-            backend: { adapter: "responses", isSyntheticStream: false },
+            trace: { adapter: "responses", isSyntheticStream: false },
           }),
         ]);
       },
@@ -263,16 +251,12 @@ describe("Scenario: usage/billing backfill", () => {
     const events = [
       f.responseStarted("gpt-4o"),
       f.messageStarted("m1"),
-      f.messageDelta("m1", "Hi"),
-      f.messageCompleted(m),
+      f.messageDelta("m1", textBlock("Hi")),
+      f.messageCompleted("m1"),
       f.responseCompleted({
-        id: "usage-test",
-        output: [m],
         replay: [m],
-        text: "Hi",
-        toolCalls: [],
         usage: { inputTokens: 10, outputTokens: 2, totalTokens: 12 },
-        backend: { adapter: "responses", isSyntheticStream: false },
+        trace: { adapter: "responses", isSyntheticStream: false },
       }),
     ];
 
@@ -287,16 +271,12 @@ describe("Scenario: usage/billing backfill", () => {
     const events = [
       f.responseStarted("gpt-4o"),
       f.messageStarted("m1"),
-      f.messageDelta("m1", "Hi"),
-      f.messageCompleted(m),
+      f.messageDelta("m1", textBlock("Hi")),
+      f.messageCompleted("m1"),
       f.responseCompleted({
-        id: "billing-test",
-        output: [m],
         replay: [m],
-        text: "Hi",
-        toolCalls: [],
         billing: { amount: 0.002, currency: "USD", isEstimated: false, source: "provider" },
-        backend: { adapter: "responses", isSyntheticStream: false },
+        trace: { adapter: "responses", isSyntheticStream: false },
       }),
     ];
 

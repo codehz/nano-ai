@@ -1,8 +1,8 @@
 import { describe, it, expect } from "bun:test";
 
-import { createEventFactory, aggregateEvents, collectStream } from "../src/index.js";
+import { createEventFactory, aggregateEvents, collectStream, textBlock } from "../src/index.js";
 
-import type { AIStreamEvent, AIResponse, MessageItem, ReasoningItem, ToolCallItem } from "../src/index.js";
+import type { AIStreamEvent } from "../src/index.js";
 
 // ── Shared helpers ───────────────────────────────────────────
 
@@ -11,19 +11,6 @@ function makeFactory() {
     responseId: "resp-123",
     backend: { kind: "responses", isSynthetic: false },
   });
-}
-
-/** 为测试快速构造一个包含 response.completed 的 AIResponse */
-function makeCompletedResponse(overrides?: Partial<AIResponse>): AIResponse {
-  return {
-    id: "resp-123",
-    output: [],
-    replay: [],
-    text: "",
-    toolCalls: [],
-    backend: { adapter: "responses", isSyntheticStream: false },
-    ...overrides,
-  };
 }
 
 /** 将事件数组包装为 AsyncIterable */
@@ -40,7 +27,7 @@ describe("EventFactory", () => {
     const f = makeFactory();
     const e1 = f.responseStarted("gpt-4");
     const e2 = f.messageStarted("m1");
-    const e3 = f.messageDelta("m1", "hi");
+    const e3 = f.messageDelta("m1", textBlock("hi"));
 
     expect(e1.sequence).toBe(0);
     expect(e2.sequence).toBe(1);
@@ -62,32 +49,24 @@ describe("EventFactory", () => {
 
   it("should produce all event types", () => {
     const f = makeFactory();
-    const resp = makeCompletedResponse();
 
     expect(f.responseStarted("gpt-4").type).toBe("response.started");
     expect(f.responseWarning("warning msg", "WARN").type).toBe("response.warning");
     expect(f.responseWarning("only message").code).toBeUndefined();
     expect(f.responseAuxiliary({ usage: { totalTokens: 10 } }).type).toBe("response.auxiliary");
-    expect(f.responseCompleted(resp).type).toBe("response.completed");
+    expect(f.responseCompleted({ replay: [] }).type).toBe("response.completed");
 
     expect(f.messageStarted("m1").type).toBe("message.started");
-    expect(f.messageDelta("m1", "hi").type).toBe("message.delta");
-    const msgItem: MessageItem = { type: "message", role: "assistant", content: [{ type: "text", text: "hi" }] };
-    expect(f.messageCompleted(msgItem).type).toBe("message.completed");
+    expect(f.messageDelta("m1", textBlock("hi")).type).toBe("message.delta");
+    expect(f.messageCompleted("m1").type).toBe("message.completed");
 
     expect(f.reasoningStarted("r1", "full").type).toBe("reasoning.started");
-    expect(f.reasoningDelta("r1", { type: "text", text: "thinking..." }).type).toBe("reasoning.delta");
-    const reasonItem: ReasoningItem = {
-      type: "reasoning",
-      visibility: "full",
-      content: [{ type: "text", text: "..." }],
-    };
-    expect(f.reasoningCompleted(reasonItem).type).toBe("reasoning.completed");
+    expect(f.reasoningDelta("r1", textBlock("thinking...")).type).toBe("reasoning.delta");
+    expect(f.reasoningCompleted("r1").type).toBe("reasoning.completed");
 
     expect(f.toolCallStarted("tc1", "get_weather").type).toBe("tool_call.started");
     expect(f.toolCallDelta("tc1", { argumentsText: "{}" }).type).toBe("tool_call.delta");
-    const tcItem: ToolCallItem = { type: "tool_call", id: "tc1", name: "get_weather", argumentsText: "{}" };
-    expect(f.toolCallCompleted(tcItem).type).toBe("tool_call.completed");
+    expect(f.toolCallCompleted("tc1").type).toBe("tool_call.completed");
   });
 
   it("should accept synthetic backend", () => {
@@ -109,25 +88,10 @@ describe("aggregateEvents", () => {
     const events: AIStreamEvent[] = [
       f.responseStarted("gpt-4"),
       f.messageStarted("m1"),
-      f.messageDelta("m1", "Hello"),
-      f.messageDelta("m1", " world"),
-      f.messageCompleted({
-        type: "message",
-        role: "assistant",
-        content: [{ type: "text", text: "Hello world" }],
-      }),
-      f.responseCompleted(
-        makeCompletedResponse({
-          output: [
-            {
-              type: "message",
-              role: "assistant",
-              content: [{ type: "text", text: "Hello world" }],
-            },
-          ],
-          text: "Hello world",
-        }),
-      ),
+      f.messageDelta("m1", textBlock("Hello")),
+      f.messageDelta("m1", textBlock(" world")),
+      f.messageCompleted("m1"),
+      f.responseCompleted({ replay: [] }),
     ];
 
     const result = aggregateEvents(events);
@@ -141,23 +105,9 @@ describe("aggregateEvents", () => {
     const events: AIStreamEvent[] = [
       f.responseStarted("gpt-4"),
       f.reasoningStarted("r1", "full"),
-      f.reasoningDelta("r1", { type: "text", text: "Thinking step 1..." }),
-      f.reasoningCompleted({
-        type: "reasoning",
-        visibility: "full",
-        content: [{ type: "text", text: "Thinking step 1..." }],
-      }),
-      f.responseCompleted(
-        makeCompletedResponse({
-          output: [
-            {
-              type: "reasoning",
-              visibility: "full",
-              content: [{ type: "text", text: "Thinking step 1..." }],
-            },
-          ],
-        }),
-      ),
+      f.reasoningDelta("r1", textBlock("Thinking step 1...")),
+      f.reasoningCompleted("r1"),
+      f.responseCompleted({ replay: [] }),
     ];
 
     const result = aggregateEvents(events);
@@ -175,32 +125,8 @@ describe("aggregateEvents", () => {
       f.toolCallStarted("tc1", "get_weather"),
       f.toolCallDelta("tc1", { argumentsText: '{"city":' }),
       f.toolCallDelta("tc1", { argumentsText: '"Hangzhou"}' }),
-      f.toolCallCompleted({
-        type: "tool_call",
-        id: "tc1",
-        name: "get_weather",
-        argumentsText: '{"city":"Hangzhou"}',
-      }),
-      f.responseCompleted(
-        makeCompletedResponse({
-          output: [
-            {
-              type: "tool_call",
-              id: "tc1",
-              name: "get_weather",
-              argumentsText: '{"city":"Hangzhou"}',
-            },
-          ],
-          toolCalls: [
-            {
-              type: "tool_call",
-              id: "tc1",
-              name: "get_weather",
-              argumentsText: '{"city":"Hangzhou"}',
-            },
-          ],
-        }),
-      ),
+      f.toolCallCompleted("tc1"),
+      f.responseCompleted({ replay: [] }),
     ];
 
     const result = aggregateEvents(events);
@@ -221,11 +147,10 @@ describe("aggregateEvents", () => {
         usage: { outputTokens: 20 },
         auxiliary: { providerMetadata: { serviceTier: "default" } },
       }),
-      f.responseCompleted(
-        makeCompletedResponse({
-          usage: { inputTokens: 10, outputTokens: 20 },
-        }),
-      ),
+      f.responseCompleted({
+        replay: [],
+        usage: { inputTokens: 10, outputTokens: 20 },
+      }),
     ];
 
     const result = aggregateEvents(events);
@@ -243,11 +168,7 @@ describe("aggregateEvents", () => {
       f.responseStarted("gpt-4"),
       f.responseWarning("usage missing", "USAGE_MISSING"),
       f.responseWarning("replay degraded"),
-      f.responseCompleted(
-        makeCompletedResponse({
-          warnings: ["usage missing", "replay degraded"],
-        }),
-      ),
+      f.responseCompleted({ replay: [], warnings: ["usage missing", "replay degraded"] }),
     ];
 
     const result = aggregateEvents(events);
@@ -263,16 +184,15 @@ describe("aggregateEvents", () => {
           providerMetadata: { requestId: "req-123" },
         },
       }),
-      f.responseCompleted(
-        makeCompletedResponse({
-          auxiliary: {
-            usageSource: "stream",
-            providerUsage: { input_tokens: 10, output_tokens: 5 },
-            providerMetadata: { serviceTier: "default" },
-          },
-          warnings: ["synthetic warning"],
-        }),
-      ),
+      f.responseCompleted({
+        replay: [],
+        auxiliary: {
+          usageSource: "stream",
+          providerUsage: { input_tokens: 10, output_tokens: 5 },
+          providerMetadata: { serviceTier: "default" },
+        },
+        warnings: ["synthetic warning"],
+      }),
     ];
 
     const result = aggregateEvents(events);
@@ -290,28 +210,12 @@ describe("aggregateEvents", () => {
     const events: AIStreamEvent[] = [
       f.responseStarted("gpt-4"),
       f.messageStarted("m1"),
-      f.messageDelta("m1", "First. "),
-      f.messageCompleted({
-        type: "message",
-        role: "assistant",
-        content: [{ type: "text", text: "First. " }],
-      }),
+      f.messageDelta("m1", { type: "text", text: "First. " }),
+      f.messageCompleted("m1"),
       f.messageStarted("m2"),
-      f.messageDelta("m2", "Second."),
-      f.messageCompleted({
-        type: "message",
-        role: "assistant",
-        content: [{ type: "text", text: "Second." }],
-      }),
-      f.responseCompleted(
-        makeCompletedResponse({
-          output: [
-            { type: "message", role: "assistant", content: [{ type: "text", text: "First. " }] },
-            { type: "message", role: "assistant", content: [{ type: "text", text: "Second." }] },
-          ],
-          text: "First. Second.",
-        }),
-      ),
+      f.messageDelta("m2", { type: "text", text: "Second." }),
+      f.messageCompleted("m2"),
+      f.responseCompleted({ replay: [] }),
     ];
 
     const result = aggregateEvents(events);
@@ -325,38 +229,15 @@ describe("aggregateEvents", () => {
       // reasoning first
       f.reasoningStarted("r1", "full"),
       f.reasoningDelta("r1", { type: "text", text: "think..." }),
-      f.reasoningCompleted({
-        type: "reasoning",
-        visibility: "full",
-        content: [{ type: "text", text: "think..." }],
-      }),
+      f.reasoningCompleted("r1"),
       // then message
       f.messageStarted("m1"),
-      f.messageDelta("m1", "Answer."),
-      f.messageCompleted({
-        type: "message",
-        role: "assistant",
-        content: [{ type: "text", text: "Answer." }],
-      }),
+      f.messageDelta("m1", { type: "text", text: "Answer." }),
+      f.messageCompleted("m1"),
       // then tool_call
       f.toolCallStarted("tc1", "search"),
-      f.toolCallCompleted({
-        type: "tool_call",
-        id: "tc1",
-        name: "search",
-        argumentsText: "{}",
-      }),
-      f.responseCompleted(
-        makeCompletedResponse({
-          output: [
-            { type: "reasoning", visibility: "full", content: [{ type: "text", text: "think..." }] },
-            { type: "message", role: "assistant", content: [{ type: "text", text: "Answer." }] },
-            { type: "tool_call", id: "tc1", name: "search", argumentsText: "{}" },
-          ],
-          text: "Answer.",
-          toolCalls: [{ type: "tool_call", id: "tc1", name: "search", argumentsText: "{}" }],
-        }),
-      ),
+      f.toolCallCompleted("tc1"),
+      f.responseCompleted({ replay: [] }),
     ];
 
     const result = aggregateEvents(events);
@@ -372,19 +253,9 @@ describe("aggregateEvents", () => {
     const events: AIStreamEvent[] = [
       f.responseStarted("gpt-4"),
       f.messageStarted("m1"),
-      f.messageDelta("m1", "ok"),
-      f.messageCompleted({
-        type: "message",
-        role: "assistant",
-        content: [{ type: "text", text: "ok" }],
-      }),
-      f.responseCompleted(
-        makeCompletedResponse({
-          stopReason: "end_turn",
-          output: [{ type: "message", role: "assistant", content: [{ type: "text", text: "ok" }] }],
-          text: "ok",
-        }),
-      ),
+      f.messageDelta("m1", { type: "text", text: "ok" }),
+      f.messageCompleted("m1"),
+      f.responseCompleted({ replay: [], stopReason: "end_turn" }),
     ];
 
     const result = aggregateEvents(events);
@@ -396,10 +267,7 @@ describe("aggregateEvents", () => {
     const replay = [
       { type: "message" as const, role: "assistant" as const, content: [{ type: "text" as const, text: "prev" }] },
     ];
-    const events: AIStreamEvent[] = [
-      f.responseStarted("gpt-4"),
-      f.responseCompleted(makeCompletedResponse({ replay })),
-    ];
+    const events: AIStreamEvent[] = [f.responseStarted("gpt-4"), f.responseCompleted({ replay })];
 
     const result = aggregateEvents(events);
     expect(result.replay).toEqual(replay);
@@ -410,11 +278,7 @@ describe("aggregateEvents", () => {
     const events: AIStreamEvent[] = [
       f.responseStarted("gpt-4"),
       f.responseAuxiliary({ usage: { inputTokens: 10, outputTokens: 5 } }),
-      f.responseCompleted(
-        makeCompletedResponse({
-          usage: { inputTokens: 10, outputTokens: 5 },
-        }),
-      ),
+      f.responseCompleted({ replay: [], usage: { inputTokens: 10, outputTokens: 5 } }),
     ];
     const result = aggregateEvents(events);
     expect(result.usage?.inputTokens).toBe(10);
@@ -423,14 +287,18 @@ describe("aggregateEvents", () => {
 
   it("should throw if stream ends without response.completed", () => {
     const f = makeFactory();
-    const events: AIStreamEvent[] = [f.responseStarted("gpt-4"), f.messageStarted("m1"), f.messageDelta("m1", "hi")];
+    const events: AIStreamEvent[] = [
+      f.responseStarted("gpt-4"),
+      f.messageStarted("m1"),
+      f.messageDelta("m1", { type: "text", text: "hi" }),
+    ];
 
     expect(() => aggregateEvents(events)).toThrow();
   });
 
   it("should reject a stream without response.started", () => {
     const f = makeFactory();
-    expect(() => aggregateEvents([f.responseCompleted(makeCompletedResponse())])).toThrow("response.started");
+    expect(() => aggregateEvents([f.responseCompleted({ replay: [] })])).toThrow("response.started");
   });
 
   it("should reject duplicate response.started events", () => {
@@ -443,7 +311,7 @@ describe("aggregateEvents", () => {
   it("should reject non-contiguous event sequences", () => {
     const f = makeFactory();
     const started = f.responseStarted("gpt-4");
-    const completed = f.responseCompleted(makeCompletedResponse());
+    const completed = f.responseCompleted({ replay: [] });
     completed.sequence += 1;
 
     expect(() => aggregateEvents([started, completed])).toThrow("Expected event sequence");
@@ -452,7 +320,7 @@ describe("aggregateEvents", () => {
   it("should reject inconsistent response IDs", () => {
     const f = makeFactory();
     const started = f.responseStarted("gpt-4");
-    const completed = f.responseCompleted(makeCompletedResponse());
+    const completed = f.responseCompleted({ replay: [] });
     completed.responseId = "different-response";
 
     expect(() => aggregateEvents([started, completed])).toThrow("same responseId");
@@ -460,21 +328,14 @@ describe("aggregateEvents", () => {
 
   it("should reject events after response.completed", () => {
     const f = makeFactory();
-    const events = [
-      f.responseStarted("gpt-4"),
-      f.responseCompleted(makeCompletedResponse()),
-      f.responseWarning("too late"),
-    ];
+    const events = [f.responseStarted("gpt-4"), f.responseCompleted({ replay: [] }), f.responseWarning("too late")];
 
     expect(() => aggregateEvents(events)).toThrow("final stream event");
   });
 
   it("should handle empty output", () => {
     const f = makeFactory();
-    const events: AIStreamEvent[] = [
-      f.responseStarted("gpt-4"),
-      f.responseCompleted(makeCompletedResponse({ output: [], text: "" })),
-    ];
+    const events: AIStreamEvent[] = [f.responseStarted("gpt-4"), f.responseCompleted({ replay: [] })];
 
     const result = aggregateEvents(events);
     expect(result.output).toHaveLength(0);
@@ -483,10 +344,56 @@ describe("aggregateEvents", () => {
 
   it("should not include warnings when none are emitted", () => {
     const f = makeFactory();
-    const events: AIStreamEvent[] = [f.responseStarted("gpt-4"), f.responseCompleted(makeCompletedResponse())];
+    const events: AIStreamEvent[] = [f.responseStarted("gpt-4"), f.responseCompleted({ replay: [] })];
 
     const result = aggregateEvents(events);
     expect(result.warnings).toBeUndefined();
+  });
+});
+
+// ── 状态机负面测试 ─────────────────────────────────────────
+
+describe("aggregateEvents - state machine negative tests", () => {
+  it("should reject delta for item that was never started", () => {
+    const f = makeFactory();
+    const events: AIStreamEvent[] = [
+      f.responseStarted("gpt-4"),
+      f.messageDelta("ghost", { type: "text", text: "no started before me" }),
+    ];
+    expect(() => aggregateEvents(events)).toThrow("unknown item");
+  });
+
+  it("should reject completed for item that was never started", () => {
+    const f = makeFactory();
+    const events: AIStreamEvent[] = [f.responseStarted("gpt-4"), f.messageCompleted("ghost")];
+    expect(() => aggregateEvents(events)).toThrow("unknown item");
+  });
+
+  it("should reject duplicate item id", () => {
+    const f = makeFactory();
+    const events: AIStreamEvent[] = [f.responseStarted("gpt-4"), f.messageStarted("m1"), f.messageStarted("m1")];
+    expect(() => aggregateEvents(events)).toThrow("already active");
+  });
+
+  it("should reject type mismatch: message delta on started reasoning item", () => {
+    const f = makeFactory();
+    const events: AIStreamEvent[] = [
+      f.responseStarted("gpt-4"),
+      f.reasoningStarted("r1", "full"),
+      f.messageDelta("r1", { type: "text", text: "wrong type" }),
+    ];
+    expect(() => aggregateEvents(events)).toThrow("reasoning");
+  });
+
+  it("should reject response.completed when there are active items", () => {
+    const f = makeFactory();
+    const events: AIStreamEvent[] = [
+      f.responseStarted("gpt-4"),
+      f.messageStarted("m1"),
+      f.messageDelta("m1", { type: "text", text: "never completed" }),
+      f.responseCompleted({ replay: [] }),
+    ];
+    expect(() => aggregateEvents(events)).toThrow("active items");
   });
 });
 
@@ -498,18 +405,9 @@ describe("collectStream", () => {
     const events: AIStreamEvent[] = [
       f.responseStarted("gpt-4"),
       f.messageStarted("m1"),
-      f.messageDelta("m1", "Hello"),
-      f.messageCompleted({
-        type: "message",
-        role: "assistant",
-        content: [{ type: "text", text: "Hello" }],
-      }),
-      f.responseCompleted(
-        makeCompletedResponse({
-          output: [{ type: "message", role: "assistant", content: [{ type: "text", text: "Hello" }] }],
-          text: "Hello",
-        }),
-      ),
+      f.messageDelta("m1", { type: "text", text: "Hello" }),
+      f.messageCompleted("m1"),
+      f.responseCompleted({ replay: [] }),
     ];
 
     const result = await collectStream(iter(events));
