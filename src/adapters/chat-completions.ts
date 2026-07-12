@@ -21,6 +21,7 @@ import {
   contentBlocksToText,
 } from "../helpers/mapping.js";
 import { emitMalformedStreamWarning } from "../helpers/adapter-auxiliary.js";
+import { assertOpaqueReplayEnvelope, providerHttpError } from "../helpers/adapter-security.js";
 import { usageFromChatCompletions } from "../helpers/usage-mapping.js";
 
 import type { NormalizedRequest, AIStreamEvent, EventFactory, OutputItem, FetchFn } from "../index.js";
@@ -231,6 +232,57 @@ function rollbackTrailingAssistantMessages(messages: ChatMessage[]): void {
   }
 }
 
+function isChatReplayToolCall(value: unknown): value is ChatToolCall {
+  if (!value || typeof value !== "object") return false;
+  const entry = value as Record<string, unknown>;
+  if (typeof entry.id !== "string" || entry.type !== "function") return false;
+  const fn = entry.function;
+  if (!fn || typeof fn !== "object") return false;
+  const f = fn as Record<string, unknown>;
+  return typeof f.name === "string" && typeof f.arguments === "string";
+}
+
+function isChatReplayMessage(value: unknown): value is ChatMessage {
+  if (!value || typeof value !== "object") return false;
+  const msg = value as Record<string, unknown>;
+  const role = msg.role;
+  if (role !== "system" && role !== "user" && role !== "assistant" && role !== "tool") {
+    return false;
+  }
+  if (!(msg.content === null || typeof msg.content === "string")) {
+    return false;
+  }
+  if (msg.tool_calls !== undefined) {
+    if (!Array.isArray(msg.tool_calls) || !msg.tool_calls.every(isChatReplayToolCall)) {
+      return false;
+    }
+  }
+  if (msg.tool_call_id !== undefined && typeof msg.tool_call_id !== "string") {
+    return false;
+  }
+  if (msg.name !== undefined && typeof msg.name !== "string") {
+    return false;
+  }
+  return true;
+}
+
+function assertChatReplayMessages(messages: unknown, field: string): asserts messages is ChatMessage[] {
+  if (!Array.isArray(messages)) {
+    throw new AIRequestError(
+      `Invalid opaque replay payload: ${field} must be an array`,
+      "INVALID_OPAQUE_REPLAY",
+    );
+  }
+  for (let i = 0; i < messages.length; i++) {
+    if (!isChatReplayMessage(messages[i])) {
+      throw new AIRequestError(
+        `Invalid opaque replay payload: ${field}[${i}] is not a valid chat message`,
+        "INVALID_OPAQUE_REPLAY",
+      );
+    }
+  }
+}
+
 function buildAssistantReplayMessage(params: {
   content: string;
   reasoningByField: ReadonlyMap<ReasoningFieldName, string>;
@@ -340,19 +392,21 @@ export class ChatCompletionsAdapter extends AdapterBase {
         }
         case "opaque": {
           // Try to restore from opaque replay
-          if (item.purpose === "replay" && typeof item.payload === "object" && item.payload !== null) {
-            const payload = item.payload as Record<string, unknown>;
-            if (payload.role === "assistant" && typeof payload.content === "string") {
-              messages.push({ role: "assistant", content: payload.content as string });
-            } else if (payload.replaceCanonical === true && Array.isArray(payload.messages)) {
-              rollbackTrailingAssistantMessages(messages);
-              for (const m of payload.messages as ChatMessage[]) {
-                messages.push(m);
-              }
-            } else if (Array.isArray(payload.messages)) {
-              for (const m of payload.messages as ChatMessage[]) {
-                messages.push(m);
-              }
+          if (item.purpose !== "replay") break;
+          assertOpaqueReplayEnvelope(item.payload);
+          const payload = item.payload as Record<string, unknown>;
+          if (payload.role === "assistant" && typeof payload.content === "string") {
+            messages.push({ role: "assistant", content: payload.content });
+          } else if (payload.replaceCanonical === true && "messages" in payload) {
+            assertChatReplayMessages(payload.messages, "messages");
+            rollbackTrailingAssistantMessages(messages);
+            for (const m of payload.messages) {
+              messages.push(m);
+            }
+          } else if ("messages" in payload) {
+            assertChatReplayMessages(payload.messages, "messages");
+            for (const m of payload.messages) {
+              messages.push(m);
             }
           }
           break;
@@ -419,13 +473,8 @@ export class ChatCompletionsAdapter extends AdapterBase {
     }
 
     if (!response.ok) {
-      const errorText = await response.text().catch(() => "unknown error");
-      throw new AIProviderError(
-        `Chat Completions API error ${response.status}: ${errorText}`,
-        "PROVIDER_ERROR",
-        response.status,
-        errorText,
-      );
+      const errorBody = await response.text().catch(() => "");
+      throw providerHttpError(response.status, errorBody);
     }
 
     const reader = response.body?.getReader();

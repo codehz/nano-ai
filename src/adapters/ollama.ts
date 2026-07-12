@@ -27,6 +27,7 @@ import {
   contentBlocksToText,
 } from "../helpers/mapping.js";
 import { emitMalformedStreamWarning } from "../helpers/adapter-auxiliary.js";
+import { assertOpaqueReplayEnvelope, providerHttpError } from "../helpers/adapter-security.js";
 import { usageFromOllama } from "../helpers/usage-mapping.js";
 
 import type { NormalizedRequest, AIStreamEvent, EventFactory, OutputItem, FetchFn } from "../index.js";
@@ -339,34 +340,36 @@ export class OllamaAdapter extends AdapterBase {
         }
         case "opaque": {
           // Best-effort restore from opaque replay (local ids stripped before wire)
-          if (
-            item.source === "ollama" &&
-            item.purpose === "replay" &&
-            typeof item.payload === "object" &&
-            item.payload !== null
-          ) {
-            const payload = item.payload as Record<string, unknown>;
-            if (payload.role === "assistant" && typeof payload.content === "string") {
-              rollbackTrailingAssistantMessages(messages);
-              const replayToolCalls = isOllamaReplayToolCalls(payload.tool_calls)
-                ? payload.tool_calls
-                : undefined;
-              // Record name → id order for best-effort tool_result correlation (local only)
-              if (replayToolCalls) {
-                for (const tc of replayToolCalls) {
-                  if (tc.id) {
-                    const queue = callIdsByName.get(tc.function.name) ?? [];
-                    queue.push(tc.id);
-                    callIdsByName.set(tc.function.name, queue);
-                  }
+          if (item.source !== "ollama" || item.purpose !== "replay") break;
+          assertOpaqueReplayEnvelope(item.payload);
+          const payload = item.payload as Record<string, unknown>;
+          if (payload.role === "assistant" && typeof payload.content === "string") {
+            rollbackTrailingAssistantMessages(messages);
+            let replayToolCalls: OllamaReplayToolCall[] | undefined;
+            if ("tool_calls" in payload && payload.tool_calls !== undefined) {
+              if (!isOllamaReplayToolCalls(payload.tool_calls)) {
+                throw new AIRequestError(
+                  "Invalid opaque replay payload: tool_calls is not a valid ollama tool_calls array",
+                  "INVALID_OPAQUE_REPLAY",
+                );
+              }
+              replayToolCalls = payload.tool_calls;
+            }
+            // Record name → id order for best-effort tool_result correlation (local only)
+            if (replayToolCalls) {
+              for (const tc of replayToolCalls) {
+                if (tc.id) {
+                  const queue = callIdsByName.get(tc.function.name) ?? [];
+                  queue.push(tc.id);
+                  callIdsByName.set(tc.function.name, queue);
                 }
               }
-              messages.push({
-                role: "assistant",
-                content: payload.content,
-                tool_calls: replayToolCalls ? toWireOllamaToolCalls(replayToolCalls) : undefined,
-              });
             }
+            messages.push({
+              role: "assistant",
+              content: payload.content,
+              tool_calls: replayToolCalls ? toWireOllamaToolCalls(replayToolCalls) : undefined,
+            });
           }
           break;
         }
@@ -434,13 +437,8 @@ export class OllamaAdapter extends AdapterBase {
     }
 
     if (!response.ok) {
-      const errorText = await response.text().catch(() => "unknown error");
-      throw new AIProviderError(
-        `Ollama API error ${response.status}: ${errorText}`,
-        "PROVIDER_ERROR",
-        response.status,
-        errorText,
-      );
+      const errorBody = await response.text().catch(() => "");
+      throw providerHttpError(response.status, errorBody);
     }
 
     const reader = response.body?.getReader();

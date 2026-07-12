@@ -716,6 +716,50 @@ describe("MessagesAdapter - error handling", () => {
     await expect(collectStream(adapter.stream(makeRequest()))).rejects.toBeInstanceOf(AIProviderError);
   });
 
+  it("should sanitize HTML HTTP error bodies", async () => {
+    const html = "<!DOCTYPE html><html>leak</html>";
+    const adapter = new MessagesAdapter({
+      apiKey: "bad-key",
+      fetch: async () => new Response(html, { status: 500 }),
+    });
+
+    try {
+      await collectStream(adapter.stream(makeRequest()));
+      expect.unreachable("expected throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(AIProviderError);
+      const e = err as AIProviderError;
+      expect(e.responseBody).toContain("Body omitted");
+      expect(e.responseBody).not.toContain("leak");
+    }
+  });
+
+  it("should reject invalid messages opaque content blocks", async () => {
+    const adapter = new MessagesAdapter({
+      apiKey: "test-key",
+      fetch: async () => {
+        throw new Error("fetch should not be called");
+      },
+    });
+
+    await expect(
+      collectStream(
+        adapter.stream(
+          makeRequest({
+            input: [
+              {
+                type: "opaque",
+                source: "messages",
+                purpose: "replay",
+                payload: { role: "assistant", content: [{ type: "text" }] },
+              },
+            ],
+          }),
+        ),
+      ),
+    ).rejects.toMatchObject({ name: "AIRequestError", code: "INVALID_OPAQUE_REPLAY" });
+  });
+
   it("should emit warning on SSE error event", async () => {
     const sse = [
       `event: error\ndata: ${JSON.stringify({ type: "error", error: { type: "overloaded_error", message: "Overloaded" } })}\n\n`,

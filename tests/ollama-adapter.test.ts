@@ -543,6 +543,52 @@ describe("OllamaAdapter - error handling", () => {
     await expect(collectStream(adapter.stream(makeRequest()))).rejects.toBeInstanceOf(AIProviderError);
   });
 
+  it("should sanitize HTML HTTP error bodies", async () => {
+    const html = "<!DOCTYPE html><html>db path /tmp/x</html>";
+    const adapter = new OllamaAdapter({
+      fetch: async () => new Response(html, { status: 500 }),
+    });
+
+    try {
+      await collectStream(adapter.stream(makeRequest()));
+      expect.unreachable("expected throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(AIProviderError);
+      const e = err as AIProviderError;
+      expect(e.responseBody).toContain("Body omitted");
+      expect(e.responseBody).not.toContain("/tmp/x");
+    }
+  });
+
+  it("should reject invalid ollama opaque tool_calls", async () => {
+    const adapter = new OllamaAdapter({
+      fetch: async () => {
+        throw new Error("fetch should not be called");
+      },
+    });
+
+    await expect(
+      collectStream(
+        adapter.stream(
+          makeRequest({
+            input: [
+              {
+                type: "opaque",
+                source: "ollama",
+                purpose: "replay",
+                payload: {
+                  role: "assistant",
+                  content: "",
+                  tool_calls: [{ function: { name: 1 } }],
+                },
+              },
+            ],
+          }),
+        ),
+      ),
+    ).rejects.toMatchObject({ name: "AIRequestError", code: "INVALID_OPAQUE_REPLAY" });
+  });
+
   it("should handle incomplete stream (no done signal)", async () => {
     const chunks = [
       `{"model":"llama3.2","created_at":"2024-01-01T00:00:00Z","message":{"role":"assistant","content":"Partial"},"done":false}\n`,

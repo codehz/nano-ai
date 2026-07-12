@@ -22,6 +22,7 @@ import {
   contentBlocksToText,
 } from "../helpers/mapping.js";
 import { emitMalformedStreamWarning } from "../helpers/adapter-auxiliary.js";
+import { assertOpaqueReplayEnvelope, providerHttpError } from "../helpers/adapter-security.js";
 import { usageFromOpenAIResponses } from "../helpers/usage-mapping.js";
 
 import { parseSSEEvents } from "../helpers/sse-parser.js";
@@ -295,16 +296,18 @@ export class ResponsesAdapter extends AdapterBase {
         case "opaque": {
           // Canonical replay items take priority; item_reference is only a fallback
           // when the consumer kept only the provider continuation id.
-          if (
-            item.source === "responses" &&
-            item.purpose === "replay" &&
-            typeof item.payload === "object" &&
-            item.payload !== null &&
-            "id" in (item.payload as Record<string, unknown>)
-          ) {
-            const { id } = item.payload as Record<string, unknown>;
-            if (typeof id === "string" && !hasReplayCanonicalInput(input)) {
-              input.push({ type: "item_reference", id });
+          if (item.source !== "responses" || item.purpose !== "replay") break;
+          assertOpaqueReplayEnvelope(item.payload);
+          const payload = item.payload as Record<string, unknown>;
+          if ("id" in payload) {
+            if (typeof payload.id !== "string" || payload.id.length === 0 || payload.id.length > 256) {
+              throw new AIRequestError(
+                "Invalid opaque replay payload: id must be a non-empty string (max 256)",
+                "INVALID_OPAQUE_REPLAY",
+              );
+            }
+            if (!hasReplayCanonicalInput(input)) {
+              input.push({ type: "item_reference", id: payload.id });
             }
           }
           break;
@@ -372,13 +375,8 @@ export class ResponsesAdapter extends AdapterBase {
     }
 
     if (!response.ok) {
-      const errorText = await response.text().catch(() => "unknown error");
-      throw new AIProviderError(
-        `Responses API error ${response.status}: ${errorText}`,
-        "PROVIDER_ERROR",
-        response.status,
-        errorText,
-      );
+      const errorBody = await response.text().catch(() => "");
+      throw providerHttpError(response.status, errorBody);
     }
 
     const reader = response.body?.getReader();

@@ -40,3 +40,16 @@ export {
   usageFromOllama,
   usageFromOpenAIResponses,
 } from "./usage-mapping.js";
+
+export {
+  assertOpaqueReplayEnvelope,
+  extractProviderErrorMessage,
+  measureJsonDepth,
+  providerHttpError,
+  validateOpaqueReplayEnvelope,
+  MAX_OPAQUE_JSON_DEPTH,
+  MAX_OPAQUE_PAYLOAD_BYTES,
+  PROVIDER_ERROR_MESSAGE_MAX_LEN,
+  PROVIDER_ERROR_RAW_BODY_THRESHOLD,
+} from "./adapter-security.js";
+export type { OpaqueEnvelopeResult } from "./adapter-security.js";
