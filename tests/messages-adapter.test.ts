@@ -124,7 +124,6 @@ describe("MessagesAdapter - text streaming", () => {
     expect(result.usage?.cachedInputTokens).toBe(7);
     expect(result.usage?.cacheWriteInputTokens).toBe(3);
     expect(result.usage?.totalTokens).toBe(24);
-    expect(result.usage?.billableInputTokens).toBe(13);
   });
 
   it("should handle SSE events split across transport chunks", async () => {

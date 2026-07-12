@@ -22,8 +22,6 @@ describe("usage-mapping", () => {
       totalTokens: 140,
       cachedInputTokens: 30,
       reasoningTokens: 10,
-      billableInputTokens: 70,
-      billableOutputTokens: 30,
     });
   });
 
@@ -38,8 +36,6 @@ describe("usage-mapping", () => {
 
     expect(usage.cachedInputTokens).toBe(5);
     expect(usage.reasoningTokens).toBe(8);
-    expect(usage.billableInputTokens).toBe(45);
-    expect(usage.billableOutputTokens).toBe(12);
   });
 
   it("maps Anthropic messages cache fields and total", () => {
@@ -55,8 +51,6 @@ describe("usage-mapping", () => {
     expect(usage.cacheWriteInputTokens).toBe(3);
     expect(usage.cachedInputTokens).toBe(7);
     expect(usage.totalTokens).toBe(24);
-    expect(usage.billableInputTokens).toBe(13);
-    expect(usage.billableOutputTokens).toBe(4);
     expect(usage.inputTokens! + usage.outputTokens!).toBe(usage.totalTokens!);
   });
 
@@ -71,7 +65,6 @@ describe("usage-mapping", () => {
     expect(usage.totalTokens).toBe(14);
     expect(usage.cachedInputTokens).toBeUndefined();
     expect(usage.cacheWriteInputTokens).toBeUndefined();
-    expect(usage.billableInputTokens).toBe(10);
     expect(usage.inputTokens! + usage.outputTokens!).toBe(usage.totalTokens!);
   });
 
@@ -86,7 +79,6 @@ describe("usage-mapping", () => {
     expect(usage.cachedInputTokens).toBe(7);
     expect(usage.cacheWriteInputTokens).toBeUndefined();
     expect(usage.totalTokens).toBe(21);
-    expect(usage.billableInputTokens).toBe(10);
     expect(usage.inputTokens! + usage.outputTokens!).toBe(usage.totalTokens!);
   });
 
@@ -101,7 +93,6 @@ describe("usage-mapping", () => {
     expect(usage.cachedInputTokens).toBeUndefined();
     expect(usage.cacheWriteInputTokens).toBe(3);
     expect(usage.totalTokens).toBe(17);
-    expect(usage.billableInputTokens).toBe(13);
     expect(usage.inputTokens! + usage.outputTokens!).toBe(usage.totalTokens!);
   });
 
@@ -124,13 +115,11 @@ describe("usage-mapping", () => {
     expect(usage.totalTokens).toBeUndefined();
   });
 
-  it("maps Ollama counts with billable mirrors", () => {
+  it("maps Ollama counts", () => {
     expect(usageFromOllama({ prompt_eval_count: 15, eval_count: 5 })).toEqual({
       inputTokens: 15,
       outputTokens: 5,
       totalTokens: 20,
-      billableInputTokens: 15,
-      billableOutputTokens: 5,
     });
   });
 

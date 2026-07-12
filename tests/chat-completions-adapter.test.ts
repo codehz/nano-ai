@@ -272,8 +272,6 @@ describe("ChatCompletionsAdapter - tool calls", () => {
     const result = await collectStream(adapter.stream(makeRequest()));
     expect(result.usage?.cachedInputTokens).toBe(30);
     expect(result.usage?.reasoningTokens).toBe(10);
-    expect(result.usage?.billableInputTokens).toBe(70);
-    expect(result.usage?.billableOutputTokens).toBe(30);
   });
 
   it("should produce message + tool calls in same response", async () => {
