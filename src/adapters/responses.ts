@@ -388,6 +388,7 @@ export class ResponsesAdapter extends AdapterBase {
     const output: OutputItem[] = [];
     const decoder = new TextDecoder();
     let buffer = "";
+    let streamDone = false;
     let completedResponse: ResponsesAPIResponse | undefined;
     let completedEmitted = false;
     let unknownEventsWarned = false;
@@ -505,10 +506,17 @@ export class ResponsesAdapter extends AdapterBase {
           }
         }
 
-        if (done) break;
+        if (done) {
+          streamDone = true;
+          break;
+        }
       }
     } finally {
-      reader.releaseLock();
+      try {
+        if (!streamDone) await reader.cancel();
+      } finally {
+        reader.releaseLock();
+      }
     }
 
     if (buffer.trim().length > 0) {

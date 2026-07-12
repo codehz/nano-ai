@@ -485,6 +485,7 @@ export class ChatCompletionsAdapter extends AdapterBase {
     const output: OutputItem[] = [];
     const decoder = new TextDecoder();
     let buffer = "";
+    let streamDone = false;
 
     // 累积状态 — 支持多 choice，此处只取 index 0
     let responseId: string | undefined;
@@ -740,10 +741,17 @@ export class ChatCompletionsAdapter extends AdapterBase {
           }
         }
 
-        if (done) break;
+        if (done) {
+          streamDone = true;
+          break;
+        }
       }
     } finally {
-      reader.releaseLock();
+      try {
+        if (!streamDone) await reader.cancel();
+      } finally {
+        reader.releaseLock();
+      }
     }
 
     if (buffer.trim().length > 0) {

@@ -654,6 +654,64 @@ describe("ChatCompletionsAdapter - request building", () => {
 // ── 错误处理 ──────────────────────────────────────────────────
 
 describe("ChatCompletionsAdapter - error handling", () => {
+  it("should cancel the response body when the consumer stops early", async () => {
+    let cancelled = false;
+    const encoder = new TextEncoder();
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(
+          encoder.encode(
+            'data: {"id":"chatcmpl-cancel","choices":[{"index":0,"delta":{"content":"Hi"},"finish_reason":null}]}\n',
+          ),
+        );
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const adapter = new ChatCompletionsAdapter({
+      apiKey: "test-key",
+      fetch: async () => new Response(body, { status: 200 }),
+    });
+    const iterator = adapter.stream(makeRequest())[Symbol.asyncIterator]();
+
+    await iterator.next();
+    await iterator.next();
+    await iterator.return?.();
+
+    expect(cancelled).toBe(true);
+    expect(body.locked).toBe(false);
+  });
+
+  it("should cancel the response body when the consumer stops early", async () => {
+    let cancelled = false;
+    const encoder = new TextEncoder();
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(
+          encoder.encode(
+            'data: {"id":"chatcmpl-cancel","choices":[{"index":0,"delta":{"content":"Hi"},"finish_reason":null}]}\n',
+          ),
+        );
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const adapter = new ChatCompletionsAdapter({
+      apiKey: "test-key",
+      fetch: async () => new Response(body, { status: 200 }),
+    });
+    const iterator = adapter.stream(makeRequest())[Symbol.asyncIterator]();
+
+    await iterator.next();
+    await iterator.next();
+    await iterator.return?.();
+
+    expect(cancelled).toBe(true);
+    expect(body.locked).toBe(false);
+  });
+
   it("should throw on HTTP error", async () => {
     const errorResponse = new Response("Unauthorized", { status: 401 });
     const adapter = new ChatCompletionsAdapter({
