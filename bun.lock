@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "nano-ai",
+      "name": "@codehz/ai",
       "devDependencies": {
         "@types/bun": "latest",
         "oxfmt": "^0.58.0",

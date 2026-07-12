@@ -1,11 +1,11 @@
-# nano-ai
+# @codehz/ai
 
-统一流式 AI 客户端，提供一套 canonical API，对接真实模型后端与面向测试的回调驱动 `MockAdapter`（`responses` / `messages` / `chat.completions` / `ollama` / `mock`）。
+统一流式 AI 客户端，提供一套 canonical API，对接真实模型后端与面向测试的回调驱动 `MockAdapter`（`responses` / `messages` / `chat-completions` / `ollama` / `mock`）。
 
 ## 安装
 
 ```bash
-bun add nano-ai
+bun add @codehz/ai
 ```
 
 依赖：Bun（内置 `fetch`、`crypto`），无需额外运行时依赖。
@@ -13,7 +13,7 @@ bun add nano-ai
 ## 快速开始
 
 ```ts
-import { createAIClient, ResponsesAdapter } from "nano-ai";
+import { createAIClient, ResponsesAdapter } from "@codehz/ai";
 
 const client = createAIClient({
   adapter: new ResponsesAdapter({ apiKey: process.env.OPENAI_API_KEY! }),
@@ -69,22 +69,22 @@ response.started → (item.started → item.delta* → item.completed)* → resp
 
 事件类型：
 
-| 事件                                  | 含义                            |
-| ------------------------------------- | ------------------------------- |
-| `response.started`                    | 响应开始                        |
-| `message.{started,delta,completed}`   | 消息输出                        |
-| `reasoning.{started,delta,completed}` | 思维链                          |
-| `tool_call.{started,delta,completed}` | 工具调用                        |
-| `response.warning`                    | 非致命警告                      |
-| `response.auxiliary`                  | usage / billing 辅助信息        |
-| `response.completed`                  | 响应结束，内含完整 `AIResponse` |
+| 事件                                  | 含义                                        |
+| ------------------------------------- | ------------------------------------------- |
+| `response.started`                    | 响应开始                                    |
+| `message.{started,delta,completed}`   | 消息输出                                    |
+| `reasoning.{started,delta,completed}` | 思维链                                      |
+| `tool_call.{started,delta,completed}` | 工具调用                                    |
+| `response.warning`                    | 非致命警告                                  |
+| `response.auxiliary`                  | usage / billing 辅助信息                    |
+| `response.completed`                  | 响应结束，携带 replay、终止原因及最终元数据 |
 
 ### 统一终结结果
 
 流结束后可通过 `collectStream()` 聚合为 `AIResponse`：
 
 ```ts
-import { collectStream } from "nano-ai";
+import { collectStream } from "@codehz/ai";
 
 const response = await collectStream(client.stream({ input }));
 console.log(response.text); // 全部文本
@@ -95,17 +95,18 @@ console.log(response.replay); // 续接材料
 
 `AIResponse` 包含：
 
-| 字段         | 类型             | 说明                     |
-| ------------ | ---------------- | ------------------------ |
-| `output`     | `OutputItem[]`   | 当前轮输出               |
-| `replay`     | `ReplayItem[]`   | 续接材料（下次请求带回） |
-| `text`       | `string`         | 全部文本拼接             |
-| `toolCalls`  | `ToolCallItem[]` | 工具调用                 |
-| `stopReason` | `StopReason`     | 终止原因                 |
-| `usage`      | `Usage`          | token 统计               |
-| `billing`    | `BillingInfo`    | 计费信息                 |
-| `warnings`   | `string[]`       | 非致命警告               |
-| `backend`    | `BackendTrace`   | 调用链路元数据           |
+| 字段         | 类型             | 说明                      |
+| ------------ | ---------------- | ------------------------- |
+| `output`     | `OutputItem[]`   | 当前轮输出                |
+| `replay`     | `ReplayItem[]`   | 续接材料（下次请求带回）  |
+| `text`       | `string`         | 全部文本拼接              |
+| `toolCalls`  | `ToolCallItem[]` | 工具调用                  |
+| `stopReason` | `StopReason?`    | 终止原因（可选）          |
+| `usage`      | `Usage?`         | token 统计（可选）        |
+| `billing`    | `BillingInfo?`   | 计费信息（可选）          |
+| `auxiliary`  | `AuxiliaryInfo?` | Provider 辅助信息（可选） |
+| `warnings`   | `string[]?`      | 非致命警告（可选）        |
+| `backend`    | `BackendTrace`   | 调用链路元数据            |
 
 流式 `message.delta` / `reasoning.delta` 保持后端分片粒度；完成态 `output` 中的
 `message` / `reasoning` 会合并相邻 `text` content blocks（直接拼接且不添加分隔符），
@@ -129,7 +130,7 @@ import {
   OllamaAdapter,
   MockAdapter,
   withMockStreaming,
-} from "nano-ai";
+} from "@codehz/ai";
 
 // OpenAI Responses API
 const responses = new ResponsesAdapter({ apiKey: "sk-..." });
@@ -175,8 +176,8 @@ adapter.capabilities.usage; // "stream" | "final" | "none"
 adapter.capabilities.toolResultOutcomes;
 ```
 
-`nativeStreaming` 已由 `capabilities` 直接替代。响应级 `backend.isSyntheticStream` 根据
-`textStreaming === "synthetic"` 推导；具体响应内容仍应从本次事件流、warning 和 `replay` 判断。
+响应级 `backend.isSyntheticStream` 根据 `textStreaming === "synthetic"` 推导；具体响应内容仍应从
+本次事件流、warning 和 `replay` 判断。
 
 ## Mock 后端
 
@@ -208,7 +209,7 @@ const handler = withMockStreaming(
 - 可用 `assertMockRequest()` 验证调用方是否把上一轮 `replay` 和当前 `tool_result` 正确带回
 
 ```ts
-import { assertMockRequest, createAIClient, MockAdapter } from "nano-ai";
+import { assertMockRequest, createAIClient, MockAdapter } from "@codehz/ai";
 
 const client = createAIClient({
   adapter: new MockAdapter({
@@ -325,7 +326,7 @@ const r2 = await collectStream(client.stream({ input, tools }));
 非流式后端可通过 `syntheticStream()` 包装为规范事件流：
 
 ```ts
-import { syntheticStream } from "nano-ai";
+import { syntheticStream } from "@codehz/ai";
 
 const events = syntheticStream({
   model: "gpt-4o",
@@ -345,7 +346,7 @@ for await (const event of events) {
 `AuxiliaryCollector` 提供分层 best-effort 采集（流事件 → headers → lookup → derived）：
 
 ```ts
-import { AuxiliaryCollector } from "nano-ai";
+import { AuxiliaryCollector } from "@codehz/ai";
 
 const collector = new AuxiliaryCollector();
 collector.recordUsage({ inputTokens: 10, outputTokens: 5 }, "stream");

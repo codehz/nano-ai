@@ -1,5 +1,5 @@
 /**
- * nano-ai — 统一流式 AI 客户端
+ * @codehz/ai — 统一流式 AI 客户端
  *
  * 对外只暴露一个 canonical 主入口：client.stream()
  */
