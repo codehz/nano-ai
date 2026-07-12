@@ -318,7 +318,14 @@ function buildAssistantReplayMessage(params: {
 
 export class ChatCompletionsAdapter extends AdapterBase {
   readonly kind = "chat-completions" as const;
-  readonly nativeStreaming = true;
+  readonly capabilities = {
+    textStreaming: "native",
+    reasoningStreaming: "native",
+    toolCallStreaming: "native",
+    replay: "opaque",
+    usage: "final",
+    toolResultOutcomes: ["success"],
+  } as const;
 
   private apiKey: string;
   private baseUrl: string;

@@ -55,7 +55,7 @@ export type StreamResult = {
 
 export abstract class AdapterBase implements BackendAdapter {
   abstract readonly kind: "chat-completions" | "messages" | "responses" | "ollama" | "mock";
-  abstract readonly nativeStreaming: boolean;
+  abstract readonly capabilities: import("../types/index.js").AdapterCapabilities;
 
   /**
    * stream 模板方法：
@@ -66,7 +66,7 @@ export abstract class AdapterBase implements BackendAdapter {
   async *stream(request: NormalizedRequest): AsyncIterable<AIStreamEvent> {
     const factory = createEventFactory({
       responseId: request.requestId,
-      backend: { kind: this.kind, isSynthetic: !this.nativeStreaming },
+      backend: { kind: this.kind, isSynthetic: this.capabilities.textStreaming === "synthetic" },
     });
 
     yield factory.responseStarted(request.model);
@@ -138,7 +138,7 @@ export abstract class AdapterBase implements BackendAdapter {
         requestId: request.requestId,
         rawResponseId: result.rawResponseId,
         adapter: this.kind,
-        isSyntheticStream: !this.nativeStreaming,
+        isSyntheticStream: this.capabilities.textStreaming === "synthetic",
         metadataSources: result.metadataSources,
         warnings,
       },

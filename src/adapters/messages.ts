@@ -298,7 +298,14 @@ function buildStreamMetadata(options: {
 
 export class MessagesAdapter extends AdapterBase {
   readonly kind = "messages" as const;
-  readonly nativeStreaming = true;
+  readonly capabilities = {
+    textStreaming: "native",
+    reasoningStreaming: "native",
+    toolCallStreaming: "synthetic",
+    replay: "opaque",
+    usage: "stream",
+    toolResultOutcomes: ["success", "error"],
+  } as const;
 
   private apiKey: string;
   private apiVersion: string;

@@ -159,14 +159,20 @@ const mock = new MockAdapter({
 });
 ```
 
-公开 adapter 接口只暴露稳定的标识与流式来源：
+公开 adapter 接口暴露稳定标识和各维度能力：
 
 ```ts
 adapter.kind; // "responses" | "messages" | "chat-completions" | ...
-adapter.nativeStreaming; // 是否为 provider 原生流，而不是本地模拟分片
+adapter.capabilities.textStreaming; // "native" | "synthetic" | "none"
+adapter.capabilities.reasoningStreaming;
+adapter.capabilities.toolCallStreaming;
+adapter.capabilities.replay; // "canonical" | "opaque" | "none"
+adapter.capabilities.usage; // "stream" | "final" | "none"
+adapter.capabilities.toolResultOutcomes;
 ```
 
-像 reasoning、tool call、`replay` 材料这类响应特征，应直接从本次事件流、warning 和 `replay` 内容判断。
+`nativeStreaming` 已由 `capabilities` 直接替代。响应级 `backend.isSyntheticStream` 根据
+`textStreaming === "synthetic"` 推导；具体响应内容仍应从本次事件流、warning 和 `replay` 判断。
 
 ## Mock 后端
 

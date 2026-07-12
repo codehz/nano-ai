@@ -8,7 +8,14 @@ import type { AIRequest, NormalizedRequest, AIStreamEvent, BackendAdapter, Conte
 function createMockAdapter(kind: BackendAdapter["kind"] = "responses"): BackendAdapter {
   return {
     kind,
-    nativeStreaming: true,
+    capabilities: {
+      textStreaming: "native",
+      reasoningStreaming: "native",
+      toolCallStreaming: "native",
+      replay: "canonical",
+      usage: "final",
+      toolResultOutcomes: ["success"],
+    } as const,
     stream(_request: NormalizedRequest): AsyncIterable<AIStreamEvent> {
       return (async function* () {})();
     },

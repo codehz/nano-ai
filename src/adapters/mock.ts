@@ -264,7 +264,14 @@ export function assertMockRequest(
 
 export class MockAdapter extends AdapterBase {
   readonly kind = "mock" as const;
-  readonly nativeStreaming = false;
+  readonly capabilities = {
+    textStreaming: "synthetic",
+    reasoningStreaming: "synthetic",
+    toolCallStreaming: "synthetic",
+    replay: "canonical",
+    usage: "final",
+    toolResultOutcomes: ["success", "error", "rejected"],
+  } as const;
 
   private readonly handler: MockHandler;
   private readonly providerMetadata?: Record<string, unknown>;
