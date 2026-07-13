@@ -25,7 +25,6 @@ import { emitMalformedStreamWarning } from "../helpers/adapter-auxiliary.js";
 import { assertOpaqueReplayEnvelope, providerHttpError } from "../helpers/adapter-security.js";
 import { usageFromOpenAIResponses } from "../helpers/usage-mapping.js";
 import { NormalizedRequestMapper, splitSSEFrames, IncrementalStreamParser } from "../helpers/index.js";
-import type { ProviderProfile } from "../helpers/index.js";
 
 import type { NormalizedRequest, AIStreamEvent, EventFactory, OutputItem, FetchFn } from "../index.js";
 
@@ -72,23 +71,7 @@ type ResponsesTool = {
   input_schema: Record<string, unknown>;
 };
 
-// ── ProviderProfile & Mapper ────────────────────────────────────
-
-const profile: ProviderProfile = {
-  kind: "responses",
-  instructionsMode: "instructions_field",
-  supportedBlockTypes: ["text", "json"] as const,
-  reasoningBlockTypes: ["text"] as const,
-  capabilities: {
-    textStreaming: "native",
-    reasoningStreaming: "native",
-    toolCallStreaming: "native",
-    replay: "opaque",
-    usage: "final",
-  },
-};
-
-const mapper = new NormalizedRequestMapper(profile);
+const mapper = new NormalizedRequestMapper("responses");
 
 // ── SSE 事件类型 ──────────────────────────────────────────────
 
@@ -98,8 +81,8 @@ type ResponsesSSEEvent =
   | { type: "response.output_text.done"; data: { item_id: string; text: string } }
   | { type: "response.reasoning.delta"; data: { item_id: string; delta: string } }
   | { type: "response.reasoning.done"; data: { item_id: string; text: string } }
-  | { type: "response.tool_call.delta"; data: { item_id: string; delta: { arguments?: string } } }
-  | { type: "response.tool_call.done"; data: { item_id: string; arguments?: string; name?: string } }
+  | { type: "response.function_call_arguments.delta"; data: { item_id: string; delta: string } }
+  | { type: "response.function_call_arguments.done"; data: { item_id: string; arguments: string } }
   | { type: "response.completed"; data: { response: ResponsesAPIResponse } }
   | { type: "response.failed"; data: { response: ResponsesAPIResponse } }
   | { type: "response.incomplete"; data: { response: ResponsesAPIResponse } }
@@ -114,8 +97,6 @@ const KNOWN_RESPONSES_SSE_TYPES = new Set([
   "response.output_text.done",
   "response.reasoning.delta",
   "response.reasoning.done",
-  "response.tool_call.delta",
-  "response.tool_call.done",
   "response.function_call_arguments.delta",
   "response.function_call_arguments.done",
   "response.content_part.added",
@@ -186,7 +167,7 @@ function canonicalToResponsesBlock(b: import("../index.js").ContentBlock): Respo
 
 export class ResponsesAdapter extends AdapterBase {
   readonly kind = "responses" as const;
-  readonly capabilities = profile.capabilities;
+  readonly isSyntheticStream = false;
 
   private apiKey: string;
   private baseUrl: string;
@@ -368,6 +349,7 @@ export class ResponsesAdapter extends AdapterBase {
     let completedEmitted = false;
     let unknownEventsWarned = false;
     const messageItemsWithDelta = new Set<string>();
+    const toolCallNames = new Map<string, string>();
 
     try {
       while (true) {
@@ -406,9 +388,12 @@ export class ResponsesAdapter extends AdapterBase {
               case "reasoning":
                 yield factory.reasoningStarted(item.id, "full");
                 break;
-              case "function_call":
-                yield factory.toolCallStarted(item.id, ((item as Record<string, unknown>).name as string) ?? "unknown");
+              case "function_call": {
+                const name = typeof item.name === "string" ? item.name : "unknown";
+                toolCallNames.set(item.id, name);
+                yield factory.toolCallStarted(item.id, name);
                 break;
+              }
             }
             continue;
           }
@@ -443,17 +428,15 @@ export class ResponsesAdapter extends AdapterBase {
             continue;
           }
 
-          if (sseEvent.type === "response.tool_call.delta") {
-            const data = sseEvent.data as { item_id: string; delta: { arguments?: string } };
-            if (data.delta.arguments) {
-              yield factory.toolCallDelta(data.item_id, { argumentsText: data.delta.arguments });
-            }
+          if (sseEvent.type === "response.function_call_arguments.delta") {
+            const data = sseEvent.data as { item_id: string; delta: string };
+            if (data.delta) yield factory.toolCallDelta(data.item_id, { argumentsText: data.delta });
             continue;
           }
 
-          if (sseEvent.type === "response.tool_call.done") {
-            const data = sseEvent.data as { item_id: string; arguments?: string; name?: string };
-            const tcItem = toolCallItem(data.item_id, data.name ?? "unknown", data.arguments ?? "");
+          if (sseEvent.type === "response.function_call_arguments.done") {
+            const data = sseEvent.data as { item_id: string; arguments: string };
+            const tcItem = toolCallItem(data.item_id, toolCallNames.get(data.item_id) ?? "unknown", data.arguments);
             yield factory.toolCallCompleted(data.item_id);
             output.push(tcItem);
             continue;

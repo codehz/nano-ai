@@ -30,7 +30,6 @@ import { emitMalformedStreamWarning } from "../helpers/adapter-auxiliary.js";
 import { assertOpaqueReplayEnvelope, providerHttpError } from "../helpers/adapter-security.js";
 import { usageFromOllama } from "../helpers/usage-mapping.js";
 import { NormalizedRequestMapper, splitLines, IncrementalStreamParser } from "../helpers/index.js";
-import type { ProviderProfile } from "../helpers/index.js";
 
 import type { NormalizedRequest, AIStreamEvent, EventFactory, OutputItem, FetchFn } from "../index.js";
 
@@ -82,43 +81,7 @@ type OllamaTool = {
   };
 };
 
-// ── ProviderProfile & Mapper ────────────────────────────────────
-
-const profile: ProviderProfile = {
-  kind: "ollama",
-  instructionsMode: "system_message",
-  supportedBlockTypes: ["text", "json"] as const,
-  reasoningBlockTypes: ["text"] as const,
-  capabilities: {
-    textStreaming: "native",
-    reasoningStreaming: "none",
-    toolCallStreaming: "synthetic",
-    replay: "opaque",
-    usage: "final",
-  },
-};
-
-const mapper = new NormalizedRequestMapper(profile);
-
-function parseOllamaToolArguments(item: import("../index.js").ToolCallItem): Record<string, unknown> {
-  if (item.argumentsJson && typeof item.argumentsJson === "object" && item.argumentsJson !== null) {
-    return item.argumentsJson as Record<string, unknown>;
-  }
-
-  try {
-    const parsed = JSON.parse(item.argumentsText);
-    if (parsed && typeof parsed === "object") {
-      return parsed as Record<string, unknown>;
-    }
-  } catch {
-    // fall through
-  }
-
-  throw new AIRequestError(
-    "ollama tool_call argumentsText must be valid JSON object when argumentsJson is absent",
-    "TOOL_CALL_ARGUMENTS_INVALID",
-  );
-}
+const mapper = new NormalizedRequestMapper("ollama");
 
 // ── Ollama 流式 chunk ─────────────────────────────────────────
 
@@ -178,7 +141,7 @@ function toWireOllamaToolCalls(toolCalls: OllamaReplayToolCall[]): OllamaToolCal
 
 export class OllamaAdapter extends AdapterBase {
   readonly kind = "ollama" as const;
-  readonly capabilities = profile.capabilities;
+  readonly isSyntheticStream = false;
 
   private baseUrl: string;
   private apiKey: string | undefined;
@@ -194,10 +157,6 @@ export class OllamaAdapter extends AdapterBase {
   // ── buildRequest ──────────────────────────────────────────
 
   protected buildRequest(request: NormalizedRequest): OllamaChatRequest {
-    if (request.toolChoice && request.toolChoice !== "auto") {
-      throw new AIRequestError("ollama does not support explicit toolChoice", "UNSUPPORTED_TOOL_CHOICE");
-    }
-
     const messages: OllamaMessage[] = [];
     /** Local-only name → call id queue for best-effort tool_result association (not sent to Ollama). */
     const callIdsByName = new Map<string, string[]>();
@@ -223,7 +182,7 @@ export class OllamaAdapter extends AdapterBase {
           const tc: OllamaToolCall = {
             function: {
               name: item.name,
-              arguments: parseOllamaToolArguments(item),
+              arguments: mapper.parseToolArguments(item),
             },
           };
           const queue = callIdsByName.get(item.name) ?? [];
@@ -300,8 +259,16 @@ export class OllamaAdapter extends AdapterBase {
       stream: true,
     };
 
-    if (request.tools && request.tools.length > 0) {
-      body.tools = request.tools.map(
+    const toolChoice = request.toolChoice;
+    const selectedTools =
+      toolChoice === "none"
+        ? []
+        : toolChoice && typeof toolChoice === "object"
+          ? request.tools?.filter((tool) => tool.name === toolChoice.name)
+          : request.tools;
+
+    if (selectedTools && selectedTools.length > 0) {
+      body.tools = selectedTools.map(
         (t): OllamaTool => ({
           type: "function",
           function: {
@@ -331,6 +298,14 @@ export class OllamaAdapter extends AdapterBase {
   ): AsyncIterable<AIStreamEvent> {
     const auxiliary = this.createAuxiliaryState(request);
     let completedEmitted = false;
+    if (request.toolChoice && request.toolChoice !== "auto") {
+      yield factory.responseWarning(
+        request.toolChoice === "none"
+          ? "Ollama toolChoice none was mapped by omitting tools"
+          : `Ollama cannot force tool choice; only tool "${request.toolChoice.name}" was provided as a best-effort constraint`,
+        WarningCode.CAPABILITY_DOWNGRADE,
+      );
+    }
     if (request.metadata) {
       yield factory.responseWarning("Request metadata is not supported by the Ollama adapter", "UNSUPPORTED_METADATA");
     }
@@ -389,7 +364,7 @@ export class OllamaAdapter extends AdapterBase {
     let hasMessageStarted = false;
 
     // tool_calls 累积（于 final chunk 到达）
-    let pendingToolCalls: Array<{ id: string; name: string; argumentsText: string; argumentsJson?: unknown }> = [];
+    let pendingToolCalls: Array<{ id: string; name: string; argumentsText: string }> = [];
     let toolCallIndex = 0;
     const buildResponse = this.buildResponse.bind(this);
 
@@ -413,7 +388,7 @@ export class OllamaAdapter extends AdapterBase {
             content: accumulatedContent,
             tool_calls: pendingToolCalls.map((tc) => ({
               id: tc.id,
-              function: { name: tc.name, arguments: tc.argumentsJson },
+              function: { name: tc.name, arguments: JSON.parse(tc.argumentsText) as Record<string, unknown> },
             })),
           }),
         );
@@ -502,7 +477,6 @@ export class OllamaAdapter extends AdapterBase {
                 id: tcId,
                 name: tc.function.name,
                 argumentsText: argsText,
-                argumentsJson: tc.function.arguments,
               });
             }
           }
@@ -534,7 +508,7 @@ export class OllamaAdapter extends AdapterBase {
 
             // 发出 tool_call 完成事件
             for (const pending of pendingToolCalls) {
-              const toolCall = toolCallItem(pending.id, pending.name, pending.argumentsText, pending.argumentsJson);
+              const toolCall = toolCallItem(pending.id, pending.name, pending.argumentsText);
               yield factory.toolCallStarted(pending.id, pending.name);
               yield factory.toolCallDelta(pending.id, { argumentsText: pending.argumentsText });
               yield factory.toolCallCompleted(pending.id);
@@ -609,7 +583,7 @@ export class OllamaAdapter extends AdapterBase {
       }
 
       for (const pending of pendingToolCalls) {
-        const toolCall = toolCallItem(pending.id, pending.name, pending.argumentsText, pending.argumentsJson);
+        const toolCall = toolCallItem(pending.id, pending.name, pending.argumentsText);
         yield factory.toolCallStarted(pending.id, pending.name);
         yield factory.toolCallDelta(pending.id, { argumentsText: pending.argumentsText });
         yield factory.toolCallCompleted(pending.id);

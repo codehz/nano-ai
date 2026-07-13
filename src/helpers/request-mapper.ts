@@ -1,18 +1,10 @@
 import { AIRequestError } from "../core/errors.js";
 import { contentBlocksToText } from "./mapping.js";
 
-import type { AdapterCapabilities, ContentBlock, InstructionBlock } from "../types/index.js";
-
-export type ProviderProfile = {
-  readonly kind: string;
-  readonly instructionsMode: "system_message" | "instructions_field" | "none";
-  readonly supportedBlockTypes: ReadonlyArray<ContentBlock["type"]>;
-  readonly reasoningBlockTypes: ReadonlyArray<ContentBlock["type"]>;
-  readonly capabilities: AdapterCapabilities;
-};
+import type { ContentBlock, InstructionBlock, ToolCallItem } from "../types/index.js";
 
 export class NormalizedRequestMapper {
-  constructor(readonly profile: ProviderProfile) {}
+  constructor(readonly kind: string) {}
 
   mapInstructions(instructions: string | InstructionBlock[]): string {
     return typeof instructions === "string"
@@ -21,16 +13,29 @@ export class NormalizedRequestMapper {
   }
 
   ensureTextBlocks(blocks: ContentBlock[], field: string): ContentBlock[] {
-    return this.ensureBlocks(blocks, field, this.profile.supportedBlockTypes, "only text/json blocks are supported");
+    return this.ensureBlocks(blocks, field, ["text", "json"], "only text/json blocks are supported");
   }
 
   ensureReasoningBlocks(blocks: ContentBlock[], field: string): Array<Extract<ContentBlock, { type: "text" }>> {
-    return this.ensureBlocks(
-      blocks,
-      field,
-      this.profile.reasoningBlockTypes,
-      "reasoning only supports text blocks",
-    ) as Array<Extract<ContentBlock, { type: "text" }>>;
+    return this.ensureBlocks(blocks, field, ["text"], "reasoning only supports text blocks") as Array<
+      Extract<ContentBlock, { type: "text" }>
+    >;
+  }
+
+  parseToolArguments(item: ToolCallItem): Record<string, unknown> {
+    try {
+      const parsed: unknown = JSON.parse(item.argumentsText);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      // handled below
+    }
+
+    throw new AIRequestError(
+      `${this.kind} requires tool_call argumentsText to be a valid JSON object`,
+      "TOOL_CALL_ARGUMENTS_INVALID",
+    );
   }
 
   rollbackTrailingAssistantMessages<T extends { role: string }>(messages: T[]): void {
@@ -49,7 +54,7 @@ export class NormalizedRequestMapper {
       const block = blocks[i];
       if (block && !supportedTypes.includes(block.type)) {
         throw new AIRequestError(
-          `${this.profile.kind} does not support ${field}[${i}] of type "${block.type}"; ${description}`,
+          `${this.kind} does not support ${field}[${i}] of type "${block.type}"; ${description}`,
           "UNSUPPORTED_CONTENT_BLOCK",
         );
       }

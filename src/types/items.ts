@@ -27,7 +27,6 @@ export type ToolCallItem = {
   id: string;
   name: string;
   argumentsText: string;
-  argumentsJson?: unknown;
 };
 
 export type ToolResultItem = {

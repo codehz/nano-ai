@@ -310,46 +310,12 @@ function buildMalformedAdapters() {
 }
 
 describe("Adapter contracts", () => {
-  it("should declare stable capabilities for built-in adapters", () => {
-    expect(new ChatCompletionsAdapter({ apiKey: "test-key" }).capabilities).toEqual({
-      textStreaming: "native",
-      reasoningStreaming: "native",
-      toolCallStreaming: "native",
-      replay: "opaque",
-      usage: "final",
-    });
-    expect(new MessagesAdapter({ apiKey: "test-key" }).capabilities).toEqual({
-      textStreaming: "native",
-      reasoningStreaming: "native",
-      toolCallStreaming: "synthetic",
-      replay: "opaque",
-      usage: "stream",
-    });
-    expect(new ResponsesAdapter({ apiKey: "test-key" }).capabilities).toEqual({
-      textStreaming: "native",
-      reasoningStreaming: "native",
-      toolCallStreaming: "native",
-      replay: "opaque",
-      usage: "final",
-    });
-    expect(new OllamaAdapter().capabilities).toEqual({
-      textStreaming: "native",
-      reasoningStreaming: "none",
-      toolCallStreaming: "synthetic",
-      replay: "opaque",
-      usage: "final",
-    });
-    expect(
-      new MockAdapter({
-        handler: async function* () {},
-      }).capabilities,
-    ).toEqual({
-      textStreaming: "synthetic",
-      reasoningStreaming: "synthetic",
-      toolCallStreaming: "synthetic",
-      replay: "canonical",
-      usage: "final",
-    });
+  it("should identify synthetic streams for built-in adapters", () => {
+    expect(new ChatCompletionsAdapter({ apiKey: "test-key" }).isSyntheticStream).toBe(false);
+    expect(new MessagesAdapter({ apiKey: "test-key" }).isSyntheticStream).toBe(false);
+    expect(new ResponsesAdapter({ apiKey: "test-key" }).isSyntheticStream).toBe(false);
+    expect(new OllamaAdapter().isSyntheticStream).toBe(false);
+    expect(new MockAdapter({ handler: async function* () {} }).isSyntheticStream).toBe(true);
   });
 
   it("should reject unsupported image content consistently across adapters", async () => {

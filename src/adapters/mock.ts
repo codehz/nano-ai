@@ -120,7 +120,6 @@ export type MockToolCallStep = {
   id: string;
   name: string;
   argumentsText: string;
-  argumentsJson?: unknown;
   streamArguments?: boolean;
   stream?: MockTextStreamOptions | false;
 };
@@ -266,13 +265,7 @@ export function assertMockRequest(
 
 export class MockAdapter extends AdapterBase {
   readonly kind = "mock" as const;
-  readonly capabilities = {
-    textStreaming: "synthetic",
-    reasoningStreaming: "synthetic",
-    toolCallStreaming: "synthetic",
-    replay: "canonical",
-    usage: "final",
-  } as const;
+  readonly isSyntheticStream = true;
 
   private readonly handler: MockHandler;
   private readonly providerMetadata?: Record<string, unknown>;
@@ -571,7 +564,6 @@ function createToolCallFromStep(step: MockToolCallStep): ToolCallItem {
     id: step.id,
     name: step.name,
     argumentsText: step.argumentsText,
-    argumentsJson: step.argumentsJson,
   };
 }
 

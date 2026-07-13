@@ -27,7 +27,6 @@ import { emitMalformedStreamWarning } from "../helpers/adapter-auxiliary.js";
 import { assertOpaqueReplayEnvelope, providerHttpError } from "../helpers/adapter-security.js";
 import { usageFromAnthropicMessages } from "../helpers/usage-mapping.js";
 import { NormalizedRequestMapper, splitSSEFrames, IncrementalStreamParser } from "../helpers/index.js";
-import type { ProviderProfile } from "../helpers/index.js";
 
 import type { NormalizedRequest, AIStreamEvent, EventFactory, OutputItem, FetchFn } from "../index.js";
 
@@ -73,23 +72,7 @@ type MessagesAPITool = {
   input_schema: Record<string, unknown>;
 };
 
-// ── ProviderProfile & Mapper ────────────────────────────────────
-
-const profile: ProviderProfile = {
-  kind: "messages",
-  instructionsMode: "system_message",
-  supportedBlockTypes: ["text", "json"] as const,
-  reasoningBlockTypes: ["text"] as const,
-  capabilities: {
-    textStreaming: "native",
-    reasoningStreaming: "native",
-    toolCallStreaming: "synthetic",
-    replay: "opaque",
-    usage: "stream",
-  },
-};
-
-const mapper = new NormalizedRequestMapper(profile);
+const mapper = new NormalizedRequestMapper("messages");
 
 function isMessagesReplayContentBlock(value: unknown): value is MessagesAPIContentBlock {
   if (!value || typeof value !== "object" || !("type" in value)) return false;
@@ -176,10 +159,10 @@ function synthesizeItemId(kind: "msg" | "reason" | "reason-redacted", blockIndex
   return `${kind}-${blockIndex}-${responseId}`;
 }
 
-function parseToolUseInput(input: string): Record<string, unknown> {
+function parseProviderToolUseInput(input: string): Record<string, unknown> {
   try {
-    const parsed = JSON.parse(input);
-    return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : {};
+    const parsed: unknown = JSON.parse(input);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {};
   } catch {
     return {};
   }
@@ -250,7 +233,7 @@ function buildStreamMetadata(options: {
 
 export class MessagesAdapter extends AdapterBase {
   readonly kind = "messages" as const;
-  readonly capabilities = profile.capabilities;
+  readonly isSyntheticStream = false;
 
   private apiKey: string;
   private apiVersion: string;
@@ -301,7 +284,7 @@ export class MessagesAdapter extends AdapterBase {
             type: "tool_use",
             id: item.id,
             name: item.name,
-            input: (item.argumentsJson as Record<string, unknown> | undefined) ?? parseToolUseInput(item.argumentsText),
+            input: mapper.parseToolArguments(item),
           };
 
           if (lastMsg && lastMsg.role === "assistant" && typeof lastMsg.content !== "string") {
@@ -344,7 +327,7 @@ export class MessagesAdapter extends AdapterBase {
         }
         case "opaque": {
           // 尝试从 opaque replay item 中提取 assistant message
-          if (item.purpose !== "replay") break;
+          if (item.source !== "messages" || item.purpose !== "replay") break;
           assertOpaqueReplayEnvelope(item.payload);
           const payload = item.payload as Record<string, unknown>;
           if (payload.role === "assistant" && "content" in payload) {
@@ -624,7 +607,7 @@ export class MessagesAdapter extends AdapterBase {
                   type: "tool_use",
                   id: currentItemId,
                   name: currentToolName,
-                  input: parseToolUseInput(currentArgsText || argsBuffer),
+                  input: parseProviderToolUseInput(currentArgsText || argsBuffer),
                 });
               }
 

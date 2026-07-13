@@ -803,7 +803,7 @@ describe("ChatCompletionsAdapter - error handling", () => {
             input: [
               {
                 type: "opaque",
-                source: "chat-completions",
+                source: "chat.completions",
                 purpose: "replay",
                 payload: { messages: [{ role: "assistant", content: "x".repeat(70000) }] },
               },
@@ -829,7 +829,7 @@ describe("ChatCompletionsAdapter - error handling", () => {
             input: [
               {
                 type: "opaque",
-                source: "chat-completions",
+                source: "chat.completions",
                 purpose: "replay",
                 payload: { messages: [{ role: "hacker", content: 123 }] },
               },
@@ -838,6 +838,38 @@ describe("ChatCompletionsAdapter - error handling", () => {
         ),
       ),
     ).rejects.toBeInstanceOf(AIRequestError);
+  });
+
+  it("should ignore opaque replay from another provider", async () => {
+    let captured: Record<string, unknown> | undefined;
+    const adapter = new ChatCompletionsAdapter({
+      apiKey: "test-key",
+      fetch: async (_url, init) => {
+        captured = JSON.parse(init.body as string) as Record<string, unknown>;
+        return sseResponse(
+          'data: {"id":"chatcmpl-r","choices":[{"index":0,"delta":{"content":"ok"},"finish_reason":"stop"}]}\n',
+          "data: [DONE]\n",
+        );
+      },
+    });
+
+    await collectStream(
+      adapter.stream(
+        makeRequest({
+          input: [
+            { type: "message", role: "user", content: [{ type: "text", text: "Hello" }] },
+            {
+              type: "opaque",
+              source: "messages",
+              purpose: "replay",
+              payload: { messages: [{ role: "hacker", content: 123 }] },
+            },
+          ],
+        }),
+      ),
+    );
+
+    expect(captured?.messages).toEqual([{ role: "user", content: "Hello" }]);
   });
 
   it("should handle incomplete stream gracefully", async () => {

@@ -113,10 +113,10 @@ describe("item helpers", () => {
   });
 
   it("toolCallItem should create a ToolCallItem", () => {
-    const item = toolCallItem("tc1", "get_weather", "{}", { city: "Hangzhou" });
+    const item = toolCallItem("tc1", "get_weather", '{"city":"Hangzhou"}');
     expect(item.type).toBe("tool_call");
     expect(item.name).toBe("get_weather");
-    expect(item.argumentsJson).toEqual({ city: "Hangzhou" });
+    expect(item.argumentsText).toBe('{"city":"Hangzhou"}');
   });
 
   it("toolResultItem should create a ToolResultItem", () => {
@@ -167,13 +167,7 @@ describe("AdapterBase", () => {
   // 创建一个最小 adapter 实现用于测试
   class TestAdapter extends AdapterBase {
     readonly kind = "responses" as const;
-    readonly capabilities = {
-      textStreaming: "synthetic",
-      reasoningStreaming: "synthetic",
-      toolCallStreaming: "synthetic",
-      replay: "canonical",
-      usage: "final",
-    } as const;
+    readonly isSyntheticStream = true;
 
     protected buildRequest(request: NormalizedRequest): string {
       return JSON.stringify(request);
@@ -229,10 +223,10 @@ describe("AdapterBase", () => {
     expect(events[events.length - 1]!.type).toBe("response.completed");
   });
 
-  it("should have correct kind and capabilities from instance", () => {
+  it("should expose kind and stream source from instance", () => {
     const adapter = new TestAdapter();
     expect(adapter.kind).toBe("responses");
-    expect(adapter.capabilities.textStreaming).toBe("synthetic");
+    expect(adapter.isSyntheticStream).toBe(true);
   });
 
   it("should build response with correct text", async () => {
@@ -257,13 +251,7 @@ describe("AdapterBase", () => {
   it("should rethrow provider request errors", async () => {
     class ErrorAdapter extends AdapterBase {
       readonly kind = "responses" as const;
-      readonly capabilities = {
-        textStreaming: "synthetic",
-        reasoningStreaming: "synthetic",
-        toolCallStreaming: "synthetic",
-        replay: "canonical",
-        usage: "final",
-      } as const;
+      readonly isSyntheticStream = true;
       protected buildRequest(): never {
         throw new AIProviderError("API connection failed", "PROVIDER_ERROR", 503);
       }
@@ -286,13 +274,7 @@ describe("AdapterBase", () => {
   it("should degrade mapping errors into warning + completed", async () => {
     class WarningAdapter extends AdapterBase {
       readonly kind = "responses" as const;
-      readonly capabilities = {
-        textStreaming: "synthetic",
-        reasoningStreaming: "synthetic",
-        toolCallStreaming: "synthetic",
-        replay: "canonical",
-        usage: "final",
-      } as const;
+      readonly isSyntheticStream = true;
 
       protected buildRequest(): never {
         throw new AIMappingError("provider exploded", "MAPPING_ERROR");
@@ -357,13 +339,7 @@ describe("AdapterBase", () => {
   it("should handle empty output gracefully", async () => {
     class EmptyAdapter extends AdapterBase {
       readonly kind = "responses" as const;
-      readonly capabilities = {
-        textStreaming: "native",
-        reasoningStreaming: "native",
-        toolCallStreaming: "native",
-        replay: "canonical",
-        usage: "final",
-      } as const;
+      readonly isSyntheticStream = false;
       protected buildRequest(r: NormalizedRequest) {
         return r;
       }

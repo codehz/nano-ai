@@ -136,6 +136,25 @@ function validateInputItem(item: unknown, field: string, issues: ValidationIssue
           "TOOL_CALL_ARGUMENTS_INVALID",
           `${field}.argumentsText must be a string`,
         );
+      } else {
+        try {
+          const parsed: unknown = JSON.parse(item.argumentsText);
+          if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+            pushIssue(
+              issues,
+              `${field}.argumentsText`,
+              "TOOL_CALL_ARGUMENTS_INVALID",
+              `${field}.argumentsText must encode a JSON object`,
+            );
+          }
+        } catch {
+          pushIssue(
+            issues,
+            `${field}.argumentsText`,
+            "TOOL_CALL_ARGUMENTS_INVALID",
+            `${field}.argumentsText must encode a JSON object`,
+          );
+        }
       }
       return;
     case "tool_result":

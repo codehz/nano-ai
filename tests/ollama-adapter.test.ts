@@ -354,24 +354,58 @@ describe("OllamaAdapter - request building", () => {
     expect(body.options.num_predict).toBe(200);
   });
 
-  it("should reject explicit toolChoice", async () => {
+  it("should constrain explicit toolChoice without rejecting canonical input", async () => {
+    let capturedBody: string | undefined;
     const adapter = new OllamaAdapter({
-      fetch: async () =>
-        ndjsonResponse(
+      fetch: async (_url, init) => {
+        capturedBody = init.body as string;
+        return ndjsonResponse(
           `{"model":"llama3.2","created_at":"2024-01-01T00:00:00Z","message":{"role":"assistant","content":"OK"},"done":true,"done_reason":"stop"}\n`,
-        ),
+        );
+      },
     });
 
-    await expect(
-      collectStream(
-        adapter.stream(
-          makeRequest({
-            tools: [{ name: "get_weather", inputSchema: {} }],
-            toolChoice: { type: "tool" as const, name: "get_weather" },
-          }),
-        ),
+    const result = await collectStream(
+      adapter.stream(
+        makeRequest({
+          tools: [
+            { name: "get_weather", inputSchema: {} },
+            { name: "search", inputSchema: {} },
+          ],
+          toolChoice: { type: "tool" as const, name: "get_weather" },
+        }),
       ),
-    ).rejects.toBeInstanceOf(AIRequestError);
+    );
+
+    const body = JSON.parse(capturedBody!);
+    expect(body.tools).toHaveLength(1);
+    expect(body.tools[0].function.name).toBe("get_weather");
+    expect(result.warnings).toContain(
+      'Ollama cannot force tool choice; only tool "get_weather" was provided as a best-effort constraint',
+    );
+  });
+
+  it("should map toolChoice none by omitting tools", async () => {
+    let capturedBody: string | undefined;
+    const adapter = new OllamaAdapter({
+      fetch: async (_url, init) => {
+        capturedBody = init.body as string;
+        return ndjsonResponse(
+          `{"model":"llama3.2","created_at":"2024-01-01T00:00:00Z","message":{"role":"assistant","content":"OK"},"done":true,"done_reason":"stop"}\n`,
+        );
+      },
+    });
+
+    await collectStream(
+      adapter.stream(
+        makeRequest({
+          tools: [{ name: "get_weather", inputSchema: {} }],
+          toolChoice: "none",
+        }),
+      ),
+    );
+
+    expect(JSON.parse(capturedBody!).tools).toBeUndefined();
   });
 
   it("should reject unsupported image content instead of dropping it", async () => {
@@ -677,9 +711,9 @@ describe("OllamaAdapter - error handling", () => {
 // ── 适配器属性 ────────────────────────────────────────────────
 
 describe("OllamaAdapter - properties", () => {
-  it("should have correct kind and capabilities", () => {
+  it("should have correct kind and stream source", () => {
     const adapter = new OllamaAdapter();
     expect(adapter.kind).toBe("ollama");
-    expect(adapter.capabilities.textStreaming).toBe("native");
+    expect(adapter.isSyntheticStream).toBe(false);
   });
 });

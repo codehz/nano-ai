@@ -34,7 +34,6 @@ const adapter = new MockAdapter({
         id: "call-weather-1",
         name: "get_weather",
         argumentsText: '{"city":"Hangzhou"}',
-        argumentsJson: { city: "Hangzhou" },
       };
       return;
     }

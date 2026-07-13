@@ -24,7 +24,6 @@ import { emitMalformedStreamWarning } from "../helpers/adapter-auxiliary.js";
 import { assertOpaqueReplayEnvelope, providerHttpError } from "../helpers/adapter-security.js";
 import { usageFromChatCompletions } from "../helpers/usage-mapping.js";
 import { NormalizedRequestMapper, splitLines, IncrementalStreamParser } from "../helpers/index.js";
-import type { ProviderProfile } from "../helpers/index.js";
 
 import type { NormalizedRequest, AIStreamEvent, EventFactory, OutputItem, FetchFn } from "../index.js";
 
@@ -118,23 +117,7 @@ type ReasoningFieldName = "reasoning" | "reasoning_content";
 
 const REASONING_FIELDS: readonly ReasoningFieldName[] = ["reasoning_content", "reasoning"];
 
-// ── ProviderProfile & Mapper ────────────────────────────────────
-
-const profile: ProviderProfile = {
-  kind: "chat-completions",
-  instructionsMode: "system_message",
-  supportedBlockTypes: ["text", "json"] as const,
-  reasoningBlockTypes: ["text"] as const,
-  capabilities: {
-    textStreaming: "native",
-    reasoningStreaming: "native",
-    toolCallStreaming: "native",
-    replay: "opaque",
-    usage: "final",
-  },
-};
-
-const mapper = new NormalizedRequestMapper(profile);
+const mapper = new NormalizedRequestMapper("chat-completions");
 
 function extractReasoningText(value: unknown): string {
   if (typeof value === "string") return value;
@@ -250,7 +233,7 @@ function buildAssistantReplayMessage(params: {
 
 export class ChatCompletionsAdapter extends AdapterBase {
   readonly kind = "chat-completions" as const;
-  readonly capabilities = profile.capabilities;
+  readonly isSyntheticStream = false;
 
   private apiKey: string;
   private baseUrl: string;
@@ -321,7 +304,7 @@ export class ChatCompletionsAdapter extends AdapterBase {
         }
         case "opaque": {
           // Try to restore from opaque replay
-          if (item.purpose !== "replay") break;
+          if (item.source !== "chat.completions" || item.purpose !== "replay") break;
           assertOpaqueReplayEnvelope(item.payload);
           const payload = item.payload as Record<string, unknown>;
           if (payload.role === "assistant" && typeof payload.content === "string") {

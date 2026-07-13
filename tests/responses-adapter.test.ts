@@ -191,8 +191,8 @@ describe("ResponsesAdapter - text streaming", () => {
   it("should produce tool_call events", async () => {
     const sse = [
       'event: response.output_item.added\ndata: {"item":{"id":"tc1","type":"function_call","name":"get_weather"}}\n\n',
-      'event: response.tool_call.delta\ndata: {"item_id":"tc1","delta":{"arguments":"{\\"city\\":\\"Hangzhou\\"}"}}\n\n',
-      'event: response.tool_call.done\ndata: {"item_id":"tc1","name":"get_weather","arguments":"{\\"city\\":\\"Hangzhou\\"}"}\n\n',
+      'event: response.function_call_arguments.delta\ndata: {"item_id":"tc1","delta":"{\\"city\\":\\"Hangzhou\\"}"}\n\n',
+      'event: response.function_call_arguments.done\ndata: {"item_id":"tc1","arguments":"{\\"city\\":\\"Hangzhou\\"}"}\n\n',
       `event: response.completed\ndata: ${JSON.stringify({
         response: {
           id: "resp-tc",
@@ -216,7 +216,7 @@ describe("ResponsesAdapter - text streaming", () => {
   it("should infer stop_reason as tool_call when function_call present", async () => {
     const sse = [
       'event: response.output_item.added\ndata: {"item":{"id":"tc1","type":"function_call","name":"search"}}\n\n',
-      'event: response.tool_call.done\ndata: {"item_id":"tc1","name":"search","arguments":"{}"}\n\n',
+      'event: response.function_call_arguments.done\ndata: {"item_id":"tc1","arguments":"{}"}\n\n',
       `event: response.completed\ndata: ${JSON.stringify({
         response: { id: "resp-tc2", model: "gpt-4o", output: [{ id: "tc1", type: "function_call", name: "search" }] },
       })}\n\n`,

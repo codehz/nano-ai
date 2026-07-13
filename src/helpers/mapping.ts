@@ -100,13 +100,12 @@ export function reasoningItem(
   };
 }
 
-export function toolCallItem(id: string, name: string, argumentsText: string, argumentsJson?: unknown): ToolCallItem {
+export function toolCallItem(id: string, name: string, argumentsText: string): ToolCallItem {
   return {
     type: "tool_call",
     id,
     name,
     argumentsText,
-    argumentsJson,
   };
 }
 

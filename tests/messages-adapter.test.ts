@@ -405,28 +405,20 @@ describe("MessagesAdapter - request building", () => {
     expect(content[0]?.type).toBe("tool_use");
   });
 
-  it("should tolerate non-JSON tool_call argumentsText", async () => {
+  it("should reject non-JSON tool_call argumentsText", async () => {
     const { captured, fetch } = captureRequest();
     const adapter = new MessagesAdapter({ apiKey: "test-key", fetch });
 
-    await collectStream(
-      adapter.stream(
-        makeRequest({
-          input: [{ type: "tool_call" as const, id: "tc1", name: "get_weather", argumentsText: '{"city":' }],
-        }),
+    await expect(
+      collectStream(
+        adapter.stream(
+          makeRequest({
+            input: [{ type: "tool_call" as const, id: "tc1", name: "get_weather", argumentsText: '{"city":' }],
+          }),
+        ),
       ),
-    );
-    const body = captured.current as Record<string, unknown> | null;
-    const messages = (body?.messages as Array<Record<string, unknown>> | undefined) ?? [];
-    const lastMsg = messages[messages.length - 1];
-    const content = (lastMsg?.content as Array<Record<string, unknown>> | undefined) ?? [];
-    expect(lastMsg?.role).toBe("assistant");
-    expect(content[0]).toEqual({
-      type: "tool_use",
-      id: "tc1",
-      name: "get_weather",
-      input: {},
-    });
+    ).rejects.toMatchObject({ code: "TOOL_CALL_ARGUMENTS_INVALID" });
+    expect(captured.current).toBeNull();
   });
 
   it("should map tool_result to user message with tool_result block", async () => {
@@ -539,6 +531,29 @@ describe("MessagesAdapter - request building", () => {
 
     const result = await collectStream(adapter.stream(makeRequest({ metadata: { traceId: "trace-1" } })));
     expect(result.warnings?.some((w) => w.includes("Request metadata is not supported"))).toBe(true);
+  });
+
+  it("should ignore opaque replay from another provider", async () => {
+    const { captured, fetch } = captureRequest();
+    const adapter = new MessagesAdapter({ apiKey: "test-key", fetch });
+
+    await collectStream(
+      adapter.stream(
+        makeRequest({
+          input: [
+            { type: "message", role: "user", content: [{ type: "text", text: "Hello" }] },
+            {
+              type: "opaque",
+              source: "responses",
+              purpose: "replay",
+              payload: { content: "invalid messages replay" },
+            },
+          ],
+        }),
+      ),
+    );
+
+    expect((captured.current as { messages: unknown[] }).messages).toEqual([{ role: "user", content: "Hello" }]);
   });
 
   it("should round-trip replay into a single assistant message with raw content blocks", async () => {

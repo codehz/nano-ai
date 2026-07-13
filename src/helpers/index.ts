@@ -58,4 +58,3 @@ export { IncrementalStreamParser, splitLines, splitSSEFrames } from "./increment
 export type { StreamSplitResult, StreamParseResult } from "./incremental-stream-parser.js";
 
 export { NormalizedRequestMapper } from "./request-mapper.js";
-export type { ProviderProfile } from "./request-mapper.js";
