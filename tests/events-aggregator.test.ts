@@ -1,6 +1,6 @@
 import { describe, it, expect } from "bun:test";
 
-import { createEventFactory, aggregateEvents, collectStream, textBlock } from "../src/index.js";
+import { createEventFactory, aggregateEvents, collectStream, textBlock, WarningCode } from "../src/index.js";
 
 import type { AIStreamEvent } from "../src/index.js";
 
@@ -195,7 +195,7 @@ describe("aggregateEvents", () => {
     const f = makeFactory();
     const events: AIStreamEvent[] = [
       f.responseStarted("gpt-4"),
-      f.responseWarning("usage missing", "USAGE_MISSING"),
+      f.responseWarning("usage missing", WarningCode.USAGE_MISSING),
       f.responseWarning("replay degraded"),
       f.responseCompleted({ replay: [], warnings: ["usage missing", "replay degraded"] }),
     ];

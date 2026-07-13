@@ -4,7 +4,7 @@
  * 共享的构造器和样本数据，用于场景测试和 golden sequence 验证。
  */
 
-import { createEventFactory, textBlock, messageItem, reasoningItem, toolCallItem } from "../src/index.js";
+import { createEventFactory, textBlock, messageItem, reasoningItem, toolCallItem, WarningCode } from "../src/index.js";
 
 import type { AIResponse, AIStreamEvent, MessageItem, ReasoningItem, ToolCallItem } from "../src/index.js";
 
@@ -116,8 +116,8 @@ export function goldenWarningSequence(): AIStreamEvent[] {
 
   return [
     f.responseStarted("gpt-4o"),
-    f.responseWarning("Usage information was not provided", "USAGE_MISSING"),
-    f.responseWarning("Replay fidelity is low for this provider", "REPLAY_FIDELITY_LOW"),
+    f.responseWarning("Usage information was not provided", WarningCode.USAGE_MISSING),
+    f.responseWarning("Replay fidelity is low for this provider", WarningCode.REPLAY_FIDELITY_LOW),
     f.messageStarted("m1"),
     f.messageDelta("m1", textBlock("Hi there!")),
     f.messageCompleted("m1"),
