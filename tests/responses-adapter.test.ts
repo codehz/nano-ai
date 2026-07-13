@@ -243,14 +243,14 @@ describe("ResponsesAdapter - text streaming", () => {
 
   it("should produce tool_call events", async () => {
     const sse = [
-      'event: response.output_item.added\ndata: {"item":{"id":"tc1","type":"function_call","name":"get_weather"}}\n\n',
-      'event: response.function_call_arguments.delta\ndata: {"item_id":"tc1","delta":"{\\"city\\":\\"Hangzhou\\"}"}\n\n',
-      'event: response.function_call_arguments.done\ndata: {"item_id":"tc1","arguments":"{\\"city\\":\\"Hangzhou\\"}"}\n\n',
+      'event: response.output_item.added\ndata: {"item":{"id":"fc_1","type":"function_call","call_id":"call_weather","name":"get_weather"}}\n\n',
+      'event: response.function_call_arguments.delta\ndata: {"item_id":"fc_1","delta":"{\\"city\\":\\"Hangzhou\\"}"}\n\n',
+      'event: response.function_call_arguments.done\ndata: {"item_id":"fc_1","arguments":"{\\"city\\":\\"Hangzhou\\"}"}\n\n',
       `event: response.completed\ndata: ${JSON.stringify({
         response: {
           id: "resp-tc",
           model: "gpt-4o",
-          output: [{ id: "tc1", type: "function_call", name: "get_weather" }],
+          output: [{ id: "fc_1", type: "function_call", call_id: "call_weather", name: "get_weather" }],
         },
       })}\n\n`,
     ];
@@ -262,6 +262,7 @@ describe("ResponsesAdapter - text streaming", () => {
 
     const result = await collectStream(adapter.stream(makeRequest()));
     expect(result.toolCalls).toHaveLength(1);
+    expect(result.toolCalls[0]!.id).toBe("call_weather");
     expect(result.toolCalls[0]!.name).toBe("get_weather");
     expect(result.toolCalls[0]!.argumentsText).toBe('{"city":"Hangzhou"}');
   });
@@ -522,7 +523,7 @@ describe("ResponsesAdapter - request building", () => {
     ).rejects.toBeInstanceOf(AIRequestError);
   });
 
-  it("should prefer canonical replay items over opaque item_reference", async () => {
+  it("should prefer canonical replay items over opaque previous_response_id", async () => {
     const round1SSE = [
       'event: response.output_item.added\ndata: {"item":{"id":"m1","type":"message"}}\n\n',
       'event: response.output_text.delta\ndata: {"item_id":"m1","delta":"Hi"}\n\n',
@@ -568,11 +569,13 @@ describe("ResponsesAdapter - request building", () => {
     const body = captured.current as Record<string, unknown> | null;
     expect(body?.input).toEqual([
       { type: "message", role: "user", content: "Hello" },
-      { type: "message", role: "assistant", content: [{ type: "text", text: "Hi" }] },
+      // EasyInputMessage: assistant content 必须是 string / input_* parts，不是 { type: "text" }
+      { type: "message", role: "assistant", content: "Hi" },
     ]);
+    expect(body).not.toHaveProperty("previous_response_id");
   });
 
-  it("should use item_reference when only opaque replay is present", async () => {
+  it("should map opaque response id to previous_response_id (not item_reference)", async () => {
     const { captured, fetch } = captureRequest();
     const adapter = new ResponsesAdapter({ apiKey: "test-key", fetch });
 
@@ -593,9 +596,82 @@ describe("ResponsesAdapter - request building", () => {
     );
 
     const body = captured.current as Record<string, unknown> | null;
+    expect(body?.input).toEqual([{ type: "message", role: "user", content: "Hello" }]);
+    expect(body?.previous_response_id).toBe("resp-only-opaque");
+  });
+
+  it("should serialize function_call with required call_id", async () => {
+    const { captured, fetch } = captureRequest();
+    const adapter = new ResponsesAdapter({ apiKey: "test-key", fetch });
+
+    await collectStream(
+      adapter.stream(
+        makeRequest({
+          input: [
+            { type: "message" as const, role: "user" as const, content: [{ type: "text" as const, text: "weather?" }] },
+            {
+              type: "tool_call" as const,
+              id: "call_abc",
+              name: "get_weather",
+              argumentsText: '{"city":"Hangzhou"}',
+            },
+            {
+              type: "tool_result" as const,
+              callId: "call_abc",
+              toolName: "get_weather",
+              outcome: "success" as const,
+              content: [{ type: "text" as const, text: "28C sunny" }],
+            },
+          ],
+        }),
+      ),
+    );
+
+    const body = captured.current as Record<string, unknown> | null;
     expect(body?.input).toEqual([
-      { type: "message", role: "user", content: "Hello" },
-      { type: "item_reference", id: "resp-only-opaque" },
+      { type: "message", role: "user", content: "weather?" },
+      {
+        type: "function_call",
+        call_id: "call_abc",
+        name: "get_weather",
+        arguments: '{"city":"Hangzhou"}',
+      },
+      {
+        type: "function_call_output",
+        call_id: "call_abc",
+        output: "28C sunny",
+      },
+    ]);
+  });
+
+  it("should serialize reasoning with id + summary_text (not legacy content blocks)", async () => {
+    const { captured, fetch } = captureRequest();
+    const adapter = new ResponsesAdapter({ apiKey: "test-key", fetch });
+
+    await collectStream(
+      adapter.stream(
+        makeRequest({
+          input: [
+            {
+              type: "reasoning" as const,
+              id: "rs_1",
+              visibility: "summary" as const,
+              content: [{ type: "text" as const, text: "step by step" }],
+            },
+            { type: "message" as const, role: "assistant" as const, content: [{ type: "text" as const, text: "42" }] },
+          ],
+        }),
+      ),
+    );
+
+    const body = captured.current as Record<string, unknown> | null;
+    expect(body?.input).toEqual([
+      {
+        type: "reasoning",
+        id: "rs_1",
+        summary: [{ type: "summary_text", text: "step by step" }],
+      },
+      { type: "message", role: "assistant", content: "42" },
     ]);
   });
 });

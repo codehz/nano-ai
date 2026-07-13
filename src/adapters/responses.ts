@@ -40,7 +40,11 @@ export type ResponsesAdapterOptions = {
   fetch?: FetchFn;
 };
 
-// ── Responses API 请求类型 ────────────────────────────────────
+// ── Responses API 请求类型（对齐 OpenAI Responses schema）────
+//
+// input 是 untagged enum ModelInput = string | InputItem[]。
+// 每个 InputItem 也必须命中官方 variant，否则会 422：
+//   "data did not match any variant of untagged enum ModelInput"
 
 type ResponsesAPIRequest = {
   model: string;
@@ -51,27 +55,70 @@ type ResponsesAPIRequest = {
   metadata?: Record<string, string>;
   temperature?: number;
   max_output_tokens?: number;
+  /** 服务端多轮续写；opaque replay 的 response id 映射到此字段，而非 item_reference */
+  previous_response_id?: string;
   stream: true;
 };
 
-type ResponsesInputItem =
-  | { type: "message"; role: "user" | "assistant"; content: string }
-  | { type: "message"; role: "assistant"; content: ResponsesContentBlock[] }
-  | { type: "function_call"; id: string; name: string; arguments: string; call_id?: string }
-  | { type: "function_call_output"; call_id: string; output: string }
-  | { type: "reasoning"; content: ResponsesContentBlock[] }
-  | { type: "item_reference"; id: string };
+/** EasyInputMessage：content 可为 string，或 input_* content parts */
+type ResponsesEasyMessage = {
+  type: "message";
+  role: "user" | "assistant" | "system" | "developer";
+  content: string | ResponsesInputContentPart[];
+};
 
-type ResponsesContentBlock =
-  | { type: "text"; text: string }
-  | { type: "reasoning"; text: string }
-  | { type: "refusal"; refusal: string };
+type ResponsesInputContentPart =
+  | { type: "input_text"; text: string }
+  | { type: "input_image"; image_url: string; detail?: "auto" | "low" | "high" }
+  | { type: "input_file"; file_url?: string; file_id?: string; filename?: string };
+
+/** function_call：call_id 必填；id 是可选的 item id */
+type ResponsesFunctionCall = {
+  type: "function_call";
+  call_id: string;
+  name: string;
+  arguments: string;
+  id?: string;
+  status?: "in_progress" | "completed" | "incomplete";
+};
+
+type ResponsesFunctionCallOutput = {
+  type: "function_call_output";
+  call_id: string;
+  output: string;
+  id?: string;
+  status?: "in_progress" | "completed" | "incomplete";
+};
+
+/** reasoning：id + summary/content/encrypted_content，不是任意 content blocks */
+type ResponsesReasoningInput = {
+  type: "reasoning";
+  id: string;
+  summary: Array<{ type: "summary_text"; text: string }>;
+  content?: Array<{ type: "reasoning_text"; text: string }>;
+  encrypted_content?: string | null;
+  status?: "in_progress" | "completed" | "incomplete";
+};
+
+/** 引用既有 item（不是 response id） */
+type ResponsesItemReference = {
+  type: "item_reference";
+  id: string;
+};
+
+type ResponsesInputItem =
+  | ResponsesEasyMessage
+  | ResponsesFunctionCall
+  | ResponsesFunctionCallOutput
+  | ResponsesReasoningInput
+  | ResponsesItemReference;
 
 type ResponsesTool = {
   type: "function";
   name: string;
   description?: string;
   parameters: Record<string, unknown>;
+  strict?: boolean | null;
 };
 
 const mapper = new NormalizedRequestMapper("responses");
@@ -209,11 +256,12 @@ type ResponsesAPIOutputItem = {
   id: string;
   type: "message" | "reasoning" | "function_call" | string;
   role?: string;
-  content?: ResponsesContentBlock[] | Array<{ type: string; text?: string; [key: string]: unknown }>;
+  content?: Array<{ type: string; text?: string; [key: string]: unknown }>;
   summary?: Array<{ type: string; text?: string; [key: string]: unknown }>;
   encrypted_content?: string | null;
   name?: string;
   arguments?: string;
+  call_id?: string;
   status?: string;
   [key: string]: unknown;
 };
@@ -232,15 +280,56 @@ function extractFailureMessage(response: ResponsesAPIResponse): string {
   return response.error?.message ?? response.failure?.message ?? "unknown";
 }
 
-// ── Content block 映射 ─────────────────────────────────────────
+function readNonEmptyString(value: unknown, maxLen = 256): string | undefined {
+  if (typeof value !== "string" || value.length === 0 || value.length > maxLen) return undefined;
+  return value;
+}
 
-function canonicalToResponsesBlock(b: import("../index.js").ContentBlock): ResponsesContentBlock {
-  if (b.type === "text") return { type: "text", text: b.text };
-  if (b.type === "json") return { type: "text", text: JSON.stringify(b.json) };
-  throw new AIRequestError(
-    `responses does not support content block type "${b.type}" in canonical mapping`,
-    "UNSUPPORTED_CONTENT_BLOCK",
+/** 将 canonical text/json blocks 压成 EasyInputMessage 的 string content。 */
+function messageContentAsString(
+  blocks: import("../index.js").ContentBlock[],
+  field: string,
+): string {
+  return mapper.textFromBlocks(blocks, field);
+}
+
+function mapReasoningInput(item: import("../index.js").ReasoningItem, index: number): ResponsesReasoningInput {
+  const text = mapper.textFromBlocks(
+    mapper.ensureReasoningBlocks(item.content, "reasoning content"),
+    "reasoning content",
   );
+  const id = item.id && item.id.length > 0 ? item.id : `reasoning_replay_${index}`;
+
+  if (item.visibility === "full") {
+    return {
+      type: "reasoning",
+      id,
+      summary: [],
+      content: text ? [{ type: "reasoning_text", text }] : undefined,
+    };
+  }
+
+  // summary / redacted / opaque：公开可回传的是 summary_text
+  return {
+    type: "reasoning",
+    id,
+    summary: text ? [{ type: "summary_text", text }] : [],
+  };
+}
+
+function extractOpaqueContinuationId(payload: Record<string, unknown>): {
+  previousResponseId?: string;
+  itemReferenceId?: string;
+} {
+  // 优先显式 previous_response_id；历史 payload 用 id 存 response 续写句柄
+  const previousResponseId =
+    readNonEmptyString(payload.previous_response_id) ??
+    (typeof payload.item_id === "string" ? undefined : readNonEmptyString(payload.id));
+
+  // 仅在显式给出 item_id 时使用 item_reference（引用的是 item，不是 response）
+  const itemReferenceId = readNonEmptyString(payload.item_id);
+
+  return { previousResponseId, itemReferenceId };
 }
 
 // ── Adapter ───────────────────────────────────────────────────
@@ -264,36 +353,30 @@ export class ResponsesAdapter extends AdapterBase {
 
   protected buildRequest(request: NormalizedRequest): ResponsesAPIRequest {
     const input: ResponsesInputItem[] = [];
+    let previousResponseId: string | undefined;
+    let reasoningIndex = 0;
 
     for (const item of request.input) {
       switch (item.type) {
         case "message": {
-          // Responses API 中只有 assistant 角色支持 content blocks
-          if (item.role === "assistant") {
-            const blocks = mapper
-              .ensureTextBlocks(item.content, `assistant message (${item.role}) content`)
-              .map(canonicalToResponsesBlock);
-            input.push({ type: "message", role: item.role, content: blocks });
-          } else {
-            input.push({
-              type: "message",
-              role: item.role,
-              content: mapper.textFromBlocks(item.content, `input message (${item.role}) content`),
-            });
-          }
+          // EasyInputMessage：string content 对 user/assistant 都合法，且最不易触发 ModelInput 反序列化失败。
+          // 切勿发送 { type: "text" } —— 官方 content part 是 input_text / output_text。
+          input.push({
+            type: "message",
+            role: item.role,
+            content: messageContentAsString(item.content, `input message (${item.role}) content`),
+          });
           break;
         }
         case "reasoning": {
-          const blocks = mapper
-            .ensureReasoningBlocks(item.content, "reasoning content")
-            .map((b): ResponsesContentBlock => ({ type: "reasoning", text: b.text }));
-          input.push({ type: "reasoning", content: blocks });
+          input.push(mapReasoningInput(item, reasoningIndex++));
           break;
         }
         case "tool_call": {
+          // call_id 必填；canonical ToolCallItem.id 即 call_id（流里会优先取 call_id）
           input.push({
             type: "function_call",
-            id: item.id,
+            call_id: item.id,
             name: item.name,
             arguments: item.argumentsText,
           });
@@ -309,20 +392,28 @@ export class ResponsesAdapter extends AdapterBase {
           break;
         }
         case "opaque": {
-          // Canonical replay items take priority; item_reference is only a fallback
-          // when the consumer kept only the provider continuation id.
+          // Canonical replay 优先；否则用 previous_response_id 做服务端续写。
+          // 注意：response id 不能塞进 item_reference（那是 item id）。
           if (item.source !== "responses" || item.purpose !== "replay") break;
           assertOpaqueReplayEnvelope(item.payload);
           const payload = item.payload as Record<string, unknown>;
-          if ("id" in payload) {
-            if (typeof payload.id !== "string" || payload.id.length === 0 || payload.id.length > 256) {
+
+          // 显式字段校验：id / previous_response_id / item_id 若存在必须是合法 string
+          for (const key of ["id", "previous_response_id", "item_id"] as const) {
+            if (key in payload && (typeof payload[key] !== "string" || payload[key].length === 0 || payload[key].length > 256)) {
               throw new AIRequestError(
-                "Invalid opaque replay payload: id must be a non-empty string (max 256)",
+                `Invalid opaque replay payload: ${key} must be a non-empty string (max 256)`,
                 "INVALID_OPAQUE_REPLAY",
               );
             }
-            if (!hasReplayCanonicalInput(input)) {
-              input.push({ type: "item_reference", id: payload.id });
+          }
+
+          const { previousResponseId: prevId, itemReferenceId } = extractOpaqueContinuationId(payload);
+          if (!hasReplayCanonicalInput(input)) {
+            if (prevId && !previousResponseId) {
+              previousResponseId = prevId;
+            } else if (itemReferenceId) {
+              input.push({ type: "item_reference", id: itemReferenceId });
             }
           }
           break;
@@ -335,6 +426,10 @@ export class ResponsesAdapter extends AdapterBase {
       input,
       stream: true,
     };
+
+    if (previousResponseId) {
+      body.previous_response_id = previousResponseId;
+    }
 
     if (request.instructions) {
       body.instructions = mapper.mapInstructions(request.instructions);
@@ -392,8 +487,13 @@ export class ResponsesAdapter extends AdapterBase {
     let completedResponse: ResponsesAPIResponse | undefined;
     let unknownEventsWarned = false;
     const messageItemsWithDelta = new Set<string>();
+    /** item_id → function name */
     const toolCallNames = new Map<string, string>();
+    /** item_id → call_id（canonical ToolCallItem.id / function_call_output.call_id） */
+    const toolCallIds = new Map<string, string>();
     const reasoningStates = new Map<string, ReasoningStreamState>();
+
+    const resolveToolCallId = (itemId: string): string => toolCallIds.get(itemId) ?? itemId;
 
     const ensureReasoningState = (itemId: string, visibility: ReasoningVisibility = "summary"): ReasoningStreamState => {
       let state = reasoningStates.get(itemId);
@@ -449,8 +549,12 @@ export class ResponsesAdapter extends AdapterBase {
             }
             case "function_call": {
               const name = typeof item.name === "string" ? item.name : "unknown";
+              // Responses 用 call_id 关联 function_call_output；item.id 是 fc_* item id
+              const callId =
+                typeof item.call_id === "string" && item.call_id.length > 0 ? item.call_id : item.id;
               toolCallNames.set(item.id, name);
-              yield factory.toolCallStarted(item.id, name);
+              toolCallIds.set(item.id, callId);
+              yield factory.toolCallStarted(callId, name);
               break;
             }
           }
@@ -569,14 +673,19 @@ export class ResponsesAdapter extends AdapterBase {
 
         if (sseEvent.type === "response.function_call_arguments.delta") {
           const data = sseEvent.data as { item_id: string; delta: string };
-          if (data.delta) yield factory.toolCallDelta(data.item_id, { argumentsText: data.delta });
+          if (data.delta) {
+            yield factory.toolCallDelta(resolveToolCallId(data.item_id), { argumentsText: data.delta });
+          }
           continue;
         }
 
         if (sseEvent.type === "response.function_call_arguments.done") {
           const data = sseEvent.data as { item_id: string; arguments: string };
-          const tcItem = toolCallItem(data.item_id, toolCallNames.get(data.item_id) ?? "unknown", data.arguments);
-          yield factory.toolCallCompleted(data.item_id);
+          const callId = resolveToolCallId(data.item_id);
+          // 若 added 事件缺失，done 时仍尽量从 completed payload 之外兜底 call_id
+          if (!toolCallIds.has(data.item_id)) toolCallIds.set(data.item_id, callId);
+          const tcItem = toolCallItem(callId, toolCallNames.get(data.item_id) ?? "unknown", data.arguments);
+          yield factory.toolCallCompleted(callId);
           output.push(tcItem);
           continue;
         }
@@ -640,7 +749,13 @@ export class ResponsesAdapter extends AdapterBase {
 
     const replay = [...replayFromOutput(output)];
     if (completedResponse?.id) {
-      replay.push(opaqueItem("responses", "replay", { id: completedResponse.id }));
+      // 同时保留 id（向后兼容）与 previous_response_id（语义明确）
+      replay.push(
+        opaqueItem("responses", "replay", {
+          id: completedResponse.id,
+          previous_response_id: completedResponse.id,
+        }),
+      );
     }
 
     const stopReason = completedResponse ? this.inferStopReason(completedResponse) : undefined;
