@@ -188,6 +188,59 @@ describe("ResponsesAdapter - text streaming", () => {
     expect(result.text).toBe("Answer");
   });
 
+  it("should stream modern reasoning_summary_* events without UNKNOWN_PROVIDER_EVENT", async () => {
+    const sse = [
+      'event: response.created\ndata: {"response":{"id":"resp-rs","model":"o3","output":[]}}\n\n',
+      'event: response.in_progress\ndata: {"response":{"id":"resp-rs","model":"o3","output":[]}}\n\n',
+      'event: response.output_item.added\ndata: {"item":{"id":"rs1","type":"reasoning","summary":[]}}\n\n',
+      'event: response.reasoning_summary_part.added\ndata: {"item_id":"rs1","summary_index":0,"part":{"type":"summary_text","text":""}}\n\n',
+      'event: response.reasoning_summary_text.delta\ndata: {"item_id":"rs1","summary_index":0,"delta":"Step 1"}\n\n',
+      'event: response.reasoning_summary_text.delta\ndata: {"item_id":"rs1","summary_index":0,"delta":" then 2"}\n\n',
+      'event: response.reasoning_summary_text.done\ndata: {"item_id":"rs1","summary_index":0,"text":"Step 1 then 2"}\n\n',
+      'event: response.reasoning_summary_part.done\ndata: {"item_id":"rs1","summary_index":0,"part":{"type":"summary_text","text":"Step 1 then 2"}}\n\n',
+      `event: response.output_item.done\ndata: ${JSON.stringify({
+        item: {
+          id: "rs1",
+          type: "reasoning",
+          summary: [{ type: "summary_text", text: "Step 1 then 2" }],
+        },
+      })}\n\n`,
+      'event: response.output_item.added\ndata: {"item":{"id":"m1","type":"message"}}\n\n',
+      'event: response.output_text.delta\ndata: {"item_id":"m1","delta":"42"}\n\n',
+      'event: response.output_text.done\ndata: {"item_id":"m1","text":"42"}\n\n',
+      `event: response.completed\ndata: ${JSON.stringify({
+        response: {
+          id: "resp-rs",
+          model: "o3",
+          output: [
+            {
+              id: "rs1",
+              type: "reasoning",
+              summary: [{ type: "summary_text", text: "Step 1 then 2" }],
+            },
+            { id: "m1", type: "message", content: [{ type: "output_text", text: "42" }] },
+          ],
+        },
+      })}\n\n`,
+    ];
+
+    const adapter = new ResponsesAdapter({
+      apiKey: "test-key",
+      fetch: mockFetch(sseResponse(...sse)),
+    });
+
+    const result = await collectStream(adapter.stream(makeRequest({ model: "o3" })));
+
+    expect(result.warnings?.some((w) => w.includes("unknown event type")) ?? false).toBe(false);
+    expect(result.output).toHaveLength(2);
+    expect(result.output[0]!.type).toBe("reasoning");
+    if (result.output[0]!.type === "reasoning") {
+      expect(result.output[0]!.visibility).toBe("summary");
+      expect(result.output[0]!.content).toEqual([{ type: "text", text: "Step 1 then 2" }]);
+    }
+    expect(result.text).toBe("42");
+  });
+
   it("should produce tool_call events", async () => {
     const sse = [
       'event: response.output_item.added\ndata: {"item":{"id":"tc1","type":"function_call","name":"get_weather"}}\n\n',

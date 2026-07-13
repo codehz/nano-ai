@@ -80,10 +80,17 @@ const mapper = new NormalizedRequestMapper("responses");
 
 type ResponsesSSEEvent =
   | { type: "response.output_item.added"; data: { item: { id: string; type: string; [key: string]: unknown } } }
+  | { type: "response.output_item.done"; data: { item: { id: string; type: string; [key: string]: unknown } } }
   | { type: "response.output_text.delta"; data: { item_id: string; delta: string } }
   | { type: "response.output_text.done"; data: { item_id: string; text: string } }
   | { type: "response.reasoning.delta"; data: { item_id: string; delta: string } }
   | { type: "response.reasoning.done"; data: { item_id: string; text: string } }
+  | { type: "response.reasoning_summary_part.added"; data: { item_id: string; summary_index: number; part?: unknown } }
+  | { type: "response.reasoning_summary_part.done"; data: { item_id: string; summary_index: number; part?: unknown } }
+  | { type: "response.reasoning_summary_text.delta"; data: { item_id: string; delta: string; summary_index?: number } }
+  | { type: "response.reasoning_summary_text.done"; data: { item_id: string; text: string; summary_index?: number } }
+  | { type: "response.reasoning_text.delta"; data: { item_id: string; delta: string; content_index?: number } }
+  | { type: "response.reasoning_text.done"; data: { item_id: string; text: string; content_index?: number } }
   | { type: "response.function_call_arguments.delta"; data: { item_id: string; delta: string } }
   | { type: "response.function_call_arguments.done"; data: { item_id: string; arguments: string } }
   | { type: "response.completed"; data: { response: ResponsesAPIResponse } }
@@ -98,8 +105,16 @@ const KNOWN_RESPONSES_SSE_TYPES = new Set([
   "response.output_item.done",
   "response.output_text.delta",
   "response.output_text.done",
+  // legacy aliases retained for fixtures / older gateways
   "response.reasoning.delta",
   "response.reasoning.done",
+  // current OpenAI reasoning summary + full reasoning text events
+  "response.reasoning_summary_part.added",
+  "response.reasoning_summary_part.done",
+  "response.reasoning_summary_text.delta",
+  "response.reasoning_summary_text.done",
+  "response.reasoning_text.delta",
+  "response.reasoning_text.done",
   "response.function_call_arguments.delta",
   "response.function_call_arguments.done",
   "response.content_part.added",
@@ -108,11 +123,70 @@ const KNOWN_RESPONSES_SSE_TYPES = new Set([
   "response.refusal.done",
   "response.in_progress",
   "response.created",
+  "response.queued",
   "response.completed",
   "response.failed",
   "response.incomplete",
   "error",
 ]);
+
+type ReasoningVisibility = import("../index.js").ReasoningItem["visibility"];
+
+type ReasoningStreamState = {
+  visibility: ReasoningVisibility;
+  hasDelta: boolean;
+  /** Accumulated final texts from *.done events when deltas were skipped. */
+  doneTexts: string[];
+  completed: boolean;
+};
+
+function createReasoningState(visibility: ReasoningVisibility = "summary"): ReasoningStreamState {
+  return { visibility, hasDelta: false, doneTexts: [], completed: false };
+}
+
+function extractReasoningFromOutputItem(item: Record<string, unknown>): {
+  text: string;
+  visibility: ReasoningVisibility;
+} {
+  const contentTexts: string[] = [];
+  if (Array.isArray(item.content)) {
+    for (const part of item.content) {
+      if (
+        part &&
+        typeof part === "object" &&
+        (part as { type?: unknown }).type === "reasoning_text" &&
+        typeof (part as { text?: unknown }).text === "string"
+      ) {
+        contentTexts.push((part as { text: string }).text);
+      }
+    }
+  }
+
+  const summaryTexts: string[] = [];
+  if (Array.isArray(item.summary)) {
+    for (const part of item.summary) {
+      if (
+        part &&
+        typeof part === "object" &&
+        (part as { type?: unknown }).type === "summary_text" &&
+        typeof (part as { text?: unknown }).text === "string"
+      ) {
+        summaryTexts.push((part as { text: string }).text);
+      }
+    }
+  }
+
+  if (contentTexts.length > 0) {
+    return { text: contentTexts.join("\n"), visibility: "full" };
+  }
+  if (summaryTexts.length > 0) {
+    return { text: summaryTexts.join("\n"), visibility: "summary" };
+  }
+  if (typeof item.encrypted_content === "string" && item.encrypted_content.length > 0) {
+    return { text: "", visibility: "opaque" };
+  }
+  return { text: "", visibility: "summary" };
+}
 
 type ResponsesAPIResponse = {
   id: string;
@@ -133,12 +207,15 @@ type ResponsesAPIResponse = {
 
 type ResponsesAPIOutputItem = {
   id: string;
-  type: "message" | "reasoning" | "function_call";
+  type: "message" | "reasoning" | "function_call" | string;
   role?: string;
-  content?: ResponsesContentBlock[];
+  content?: ResponsesContentBlock[] | Array<{ type: string; text?: string; [key: string]: unknown }>;
+  summary?: Array<{ type: string; text?: string; [key: string]: unknown }>;
+  encrypted_content?: string | null;
   name?: string;
   arguments?: string;
   status?: string;
+  [key: string]: unknown;
 };
 
 function isReplayCanonicalInput(item: ResponsesInputItem): boolean {
@@ -316,6 +393,29 @@ export class ResponsesAdapter extends AdapterBase {
     let unknownEventsWarned = false;
     const messageItemsWithDelta = new Set<string>();
     const toolCallNames = new Map<string, string>();
+    const reasoningStates = new Map<string, ReasoningStreamState>();
+
+    const ensureReasoningState = (itemId: string, visibility: ReasoningVisibility = "summary"): ReasoningStreamState => {
+      let state = reasoningStates.get(itemId);
+      if (!state) {
+        state = createReasoningState(visibility);
+        reasoningStates.set(itemId, state);
+      }
+      return state;
+    };
+
+    const completeReasoning = function* (
+      itemId: string,
+      text: string,
+      visibility: ReasoningVisibility,
+    ): Generator<AIStreamEvent, void, undefined> {
+      const state = ensureReasoningState(itemId, visibility);
+      if (state.completed) return;
+      state.completed = true;
+      state.visibility = visibility;
+      yield factory.reasoningCompleted(itemId);
+      output.push(reasoningItem(text ? [textBlock(text)] : [], visibility, itemId));
+    };
 
     for await (const batch of iterateProviderStreamBatches({
       reader,
@@ -340,15 +440,32 @@ export class ResponsesAdapter extends AdapterBase {
             case "message":
               yield factory.messageStarted(item.id);
               break;
-            case "reasoning":
-              yield factory.reasoningStarted(item.id, "full");
+            case "reasoning": {
+              // OpenAI 公开流默认是 summary；full/opaque 在后续事件中再收紧。
+              const visibility = extractReasoningFromOutputItem(item).visibility;
+              ensureReasoningState(item.id, visibility);
+              yield factory.reasoningStarted(item.id, visibility);
               break;
+            }
             case "function_call": {
               const name = typeof item.name === "string" ? item.name : "unknown";
               toolCallNames.set(item.id, name);
               yield factory.toolCallStarted(item.id, name);
               break;
             }
+          }
+          continue;
+        }
+
+        if (sseEvent.type === "response.output_item.done") {
+          const item = (sseEvent.data as { item: { id: string; type: string; [key: string]: unknown } }).item;
+          if (item.type === "reasoning") {
+            const extracted = extractReasoningFromOutputItem(item);
+            const state = ensureReasoningState(item.id, extracted.visibility);
+            const text =
+              extracted.text ||
+              (state.doneTexts.length > 0 ? state.doneTexts.join("\n") : "");
+            yield* completeReasoning(item.id, text, extracted.visibility || state.visibility);
           }
           continue;
         }
@@ -370,16 +487,83 @@ export class ResponsesAdapter extends AdapterBase {
           continue;
         }
 
+        // Modern OpenAI reasoning summary text (publicly streamed for o-series / gpt-5)
+        if (sseEvent.type === "response.reasoning_summary_text.delta") {
+          const data = sseEvent.data as { item_id: string; delta: string };
+          const state = ensureReasoningState(data.item_id, "summary");
+          if (state.visibility === "opaque") state.visibility = "summary";
+          if (data.delta) {
+            state.hasDelta = true;
+            yield factory.reasoningDelta(data.item_id, textBlock(data.delta));
+          }
+          continue;
+        }
+
+        if (sseEvent.type === "response.reasoning_summary_text.done") {
+          const data = sseEvent.data as { item_id: string; text: string };
+          const state = ensureReasoningState(data.item_id, "summary");
+          if (state.visibility === "opaque") state.visibility = "summary";
+          if (!state.hasDelta && data.text) {
+            state.doneTexts.push(data.text);
+            yield factory.reasoningDelta(data.item_id, textBlock(data.text));
+          } else if (data.text) {
+            state.doneTexts.push(data.text);
+          }
+          continue;
+        }
+
+        // Full reasoning text (opt-in via include); upgrade visibility to full
+        if (sseEvent.type === "response.reasoning_text.delta") {
+          const data = sseEvent.data as { item_id: string; delta: string };
+          const state = ensureReasoningState(data.item_id, "full");
+          state.visibility = "full";
+          if (data.delta) {
+            state.hasDelta = true;
+            yield factory.reasoningDelta(data.item_id, textBlock(data.delta));
+          }
+          continue;
+        }
+
+        if (sseEvent.type === "response.reasoning_text.done") {
+          const data = sseEvent.data as { item_id: string; text: string };
+          const state = ensureReasoningState(data.item_id, "full");
+          state.visibility = "full";
+          if (!state.hasDelta && data.text) {
+            state.doneTexts.push(data.text);
+            yield factory.reasoningDelta(data.item_id, textBlock(data.text));
+          } else if (data.text) {
+            state.doneTexts.push(data.text);
+          }
+          continue;
+        }
+
+        // Structural summary part events — known & ignored (text is handled above)
+        if (
+          sseEvent.type === "response.reasoning_summary_part.added" ||
+          sseEvent.type === "response.reasoning_summary_part.done"
+        ) {
+          continue;
+        }
+
+        // Legacy aliases kept for fixtures / older gateways
         if (sseEvent.type === "response.reasoning.delta") {
           const data = sseEvent.data as { item_id: string; delta: string };
-          yield factory.reasoningDelta(data.item_id, textBlock(data.delta));
+          const state = ensureReasoningState(data.item_id, "full");
+          state.visibility = "full";
+          if (data.delta) {
+            state.hasDelta = true;
+            yield factory.reasoningDelta(data.item_id, textBlock(data.delta));
+          }
           continue;
         }
 
         if (sseEvent.type === "response.reasoning.done") {
           const data = sseEvent.data as { item_id: string; text: string };
-          yield factory.reasoningCompleted(data.item_id);
-          output.push(reasoningItem([textBlock(data.text)], "full", data.item_id));
+          const state = ensureReasoningState(data.item_id, "full");
+          if (!state.hasDelta && data.text) {
+            yield factory.reasoningDelta(data.item_id, textBlock(data.text));
+          }
+          yield* completeReasoning(data.item_id, data.text ?? state.doneTexts.join("\n"), "full");
           continue;
         }
 
@@ -409,6 +593,23 @@ export class ResponsesAdapter extends AdapterBase {
           }
 
           completedResponse = data.response;
+
+          // Safety net: finalize any still-open reasoning items from the final response payload.
+          if (Array.isArray(data.response.output)) {
+            for (const item of data.response.output) {
+              if (item?.type !== "reasoning" || !item.id) continue;
+              const state = reasoningStates.get(item.id);
+              if (state?.completed) continue;
+              const extracted = extractReasoningFromOutputItem(item);
+              const text =
+                extracted.text ||
+                (state && state.doneTexts.length > 0 ? state.doneTexts.join("\n") : "");
+              // Only complete if we already started this item (otherwise aggregator has no active item).
+              if (state || reasoningStates.has(item.id)) {
+                yield* completeReasoning(item.id, text, extracted.visibility);
+              }
+            }
+          }
 
           if (sseEvent.type === "response.failed") {
             yield factory.responseWarning(
