@@ -71,7 +71,7 @@ type ResponsesTool = {
   type: "function";
   name: string;
   description?: string;
-  input_schema: Record<string, unknown>;
+  parameters: Record<string, unknown>;
 };
 
 const mapper = new NormalizedRequestMapper("responses");
@@ -269,7 +269,7 @@ export class ResponsesAdapter extends AdapterBase {
         type: "function",
         name: t.name,
         description: t.description,
-        input_schema: t.inputSchema,
+        parameters: t.inputSchema,
       }),
     );
 

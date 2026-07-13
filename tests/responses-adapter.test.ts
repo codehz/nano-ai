@@ -363,19 +363,33 @@ describe("ResponsesAdapter - request building", () => {
     expect(body?.metadata).toEqual({ traceId: "trace-1" });
   });
 
-  it("should include tools in request body", async () => {
+  it("should include tools in request body with parameters (not input_schema)", async () => {
     const { captured, fetch } = captureRequest();
     const adapter = new ResponsesAdapter({ apiKey: "test-key", fetch });
+    const inputSchema = {
+      type: "object",
+      properties: { location: { type: "string" } },
+      required: ["location"],
+    };
 
     await collectStream(
       adapter.stream(
         makeRequest({
-          tools: [{ name: "get_weather", description: "Get weather", inputSchema: { type: "object" } }],
+          tools: [{ name: "get_weather", description: "Get weather", inputSchema }],
         }),
       ),
     );
     const body = captured.current as Record<string, unknown> | null;
-    expect(body?.tools).toHaveLength(1);
+    const tools = body?.tools as Array<Record<string, unknown>> | undefined;
+    expect(tools).toEqual([
+      {
+        type: "function",
+        name: "get_weather",
+        description: "Get weather",
+        parameters: inputSchema,
+      },
+    ]);
+    expect(tools?.[0]).not.toHaveProperty("input_schema");
   });
 
   it("should include temperature and max_output_tokens", async () => {
