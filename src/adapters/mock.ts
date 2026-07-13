@@ -272,7 +272,6 @@ export class MockAdapter extends AdapterBase {
     toolCallStreaming: "synthetic",
     replay: "canonical",
     usage: "final",
-    toolResultOutcomes: ["success", "error", "rejected"],
   } as const;
 
   private readonly handler: MockHandler;

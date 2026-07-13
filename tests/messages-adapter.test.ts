@@ -475,7 +475,7 @@ describe("MessagesAdapter - request building", () => {
               type: "tool_result" as const,
               callId: "tc2",
               toolName: "get_temperature",
-              outcome: "error" as const,
+              outcome: "rejected" as const,
               content: [{ type: "text" as const, text: "sensor unavailable" }],
             },
           ],

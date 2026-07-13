@@ -512,7 +512,7 @@ describe("ChatCompletionsAdapter - request building", () => {
     expect(toolMsg?.tool_call_id).toBe("tc1");
   });
 
-  it("should accept error tool_result outcomes and map content to tool messages", async () => {
+  it("should accept rejected tool_result outcomes and map content to tool messages", async () => {
     const { captured, fetch } = captureRequest();
     const adapter = new ChatCompletionsAdapter({ apiKey: "test-key", fetch });
 
@@ -524,7 +524,7 @@ describe("ChatCompletionsAdapter - request building", () => {
               type: "tool_result" as const,
               callId: "tc1",
               toolName: "get_weather",
-              outcome: "error" as const,
+              outcome: "rejected" as const,
               content: [{ type: "text" as const, text: "failed" }],
             },
           ],

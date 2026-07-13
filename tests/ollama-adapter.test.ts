@@ -471,7 +471,7 @@ describe("OllamaAdapter - request building", () => {
               type: "tool_result" as const,
               callId: round1.toolCalls[0]!.id,
               toolName: round1.toolCalls[0]!.name,
-              outcome: "success" as const,
+              outcome: "rejected" as const,
               content: [{ type: "text" as const, text: "sunny" }],
             },
           ],

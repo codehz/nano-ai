@@ -131,8 +131,6 @@ const profile: ProviderProfile = {
     toolCallStreaming: "native",
     replay: "opaque",
     usage: "final",
-    // Chat Completions has no native is_error flag; error is conveyed via tool message content.
-    toolResultOutcomes: ["success", "error"],
   },
 };
 
@@ -304,7 +302,6 @@ export class ChatCompletionsAdapter extends AdapterBase {
           break;
         }
         case "tool_result": {
-          mapper.assertToolResultOutcome(item.outcome);
           messages.push({
             role: "tool",
             tool_call_id: item.callId,

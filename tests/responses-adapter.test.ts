@@ -404,6 +404,36 @@ describe("ResponsesAdapter - request building", () => {
     expect(body?.tool_choice).toEqual({ type: "function", name: "get_weather" });
   });
 
+  it("should map rejected tool results without rejecting canonical input", async () => {
+    const { captured, fetch } = captureRequest();
+    const adapter = new ResponsesAdapter({ apiKey: "test-key", fetch });
+
+    await collectStream(
+      adapter.stream(
+        makeRequest({
+          input: [
+            {
+              type: "tool_result",
+              callId: "tc1",
+              toolName: "get_weather",
+              outcome: "rejected",
+              content: [{ type: "text", text: "permission denied" }],
+            },
+          ],
+        }),
+      ),
+    );
+
+    const body = captured.current as Record<string, unknown> | null;
+    expect(body?.input).toEqual([
+      {
+        type: "function_call_output",
+        call_id: "tc1",
+        output: "permission denied",
+      },
+    ]);
+  });
+
   it("should reject unsupported image content instead of sending empty text", async () => {
     const { fetch } = captureRequest();
     const adapter = new ResponsesAdapter({ apiKey: "test-key", fetch });

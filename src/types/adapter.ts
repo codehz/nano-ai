@@ -29,7 +29,6 @@ export type AdapterCapabilities = {
   readonly toolCallStreaming: StreamingCapability;
   readonly replay: "canonical" | "opaque" | "none";
   readonly usage: "stream" | "final" | "none";
-  readonly toolResultOutcomes: ReadonlyArray<"success" | "error" | "rejected">;
 };
 
 export interface BackendAdapter {

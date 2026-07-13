@@ -95,7 +95,6 @@ const profile: ProviderProfile = {
     toolCallStreaming: "synthetic",
     replay: "opaque",
     usage: "final",
-    toolResultOutcomes: ["success"],
   },
 };
 
@@ -238,7 +237,6 @@ export class OllamaAdapter extends AdapterBase {
           break;
         }
         case "tool_result": {
-          mapper.assertToolResultOutcome(item.outcome);
           // Best-effort: consume matching id from name queue when present (no wire call_id)
           const queue = callIdsByName.get(item.toolName);
           if (queue && queue.length > 0) {

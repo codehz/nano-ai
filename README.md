@@ -173,7 +173,6 @@ adapter.capabilities.reasoningStreaming;
 adapter.capabilities.toolCallStreaming;
 adapter.capabilities.replay; // "canonical" | "opaque" | "none"
 adapter.capabilities.usage; // "stream" | "final" | "none"
-adapter.capabilities.toolResultOutcomes;
 ```
 
 响应级 `backend.isSyntheticStream` 根据 `textStreaming === "synthetic"` 推导；具体响应内容仍应从

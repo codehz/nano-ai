@@ -14,7 +14,6 @@ function createMockAdapter(kind: BackendAdapter["kind"] = "responses"): BackendA
       toolCallStreaming: "native",
       replay: "canonical",
       usage: "final",
-      toolResultOutcomes: ["success"],
     } as const,
     stream(_request: NormalizedRequest): AsyncIterable<AIStreamEvent> {
       return (async function* () {})();

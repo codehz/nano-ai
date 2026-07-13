@@ -85,7 +85,6 @@ const profile: ProviderProfile = {
     toolCallStreaming: "native",
     replay: "opaque",
     usage: "final",
-    toolResultOutcomes: ["success"],
   },
 };
 
@@ -242,7 +241,6 @@ export class ResponsesAdapter extends AdapterBase {
           break;
         }
         case "tool_result": {
-          mapper.assertToolResultOutcome(item.outcome);
           const output = mapper
             .ensureTextBlocks(item.content, `tool_result ${item.callId} content`)
             .map(blockToText)

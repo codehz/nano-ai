@@ -173,7 +173,6 @@ describe("AdapterBase", () => {
       toolCallStreaming: "synthetic",
       replay: "canonical",
       usage: "final",
-      toolResultOutcomes: ["success", "error", "rejected"],
     } as const;
 
     protected buildRequest(request: NormalizedRequest): string {
@@ -264,7 +263,6 @@ describe("AdapterBase", () => {
         toolCallStreaming: "synthetic",
         replay: "canonical",
         usage: "final",
-        toolResultOutcomes: ["success", "error", "rejected"],
       } as const;
       protected buildRequest(): never {
         throw new AIProviderError("API connection failed", "PROVIDER_ERROR", 503);
@@ -294,7 +292,6 @@ describe("AdapterBase", () => {
         toolCallStreaming: "synthetic",
         replay: "canonical",
         usage: "final",
-        toolResultOutcomes: ["success", "error", "rejected"],
       } as const;
 
       protected buildRequest(): never {
@@ -366,7 +363,6 @@ describe("AdapterBase", () => {
         toolCallStreaming: "native",
         replay: "canonical",
         usage: "final",
-        toolResultOutcomes: ["success"],
       } as const;
       protected buildRequest(r: NormalizedRequest) {
         return r;

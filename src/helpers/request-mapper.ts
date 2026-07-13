@@ -1,7 +1,7 @@
 import { AIRequestError } from "../core/errors.js";
 import { contentBlocksToText } from "./mapping.js";
 
-import type { AdapterCapabilities, ContentBlock, InstructionBlock, ToolResultItem } from "../types/index.js";
+import type { AdapterCapabilities, ContentBlock, InstructionBlock } from "../types/index.js";
 
 export type ProviderProfile = {
   readonly kind: string;
@@ -31,18 +31,6 @@ export class NormalizedRequestMapper {
       this.profile.reasoningBlockTypes,
       "reasoning only supports text blocks",
     ) as Array<Extract<ContentBlock, { type: "text" }>>;
-  }
-
-  assertToolResultOutcome(outcome: ToolResultItem["outcome"]): void {
-    if (this.profile.capabilities.toolResultOutcomes.includes(outcome)) return;
-
-    const outcomes = this.profile.capabilities.toolResultOutcomes;
-    const supported = outcomes.map((value) => `"${value}"`).join(" and ");
-    const verb = outcomes.length > 1 ? "are" : "is";
-    throw new AIRequestError(
-      `${this.profile.kind} does not preserve tool_result outcome "${outcome}"; only ${supported} ${verb} supported`,
-      "UNSUPPORTED_TOOL_RESULT_OUTCOME",
-    );
   }
 
   rollbackTrailingAssistantMessages<T extends { role: string }>(messages: T[]): void {

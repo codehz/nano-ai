@@ -181,7 +181,6 @@ describe("Stream interruption semantics", () => {
         toolCallStreaming: "synthetic",
         replay: "canonical",
         usage: "final",
-        toolResultOutcomes: ["success", "error", "rejected"],
       } as const;
       protected buildRequest(): never {
         throw new AIProviderError("API key invalid", "AUTH_ERROR", 401);
@@ -352,7 +351,6 @@ describe("Normal vs abnormal termination", () => {
         toolCallStreaming: "synthetic",
         replay: "canonical",
         usage: "final",
-        toolResultOutcomes: ["success", "error", "rejected"],
       } as const;
       protected buildRequest(): never {
         throw new Error("Connection refused");

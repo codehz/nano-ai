@@ -86,7 +86,6 @@ const profile: ProviderProfile = {
     toolCallStreaming: "synthetic",
     replay: "opaque",
     usage: "stream",
-    toolResultOutcomes: ["success", "error"],
   },
 };
 
@@ -313,7 +312,6 @@ export class MessagesAdapter extends AdapterBase {
           break;
         }
         case "tool_result": {
-          mapper.assertToolResultOutcome(item.outcome);
           const content = mapper
             .ensureTextBlocks(item.content, `tool_result ${item.callId} content`)
             .map(blockToText)
@@ -322,7 +320,7 @@ export class MessagesAdapter extends AdapterBase {
             type: "tool_result",
             tool_use_id: item.callId,
             content,
-            is_error: item.outcome === "error",
+            is_error: item.outcome !== "success",
           };
           if (pendingToolResultMessage && typeof pendingToolResultMessage.content !== "string") {
             pendingToolResultMessage.content.push(block);

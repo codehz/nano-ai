@@ -317,7 +317,6 @@ describe("Adapter contracts", () => {
       toolCallStreaming: "native",
       replay: "opaque",
       usage: "final",
-      toolResultOutcomes: ["success", "error"],
     });
     expect(new MessagesAdapter({ apiKey: "test-key" }).capabilities).toEqual({
       textStreaming: "native",
@@ -325,7 +324,6 @@ describe("Adapter contracts", () => {
       toolCallStreaming: "synthetic",
       replay: "opaque",
       usage: "stream",
-      toolResultOutcomes: ["success", "error"],
     });
     expect(new ResponsesAdapter({ apiKey: "test-key" }).capabilities).toEqual({
       textStreaming: "native",
@@ -333,7 +331,6 @@ describe("Adapter contracts", () => {
       toolCallStreaming: "native",
       replay: "opaque",
       usage: "final",
-      toolResultOutcomes: ["success"],
     });
     expect(new OllamaAdapter().capabilities).toEqual({
       textStreaming: "native",
@@ -341,7 +338,6 @@ describe("Adapter contracts", () => {
       toolCallStreaming: "synthetic",
       replay: "opaque",
       usage: "final",
-      toolResultOutcomes: ["success"],
     });
     expect(
       new MockAdapter({
@@ -353,7 +349,6 @@ describe("Adapter contracts", () => {
       toolCallStreaming: "synthetic",
       replay: "canonical",
       usage: "final",
-      toolResultOutcomes: ["success", "error", "rejected"],
     });
   });
 

@@ -177,7 +177,6 @@ describe("Scenario: manual tool loop", () => {
         toolCallStreaming: "native",
         replay: "canonical",
         usage: "final",
-        toolResultOutcomes: ["success"],
       } as const,
       stream(_request: NormalizedRequest): AsyncIterable<AIStreamEvent> {
         const f = responsesFactory();
