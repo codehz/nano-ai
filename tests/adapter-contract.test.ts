@@ -317,7 +317,7 @@ describe("Adapter contracts", () => {
       toolCallStreaming: "native",
       replay: "opaque",
       usage: "final",
-      toolResultOutcomes: ["success"],
+      toolResultOutcomes: ["success", "error"],
     });
     expect(new MessagesAdapter({ apiKey: "test-key" }).capabilities).toEqual({
       textStreaming: "native",

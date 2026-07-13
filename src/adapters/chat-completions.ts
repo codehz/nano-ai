@@ -131,7 +131,8 @@ const profile: ProviderProfile = {
     toolCallStreaming: "native",
     replay: "opaque",
     usage: "final",
-    toolResultOutcomes: ["success"],
+    // Chat Completions has no native is_error flag; error is conveyed via tool message content.
+    toolResultOutcomes: ["success", "error"],
   },
 };
 
