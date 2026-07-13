@@ -9,7 +9,7 @@
  */
 
 import { AdapterBase } from "../helpers/adapter-base.js";
-import { AIRequestError } from "../core/errors.js";
+import { AIRequestError, WarningCode } from "../core/errors.js";
 import {
   textBlock,
   messageItem,
@@ -596,7 +596,7 @@ export class ChatCompletionsAdapter extends AdapterBase {
     }
 
     if (!gate.completed && (hasMessageStarted || hasReasoningStarted || pendingToolCalls.size > 0)) {
-      yield factory.responseWarning("Stream ended without a finish_reason", "INCOMPLETE_STREAM");
+      yield factory.responseWarning("Stream ended without a finish_reason", WarningCode.STREAM_INCOMPLETE);
       const { events, assistantReplayMessage } = finalizePendingTurn();
       for (const event of events) yield event;
       yield* emitCompleted(undefined, assistantReplayMessage, responseId);

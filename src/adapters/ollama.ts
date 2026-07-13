@@ -478,7 +478,7 @@ export class OllamaAdapter extends AdapterBase {
     }
 
     if (!gate.completed && (hasMessageStarted || pendingToolCalls.length > 0)) {
-      yield factory.responseWarning("Stream ended without a done signal", "INCOMPLETE_STREAM");
+      yield factory.responseWarning("Stream ended without a done signal", WarningCode.STREAM_INCOMPLETE);
 
       if (hasMessageStarted) {
         const message = messageItem([textBlock(accumulatedContent)], { id: currentMessageId });
