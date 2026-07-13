@@ -1,13 +1,6 @@
 import { WarningCode } from "../core/errors.js";
 import type { EventFactory } from "../core/event-factory.js";
-import type {
-  AIStreamEvent,
-  BillingInfo,
-  NormalizedRequest,
-  Usage,
-  AuxiliaryInfo,
-  BackendTrace,
-} from "../types/index.js";
+import type { AIStreamEvent, BillingInfo, NormalizedRequest, Usage, AuxiliaryInfo } from "../types/index.js";
 import { AuxiliaryCollector, type BillingSource, type LookupResult, type UsageSource } from "./auxiliary-collector.js";
 
 type MaybePromise<T> = T | Promise<T>;
@@ -155,21 +148,6 @@ export function emitMalformedStreamWarning(
     `Skipped ${options.count} malformed ${options.providerLabel} ${options.transportLabel}`,
     "STREAM_ERROR",
   );
-}
-
-export function metadataSourceList(
-  ...groups: Array<Array<NonNullable<BackendTrace["metadataSources"]>[number]> | undefined>
-): string[] | undefined {
-  const sources = new Set<string>();
-
-  for (const group of groups) {
-    if (!group) continue;
-    for (const source of group) {
-      sources.add(source);
-    }
-  }
-
-  return sources.size > 0 ? [...sources] : undefined;
 }
 
 function isEmptyRecord(value: object): boolean {

@@ -10,7 +10,7 @@
  */
 
 import { AdapterBase } from "../helpers/adapter-base.js";
-import { AIProviderError, AIRequestError, AIStreamError } from "../core/errors.js";
+import { AIRequestError } from "../core/errors.js";
 import {
   textBlock,
   messageItem,
@@ -18,13 +18,16 @@ import {
   toolCallItem,
   opaqueItem,
   replayFromOutput,
-  blockToText,
-  contentBlocksToText,
 } from "../helpers/mapping.js";
-import { emitMalformedStreamWarning } from "../helpers/adapter-auxiliary.js";
-import { assertOpaqueReplayEnvelope, providerHttpError } from "../helpers/adapter-security.js";
+import { assertOpaqueReplayEnvelope } from "../helpers/adapter-security.js";
 import { usageFromOpenAIResponses } from "../helpers/usage-mapping.js";
-import { NormalizedRequestMapper, splitSSEFrames, IncrementalStreamParser } from "../helpers/index.js";
+import {
+  NormalizedRequestMapper,
+  createSseJsonParser,
+  openProviderJsonStream,
+  iterateProviderStreamBatches,
+  createCompletionGate,
+} from "../helpers/index.js";
 
 import type { NormalizedRequest, AIStreamEvent, EventFactory, OutputItem, FetchFn } from "../index.js";
 
@@ -198,9 +201,7 @@ export class ResponsesAdapter extends AdapterBase {
             input.push({
               type: "message",
               role: item.role,
-              content: contentBlocksToText(
-                mapper.ensureTextBlocks(item.content, `input message (${item.role}) content`),
-              ),
+              content: mapper.textFromBlocks(item.content, `input message (${item.role}) content`),
             });
           }
           break;
@@ -222,10 +223,7 @@ export class ResponsesAdapter extends AdapterBase {
           break;
         }
         case "tool_result": {
-          const output = mapper
-            .ensureTextBlocks(item.content, `tool_result ${item.callId} content`)
-            .map(blockToText)
-            .join("\n");
+          const output = mapper.textFromBlocks(item.content, `tool_result ${item.callId} content`);
           input.push({
             type: "function_call_output",
             call_id: item.callId,
@@ -265,24 +263,24 @@ export class ResponsesAdapter extends AdapterBase {
       body.instructions = mapper.mapInstructions(request.instructions);
     }
 
-    if (request.tools && request.tools.length > 0) {
-      body.tools = request.tools.map(
-        (t): ResponsesTool => ({
-          type: "function",
-          name: t.name,
-          description: t.description,
-          input_schema: t.inputSchema,
-        }),
-      );
-    }
+    body.tools = mapper.mapToolsIfPresent(
+      request.tools,
+      (t): ResponsesTool => ({
+        type: "function",
+        name: t.name,
+        description: t.description,
+        input_schema: t.inputSchema,
+      }),
+    );
 
-    if (request.toolChoice) {
-      if (request.toolChoice === "auto") body.tool_choice = "auto";
-      else if (request.toolChoice === "none") body.tool_choice = "none";
-      else if (request.toolChoice.type === "tool") {
-        body.tool_choice = { type: "function", name: request.toolChoice.name };
-      }
-    }
+    body.tool_choice = mapper.mapToolChoice<Exclude<ResponsesAPIRequest["tool_choice"], undefined>>(
+      request.toolChoice,
+      {
+        auto: "auto",
+        none: "none",
+        tool: (name) => ({ type: "function" as const, name }),
+      },
+    );
 
     if (request.temperature !== undefined) body.temperature = request.temperature;
     if (request.maxOutputTokens !== undefined) body.max_output_tokens = request.maxOutputTokens;
@@ -299,200 +297,139 @@ export class ResponsesAdapter extends AdapterBase {
     request: NormalizedRequest,
   ): AsyncIterable<AIStreamEvent> {
     const auxiliary = this.createAuxiliaryState(request);
-    let response: Response;
+    const gate = createCompletionGate();
 
-    try {
-      response = await this.fetchFn(`${this.baseUrl}/responses`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${this.apiKey}`,
-        },
-        body: JSON.stringify(providerRequest),
-        signal: request.signal,
-      });
-    } catch (err) {
-      throw new AIProviderError(err instanceof Error ? err.message : String(err), "PROVIDER_ERROR");
-    }
-
-    if (!response.ok) {
-      const errorBody = await response.text().catch(() => "");
-      throw providerHttpError(response.status, errorBody);
-    }
-
-    const reader = response.body?.getReader();
-    if (!reader) {
-      throw new AIStreamError("Response body is not readable", "STREAM_ERROR");
-    }
-
-    // 流式累积状态
-    const parser = new IncrementalStreamParser<ResponsesSSEEvent>(splitSSEFrames, (frame: string) => {
-      let eventType = "";
-      let dataStr = "";
-      for (const rawLine of frame.split("\n")) {
-        const line = rawLine.trim();
-        if (line.startsWith("event: ")) eventType = line.slice(7).trim();
-        else if (line.startsWith("data: ")) dataStr += line.slice(6);
-      }
-      if (!eventType) return { status: "ignored" };
-      try {
-        const data = JSON.parse(dataStr);
-        return { status: "parsed", value: { type: eventType, data } as ResponsesSSEEvent };
-      } catch {
-        return { status: "malformed" };
-      }
+    const { reader } = await openProviderJsonStream({
+      fetchFn: this.fetchFn,
+      url: `${this.baseUrl}/responses`,
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${this.apiKey}`,
+      },
+      body: providerRequest,
+      signal: request.signal,
     });
 
+    const parser = createSseJsonParser<ResponsesSSEEvent>();
     const output: OutputItem[] = [];
-    let streamDone = false;
     let completedResponse: ResponsesAPIResponse | undefined;
-    let completedEmitted = false;
     let unknownEventsWarned = false;
     const messageItemsWithDelta = new Set<string>();
     const toolCallNames = new Map<string, string>();
 
-    try {
-      while (true) {
-        const readResult = await reader.read().catch((err: unknown) => {
-          throw new AIStreamError(
-            `Failed to read response stream: ${err instanceof Error ? err.message : String(err)}`,
-            "STREAM_ERROR",
-          );
-        });
-        const { done, value } = readResult;
-        const { items: events, malformed: malformedEvents } = done ? parser.flush() : parser.feed(value as Uint8Array);
+    for await (const batch of iterateProviderStreamBatches({
+      reader,
+      parser,
+      factory,
+      providerLabel: "Responses",
+      transportLabel: "SSE event(s)",
+      incompleteMessage: "Stream ended with an incomplete Responses SSE frame",
+    })) {
+      for (const warning of batch.warnings) yield warning;
 
-        const malformedWarning = emitMalformedStreamWarning(factory, {
-          count: malformedEvents,
-          providerLabel: "Responses",
-          transportLabel: "SSE event(s)",
-        });
-        if (malformedWarning) {
-          yield malformedWarning;
+      for (const sseEvent of batch.items) {
+        if (sseEvent.type === "error") {
+          const data = sseEvent.data as { message?: string; code?: string };
+          yield factory.responseWarning(data.message ?? "Provider error event", data.code);
+          continue;
         }
 
-        for (const sseEvent of events) {
-          if (sseEvent.type === "error") {
-            const data = sseEvent.data as { message?: string; code?: string };
-            yield factory.responseWarning(data.message ?? "Provider error event", data.code);
-            continue;
-          }
-
-          // item 级事件
-          if (sseEvent.type === "response.output_item.added") {
-            const item = (sseEvent.data as { item: { id: string; type: string; [key: string]: unknown } }).item;
-            switch (item.type) {
-              case "message":
-                yield factory.messageStarted(item.id);
-                break;
-              case "reasoning":
-                yield factory.reasoningStarted(item.id, "full");
-                break;
-              case "function_call": {
-                const name = typeof item.name === "string" ? item.name : "unknown";
-                toolCallNames.set(item.id, name);
-                yield factory.toolCallStarted(item.id, name);
-                break;
-              }
+        if (sseEvent.type === "response.output_item.added") {
+          const item = (sseEvent.data as { item: { id: string; type: string; [key: string]: unknown } }).item;
+          switch (item.type) {
+            case "message":
+              yield factory.messageStarted(item.id);
+              break;
+            case "reasoning":
+              yield factory.reasoningStarted(item.id, "full");
+              break;
+            case "function_call": {
+              const name = typeof item.name === "string" ? item.name : "unknown";
+              toolCallNames.set(item.id, name);
+              yield factory.toolCallStarted(item.id, name);
+              break;
             }
+          }
+          continue;
+        }
+
+        if (sseEvent.type === "response.output_text.delta") {
+          const data = sseEvent.data as { item_id: string; delta: string };
+          yield factory.messageDelta(data.item_id, textBlock(data.delta));
+          messageItemsWithDelta.add(data.item_id);
+          continue;
+        }
+
+        if (sseEvent.type === "response.output_text.done") {
+          const data = sseEvent.data as { item_id: string; text: string };
+          if (!messageItemsWithDelta.has(data.item_id) && data.text) {
+            yield factory.messageDelta(data.item_id, textBlock(data.text));
+          }
+          yield factory.messageCompleted(data.item_id);
+          output.push(messageItem([textBlock(data.text)], { id: data.item_id }));
+          continue;
+        }
+
+        if (sseEvent.type === "response.reasoning.delta") {
+          const data = sseEvent.data as { item_id: string; delta: string };
+          yield factory.reasoningDelta(data.item_id, textBlock(data.delta));
+          continue;
+        }
+
+        if (sseEvent.type === "response.reasoning.done") {
+          const data = sseEvent.data as { item_id: string; text: string };
+          yield factory.reasoningCompleted(data.item_id);
+          output.push(reasoningItem([textBlock(data.text)], "full", data.item_id));
+          continue;
+        }
+
+        if (sseEvent.type === "response.function_call_arguments.delta") {
+          const data = sseEvent.data as { item_id: string; delta: string };
+          if (data.delta) yield factory.toolCallDelta(data.item_id, { argumentsText: data.delta });
+          continue;
+        }
+
+        if (sseEvent.type === "response.function_call_arguments.done") {
+          const data = sseEvent.data as { item_id: string; arguments: string };
+          const tcItem = toolCallItem(data.item_id, toolCallNames.get(data.item_id) ?? "unknown", data.arguments);
+          yield factory.toolCallCompleted(data.item_id);
+          output.push(tcItem);
+          continue;
+        }
+
+        if (
+          sseEvent.type === "response.completed" ||
+          sseEvent.type === "response.failed" ||
+          sseEvent.type === "response.incomplete"
+        ) {
+          const data = sseEvent.data as { response: ResponsesAPIResponse };
+          if (completedResponse) {
+            yield factory.responseWarning("Duplicate finish signal ignored", "DUPLICATE_FINISH");
             continue;
           }
 
-          if (sseEvent.type === "response.output_text.delta") {
-            const data = sseEvent.data as { item_id: string; delta: string };
-            yield factory.messageDelta(data.item_id, textBlock(data.delta));
-            messageItemsWithDelta.add(data.item_id);
-            continue;
-          }
+          completedResponse = data.response;
 
-          if (sseEvent.type === "response.output_text.done") {
-            const data = sseEvent.data as { item_id: string; text: string };
-            if (!messageItemsWithDelta.has(data.item_id) && data.text) {
-              yield factory.messageDelta(data.item_id, textBlock(data.text));
-            }
-            yield factory.messageCompleted(data.item_id);
-            output.push(messageItem([textBlock(data.text)], { id: data.item_id }));
-            continue;
-          }
-
-          if (sseEvent.type === "response.reasoning.delta") {
-            const data = sseEvent.data as { item_id: string; delta: string };
-            yield factory.reasoningDelta(data.item_id, textBlock(data.delta));
-            continue;
-          }
-
-          if (sseEvent.type === "response.reasoning.done") {
-            const data = sseEvent.data as { item_id: string; text: string };
-            yield factory.reasoningCompleted(data.item_id);
-            output.push(reasoningItem([textBlock(data.text)], "full", data.item_id));
-            continue;
-          }
-
-          if (sseEvent.type === "response.function_call_arguments.delta") {
-            const data = sseEvent.data as { item_id: string; delta: string };
-            if (data.delta) yield factory.toolCallDelta(data.item_id, { argumentsText: data.delta });
-            continue;
-          }
-
-          if (sseEvent.type === "response.function_call_arguments.done") {
-            const data = sseEvent.data as { item_id: string; arguments: string };
-            const tcItem = toolCallItem(data.item_id, toolCallNames.get(data.item_id) ?? "unknown", data.arguments);
-            yield factory.toolCallCompleted(data.item_id);
-            output.push(tcItem);
-            continue;
-          }
-
-          if (
-            sseEvent.type === "response.completed" ||
-            sseEvent.type === "response.failed" ||
-            sseEvent.type === "response.incomplete"
-          ) {
-            const data = sseEvent.data as { response: ResponsesAPIResponse };
-            if (completedResponse) {
-              yield factory.responseWarning("Duplicate finish signal ignored", "DUPLICATE_FINISH");
-              continue;
-            }
-
-            completedResponse = data.response;
-
-            if (sseEvent.type === "response.failed") {
-              yield factory.responseWarning(
-                `Response failed: ${extractFailureMessage(data.response)}`,
-                "PROVIDER_FAILURE",
-              );
-            }
-            continue;
-          }
-
-          if (!KNOWN_RESPONSES_SSE_TYPES.has(sseEvent.type) && !unknownEventsWarned) {
-            unknownEventsWarned = true;
+          if (sseEvent.type === "response.failed") {
             yield factory.responseWarning(
-              `Responses API sent unknown event type "${sseEvent.type}"; this may indicate an incomplete integration`,
-              "UNKNOWN_PROVIDER_EVENT",
+              `Response failed: ${extractFailureMessage(data.response)}`,
+              "PROVIDER_FAILURE",
             );
           }
+          continue;
         }
 
-        if (done) {
-          streamDone = true;
-          break;
+        if (!KNOWN_RESPONSES_SSE_TYPES.has(sseEvent.type) && !unknownEventsWarned) {
+          unknownEventsWarned = true;
+          yield factory.responseWarning(
+            `Responses API sent unknown event type "${sseEvent.type}"; this may indicate an incomplete integration`,
+            "UNKNOWN_PROVIDER_EVENT",
+          );
         }
-      }
-    } finally {
-      try {
-        if (!streamDone) await reader.cancel().catch(() => undefined);
-      } finally {
-        reader.releaseLock();
       }
     }
 
-    if (parser.getRemaining().trim().length > 0) {
-      yield factory.responseWarning("Stream ended with an incomplete Responses SSE frame", "STREAM_ERROR");
-    }
-
-    // 解析完成响应中的 usage 和 replay
     let rawResponseId: string | undefined;
-
     if (completedResponse) {
       rawResponseId = completedResponse.id;
       if (completedResponse.usage) {
@@ -500,47 +437,19 @@ export class ResponsesAdapter extends AdapterBase {
       }
     }
 
-    // 构造 replay：在 output 基础上追加 opaque continuation
     const replay = [...replayFromOutput(output)];
-
-    // 如果有 provider continuation id，附加 opaque replay item
     if (completedResponse?.id) {
       replay.push(opaqueItem("responses", "replay", { id: completedResponse.id }));
     }
 
-    // 从 completedResponse 推断 stop reason
     const stopReason = completedResponse ? this.inferStopReason(completedResponse) : undefined;
 
-    const auxiliaryResult = await auxiliary.finalize(factory);
-    for (const event of auxiliaryResult.events) {
-      yield event;
-    }
-
-    if (!completedEmitted) {
-      completedEmitted = true;
-      const finalResponse = this.buildResponse(
-        request,
-        {
-          output,
-          replay,
-          stopReason,
-          usage: auxiliaryResult.usage,
-          billing: auxiliaryResult.billing,
-          auxiliary: auxiliaryResult.auxiliary,
-          warnings: auxiliaryResult.warnings,
-          metadataSources: auxiliaryResult.metadataSources,
-          rawResponseId,
-        },
-        factory,
-      );
-      yield factory.responseCompleted({
-        replay: finalResponse.replay,
-        stopReason: finalResponse.stopReason,
-        trace: finalResponse.backend,
-        usage: finalResponse.usage,
-        billing: finalResponse.billing,
-        auxiliary: finalResponse.auxiliary,
-        warnings: finalResponse.warnings,
+    if (gate.tryComplete()) {
+      yield* this.emitStreamCompleted(factory, request, auxiliary, {
+        output,
+        replay,
+        stopReason,
+        rawResponseId,
       });
     }
   }

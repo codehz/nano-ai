@@ -11,7 +11,7 @@
  */
 
 import { AdapterBase } from "../helpers/adapter-base.js";
-import { AIProviderError, AIRequestError, AIStreamError } from "../core/errors.js";
+import { AIRequestError } from "../core/errors.js";
 import {
   textBlock,
   messageItem,
@@ -20,13 +20,17 @@ import {
   opaqueItem,
   replayFromOutput,
   mapStopReason,
-  blockToText,
   contentBlocksToText,
 } from "../helpers/mapping.js";
-import { emitMalformedStreamWarning } from "../helpers/adapter-auxiliary.js";
-import { assertOpaqueReplayEnvelope, providerHttpError } from "../helpers/adapter-security.js";
+import { assertOpaqueReplayEnvelope } from "../helpers/adapter-security.js";
 import { usageFromAnthropicMessages } from "../helpers/usage-mapping.js";
-import { NormalizedRequestMapper, splitSSEFrames, IncrementalStreamParser } from "../helpers/index.js";
+import {
+  NormalizedRequestMapper,
+  createSseJsonParser,
+  openProviderJsonStream,
+  iterateProviderStreamBatches,
+  createCompletionGate,
+} from "../helpers/index.js";
 
 import type { NormalizedRequest, AIStreamEvent, EventFactory, OutputItem, FetchFn } from "../index.js";
 
@@ -295,10 +299,7 @@ export class MessagesAdapter extends AdapterBase {
           break;
         }
         case "tool_result": {
-          const content = mapper
-            .ensureTextBlocks(item.content, `tool_result ${item.callId} content`)
-            .map(blockToText)
-            .join("\n");
+          const content = mapper.textFromBlocks(item.content, `tool_result ${item.callId} content`);
           const block: MessagesAPIContentBlock = {
             type: "tool_result",
             tool_use_id: item.callId,
@@ -352,23 +353,20 @@ export class MessagesAdapter extends AdapterBase {
 
     if (systemPrompt) body.system = systemPrompt;
 
-    if (request.tools && request.tools.length > 0) {
-      body.tools = request.tools.map(
-        (t): MessagesAPITool => ({
-          name: t.name,
-          description: t.description,
-          input_schema: t.inputSchema,
-        }),
-      );
-    }
+    body.tools = mapper.mapToolsIfPresent(
+      request.tools,
+      (t): MessagesAPITool => ({
+        name: t.name,
+        description: t.description,
+        input_schema: t.inputSchema,
+      }),
+    );
 
-    if (request.toolChoice) {
-      if (request.toolChoice === "auto") body.tool_choice = { type: "auto" };
-      else if (request.toolChoice === "none") body.tool_choice = { type: "none" };
-      else if (request.toolChoice.type === "tool") {
-        body.tool_choice = { type: "tool", name: request.toolChoice.name };
-      }
-    }
+    body.tool_choice = mapper.mapToolChoice<Exclude<MessagesAPIRequest["tool_choice"], undefined>>(request.toolChoice, {
+      auto: { type: "auto" } as const,
+      none: { type: "none" } as const,
+      tool: (name) => ({ type: "tool" as const, name }),
+    });
 
     if (request.temperature !== undefined) body.temperature = request.temperature;
 
@@ -383,7 +381,7 @@ export class MessagesAdapter extends AdapterBase {
     request: NormalizedRequest,
   ): AsyncIterable<AIStreamEvent> {
     const auxiliary = this.createAuxiliaryState(request);
-    let completedEmitted = false;
+    const gate = createCompletionGate();
 
     if (request.metadata) {
       yield factory.responseWarning(
@@ -392,53 +390,20 @@ export class MessagesAdapter extends AdapterBase {
       );
     }
 
-    let response: Response;
-
-    try {
-      response = await this.fetchFn(`${this.baseUrl}/messages`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": this.apiKey,
-          "anthropic-version": this.apiVersion,
-        },
-        body: JSON.stringify(providerRequest),
-        signal: request.signal,
-      });
-    } catch (err) {
-      throw new AIProviderError(err instanceof Error ? err.message : String(err), "PROVIDER_ERROR");
-    }
-
-    if (!response.ok) {
-      const errorBody = await response.text().catch(() => "");
-      throw providerHttpError(response.status, errorBody);
-    }
-
-    const reader = response.body?.getReader();
-    if (!reader) {
-      throw new AIStreamError("Response body is not readable", "STREAM_ERROR");
-    }
-
-    // 流累积状态
-    const parser = new IncrementalStreamParser<MessagesSSEEvent>(splitSSEFrames, (frame: string) => {
-      let eventType = "";
-      let dataStr = "";
-      for (const rawLine of frame.split("\n")) {
-        const line = rawLine.trim();
-        if (line.startsWith("event: ")) eventType = line.slice(7).trim();
-        else if (line.startsWith("data: ")) dataStr += line.slice(6);
-      }
-      if (!eventType) return { status: "ignored" };
-      try {
-        const data = JSON.parse(dataStr);
-        return { status: "parsed", value: { type: eventType, data } as MessagesSSEEvent };
-      } catch {
-        return { status: "malformed" };
-      }
+    const { reader, headers } = await openProviderJsonStream({
+      fetchFn: this.fetchFn,
+      url: `${this.baseUrl}/messages`,
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": this.apiKey,
+        "anthropic-version": this.apiVersion,
+      },
+      body: providerRequest,
+      signal: request.signal,
     });
 
+    const parser = createSseJsonParser<MessagesSSEEvent>();
     const output: OutputItem[] = [];
-    let streamDone = false;
     let messageResponse: MessagesAPIMessageResponse | undefined;
     let currentContentBlockIndex = -1;
     let currentItemType: "message" | "reasoning" | "tool_call" | null = null;
@@ -446,215 +411,176 @@ export class MessagesAdapter extends AdapterBase {
     let currentToolName = "";
     let currentArgsText = "";
     let currentThinkingVisibility: "full" | "redacted" = "full";
-    let hasStreamedReasoning = false;
     const rawReplayContent: MessagesAPIContentBlock[] = [];
 
-    // 内容块累积缓冲
     let textBuffer = "";
     let thinkingBuffer = "";
     let argsBuffer = "";
 
-    // 完成响应数据
     let stopReason: string | undefined;
     let stopSequence: string | null | undefined;
     let rawResponseId = "";
 
     if (request.include?.providerMetadata !== "off") {
-      const headerMetadata = pickProviderHeaders(response.headers);
+      const headerMetadata = pickProviderHeaders(headers);
       auxiliary.recordProviderMetadata(
         "header",
         Object.keys(headerMetadata).length > 0 ? { headers: headerMetadata } : undefined,
       );
     }
 
-    try {
-      while (true) {
-        const readResult = await reader.read().catch((err: unknown) => {
-          throw new AIStreamError(
-            `Failed to read response stream: ${err instanceof Error ? err.message : String(err)}`,
-            "STREAM_ERROR",
-          );
-        });
-        const { done, value } = readResult;
-        const { items: events, malformed: malformedEvents } = done ? parser.flush() : parser.feed(value as Uint8Array);
+    for await (const batch of iterateProviderStreamBatches({
+      reader,
+      parser,
+      factory,
+      providerLabel: "Messages",
+      transportLabel: "SSE event(s)",
+      incompleteMessage: "Stream ended with an incomplete Messages SSE frame",
+    })) {
+      for (const warning of batch.warnings) yield warning;
 
-        const malformedWarning = emitMalformedStreamWarning(factory, {
-          count: malformedEvents,
-          providerLabel: "Messages",
-          transportLabel: "SSE event(s)",
-        });
-        if (malformedWarning) {
-          yield malformedWarning;
-        }
+      for (const sseEvent of batch.items) {
+        switch (sseEvent.type) {
+          case "ping":
+            continue;
 
-        for (const sseEvent of events) {
-          switch (sseEvent.type) {
-            case "ping":
-              continue;
+          case "error": {
+            const err = sseEvent.data.error;
+            yield factory.responseWarning(err.message, err.type);
+            continue;
+          }
 
-            case "error": {
-              const err = sseEvent.data.error;
-              yield factory.responseWarning(err.message, err.type);
-              continue;
-            }
+          case "message_start": {
+            messageResponse = sseEvent.data.message;
+            rawResponseId = messageResponse.id;
+            continue;
+          }
 
-            case "message_start": {
-              messageResponse = sseEvent.data.message;
-              rawResponseId = messageResponse.id;
-              // 检查是否有 thinking 能力
-              if (messageResponse.content.some((b) => b.type === "thinking" || b.type === "redacted_thinking")) {
-                hasStreamedReasoning = true;
+          case "content_block_start": {
+            const block = sseEvent.data.content_block;
+            currentContentBlockIndex = sseEvent.data.index;
+
+            switch (block.type) {
+              case "text": {
+                currentItemType = "message";
+                currentItemId = synthesizeItemId("msg", currentContentBlockIndex, rawResponseId);
+                textBuffer = "";
+                yield factory.messageStarted(currentItemId);
+                break;
               }
-              continue;
-            }
-
-            case "content_block_start": {
-              const block = sseEvent.data.content_block;
-              currentContentBlockIndex = sseEvent.data.index;
-
-              switch (block.type) {
-                case "text": {
-                  currentItemType = "message";
-                  currentItemId = synthesizeItemId("msg", currentContentBlockIndex, rawResponseId);
-                  textBuffer = "";
-                  yield factory.messageStarted(currentItemId);
-                  break;
-                }
-                case "thinking": {
-                  hasStreamedReasoning = true;
-                  currentItemType = "reasoning";
-                  currentItemId = synthesizeItemId("reason", currentContentBlockIndex, rawResponseId);
-                  currentThinkingVisibility = "full";
-                  thinkingBuffer = "";
-                  yield factory.reasoningStarted(currentItemId, "full");
-                  break;
-                }
-                case "redacted_thinking": {
-                  hasStreamedReasoning = true;
-                  currentItemType = "reasoning";
-                  currentItemId = synthesizeItemId("reason-redacted", currentContentBlockIndex, rawResponseId);
-                  currentThinkingVisibility = "redacted";
-                  const data = (block as unknown as { data: string }).data;
-                  yield factory.reasoningStarted(currentItemId, "redacted");
-                  yield factory.reasoningDelta(currentItemId, textBlock(data));
-                  const redactedItem = reasoningItem([textBlock(data)], "redacted", currentItemId);
-                  yield factory.reasoningCompleted(currentItemId);
-                  output.push(redactedItem);
-                  rawReplayContent.push({ type: "redacted_thinking", data });
-                  currentItemType = null;
-                  break;
-                }
-                case "tool_use": {
-                  const tuBlock = block as unknown as { id: string; name: string };
-                  currentItemType = "tool_call";
-                  currentItemId = tuBlock.id;
-                  currentToolName = tuBlock.name;
-                  currentArgsText = "";
-                  argsBuffer = "";
-                  yield factory.toolCallStarted(currentItemId, currentToolName);
-                  break;
-                }
+              case "thinking": {
+                currentItemType = "reasoning";
+                currentItemId = synthesizeItemId("reason", currentContentBlockIndex, rawResponseId);
+                currentThinkingVisibility = "full";
+                thinkingBuffer = "";
+                yield factory.reasoningStarted(currentItemId, "full");
+                break;
               }
-              continue;
-            }
-
-            case "content_block_delta": {
-              const delta = sseEvent.data.delta;
-
-              switch (delta.type) {
-                case "text_delta": {
-                  if (currentItemType === "message" && currentItemId) {
-                    const txt = (delta as unknown as { text: string }).text;
-                    textBuffer += txt;
-                    yield factory.messageDelta(currentItemId, textBlock(txt));
-                  }
-                  break;
-                }
-                case "thinking_delta": {
-                  if (currentItemType === "reasoning" && currentItemId) {
-                    const txt = (delta as unknown as { thinking: string }).thinking;
-                    thinkingBuffer += txt;
-                    yield factory.reasoningDelta(currentItemId, textBlock(txt));
-                  }
-                  break;
-                }
-                case "input_json_delta": {
-                  if (currentItemType === "tool_call" && currentItemId) {
-                    const partial = (delta as unknown as { partial_json: string }).partial_json;
-                    argsBuffer += partial;
-                    yield factory.toolCallDelta(currentItemId, { argumentsText: partial });
-                  }
-                  break;
-                }
-              }
-              continue;
-            }
-
-            case "content_block_stop": {
-              if (currentItemType === "message" && currentItemId) {
-                yield factory.messageCompleted(currentItemId);
-                output.push(messageItem([textBlock(textBuffer)], { id: currentItemId }));
-                rawReplayContent.push({ type: "text", text: textBuffer });
-              } else if (currentItemType === "reasoning" && currentItemId && currentThinkingVisibility !== "redacted") {
+              case "redacted_thinking": {
+                currentItemType = "reasoning";
+                currentItemId = synthesizeItemId("reason-redacted", currentContentBlockIndex, rawResponseId);
+                currentThinkingVisibility = "redacted";
+                const data = (block as unknown as { data: string }).data;
+                yield factory.reasoningStarted(currentItemId, "redacted");
+                yield factory.reasoningDelta(currentItemId, textBlock(data));
+                const redactedItem = reasoningItem([textBlock(data)], "redacted", currentItemId);
                 yield factory.reasoningCompleted(currentItemId);
-                output.push(reasoningItem([textBlock(thinkingBuffer)], currentThinkingVisibility, currentItemId));
-                rawReplayContent.push({ type: "thinking", thinking: thinkingBuffer });
-              } else if (currentItemType === "tool_call" && currentItemId) {
-                const tcItem = toolCallItem(currentItemId, currentToolName, currentArgsText || argsBuffer);
-                yield factory.toolCallCompleted(currentItemId);
-                output.push(tcItem);
-                rawReplayContent.push({
-                  type: "tool_use",
-                  id: currentItemId,
-                  name: currentToolName,
-                  input: parseProviderToolUseInput(currentArgsText || argsBuffer),
-                });
+                output.push(redactedItem);
+                rawReplayContent.push({ type: "redacted_thinking", data });
+                currentItemType = null;
+                break;
               }
-
-              currentItemType = null;
-              currentItemId = "";
-              continue;
-            }
-
-            case "message_delta": {
-              stopReason = sseEvent.data.delta.stop_reason;
-              stopSequence = sseEvent.data.delta.stop_sequence;
-              const u = sseEvent.data.usage;
-              if (u) {
-                auxiliary.recordUsage(usageFromAnthropicMessages(u), "stream", u);
+              case "tool_use": {
+                const tuBlock = block as unknown as { id: string; name: string };
+                currentItemType = "tool_call";
+                currentItemId = tuBlock.id;
+                currentToolName = tuBlock.name;
+                currentArgsText = "";
+                argsBuffer = "";
+                yield factory.toolCallStarted(currentItemId, currentToolName);
+                break;
               }
-              continue;
+            }
+            continue;
+          }
+
+          case "content_block_delta": {
+            const delta = sseEvent.data.delta;
+
+            switch (delta.type) {
+              case "text_delta": {
+                if (currentItemType === "message" && currentItemId) {
+                  const txt = (delta as unknown as { text: string }).text;
+                  textBuffer += txt;
+                  yield factory.messageDelta(currentItemId, textBlock(txt));
+                }
+                break;
+              }
+              case "thinking_delta": {
+                if (currentItemType === "reasoning" && currentItemId) {
+                  const txt = (delta as unknown as { thinking: string }).thinking;
+                  thinkingBuffer += txt;
+                  yield factory.reasoningDelta(currentItemId, textBlock(txt));
+                }
+                break;
+              }
+              case "input_json_delta": {
+                if (currentItemType === "tool_call" && currentItemId) {
+                  const partial = (delta as unknown as { partial_json: string }).partial_json;
+                  argsBuffer += partial;
+                  yield factory.toolCallDelta(currentItemId, { argumentsText: partial });
+                }
+                break;
+              }
+            }
+            continue;
+          }
+
+          case "content_block_stop": {
+            if (currentItemType === "message" && currentItemId) {
+              yield factory.messageCompleted(currentItemId);
+              output.push(messageItem([textBlock(textBuffer)], { id: currentItemId }));
+              rawReplayContent.push({ type: "text", text: textBuffer });
+            } else if (currentItemType === "reasoning" && currentItemId && currentThinkingVisibility !== "redacted") {
+              yield factory.reasoningCompleted(currentItemId);
+              output.push(reasoningItem([textBlock(thinkingBuffer)], currentThinkingVisibility, currentItemId));
+              rawReplayContent.push({ type: "thinking", thinking: thinkingBuffer });
+            } else if (currentItemType === "tool_call" && currentItemId) {
+              const tcItem = toolCallItem(currentItemId, currentToolName, currentArgsText || argsBuffer);
+              yield factory.toolCallCompleted(currentItemId);
+              output.push(tcItem);
+              rawReplayContent.push({
+                type: "tool_use",
+                id: currentItemId,
+                name: currentToolName,
+                input: parseProviderToolUseInput(currentArgsText || argsBuffer),
+              });
             }
 
-            case "message_stop": {
-              // 流结束，构造 final response
-              break;
+            currentItemType = null;
+            currentItemId = "";
+            continue;
+          }
+
+          case "message_delta": {
+            stopReason = sseEvent.data.delta.stop_reason;
+            stopSequence = sseEvent.data.delta.stop_sequence;
+            const u = sseEvent.data.usage;
+            if (u) {
+              auxiliary.recordUsage(usageFromAnthropicMessages(u), "stream", u);
             }
+            continue;
+          }
+
+          case "message_stop": {
+            break;
           }
         }
-
-        if (done) {
-          streamDone = true;
-          break;
-        }
-      }
-    } finally {
-      try {
-        if (!streamDone) await reader.cancel().catch(() => undefined);
-      } finally {
-        reader.releaseLock();
       }
     }
 
-    if (parser.getRemaining().trim().length > 0) {
-      yield factory.responseWarning("Stream ended with an incomplete Messages SSE frame", "STREAM_ERROR");
-    }
-
-    // 构造 replay
     const replay = [...replayFromOutput(output)];
 
-    // 附加 opaque replay item 用于续接
-    // 保存 provider 原始 block 以实现高保真 replay
     if (messageResponse) {
       const replayContent = rawReplayContent.length > 0 ? rawReplayContent : messageResponse.content;
       replay.push(
@@ -680,41 +606,12 @@ export class MessagesAdapter extends AdapterBase {
       );
     }
 
-    // 警告低 replay fidelity
-    if (!hasStreamedReasoning) {
-      // 没有 reasoning，replay fidelity 较低
-    }
-
-    const auxiliaryResult = await auxiliary.finalize(factory);
-    for (const event of auxiliaryResult.events) {
-      yield event;
-    }
-
-    if (!completedEmitted) {
-      completedEmitted = true;
-      const finalResponse = this.buildResponse(
-        request,
-        {
-          output,
-          replay,
-          stopReason: stopReason ? mapStopReason(stopReason) : undefined,
-          usage: auxiliaryResult.usage,
-          billing: auxiliaryResult.billing,
-          auxiliary: auxiliaryResult.auxiliary,
-          warnings: auxiliaryResult.warnings,
-          metadataSources: auxiliaryResult.metadataSources,
-          rawResponseId,
-        },
-        factory,
-      );
-      yield factory.responseCompleted({
-        replay: finalResponse.replay,
-        stopReason: finalResponse.stopReason,
-        trace: finalResponse.backend,
-        usage: finalResponse.usage,
-        billing: finalResponse.billing,
-        auxiliary: finalResponse.auxiliary,
-        warnings: finalResponse.warnings,
+    if (gate.tryComplete()) {
+      yield* this.emitStreamCompleted(factory, request, auxiliary, {
+        output,
+        replay,
+        stopReason: stopReason ? mapStopReason(stopReason) : undefined,
+        rawResponseId,
       });
     }
   }

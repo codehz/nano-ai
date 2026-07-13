@@ -1,7 +1,7 @@
 import { AIRequestError } from "../core/errors.js";
 import { contentBlocksToText } from "./mapping.js";
 
-import type { ContentBlock, InstructionBlock, ToolCallItem } from "../types/index.js";
+import type { ContentBlock, InstructionBlock, ToolCallItem, ToolChoice, ToolDefinition } from "../types/index.js";
 
 export class NormalizedRequestMapper {
   constructor(readonly kind: string) {}
@@ -20,6 +20,11 @@ export class NormalizedRequestMapper {
     return this.ensureBlocks(blocks, field, ["text"], "reasoning only supports text blocks") as Array<
       Extract<ContentBlock, { type: "text" }>
     >;
+  }
+
+  /** ensureTextBlocks + contentBlocksToText 的常见组合。 */
+  textFromBlocks(blocks: ContentBlock[], field: string): string {
+    return contentBlocksToText(this.ensureTextBlocks(blocks, field));
   }
 
   parseToolArguments(item: ToolCallItem): Record<string, unknown> {
@@ -42,6 +47,30 @@ export class NormalizedRequestMapper {
     while (messages.length > 0 && messages[messages.length - 1]?.role === "assistant") {
       messages.pop();
     }
+  }
+
+  mapToolsIfPresent<T>(tools: ToolDefinition[] | undefined, map: (tool: ToolDefinition) => T): T[] | undefined {
+    if (!tools || tools.length === 0) return undefined;
+    return tools.map(map);
+  }
+
+  /**
+   * 将 canonical toolChoice 映射为 provider 形状。
+   * 返回 undefined 表示调用方无需写入 body 字段。
+   */
+  mapToolChoice<T>(
+    toolChoice: ToolChoice | undefined,
+    mappers: {
+      auto: T;
+      none: T;
+      tool: (name: string) => T;
+    },
+  ): T | undefined {
+    if (!toolChoice) return undefined;
+    if (toolChoice === "auto") return mappers.auto;
+    if (toolChoice === "none") return mappers.none;
+    if (toolChoice.type === "tool") return mappers.tool(toolChoice.name);
+    return undefined;
   }
 
   private ensureBlocks(

@@ -12,7 +12,6 @@
 import type {
   StopReason,
   ContentBlock,
-  InstructionBlock,
   MessageItem,
   ReasoningItem,
   ToolCallItem,
@@ -176,13 +175,6 @@ export function blockToText(b: ContentBlock): string {
  */
 export function contentBlocksToText(blocks: ContentBlock[]): string {
   return blocks.map(blockToText).join("\n");
-}
-
-/**
- * 将 instructions（string | InstructionBlock[]）归一化为纯文本。
- */
-export function instructionsToText(instructions: string | InstructionBlock[]): string {
-  return typeof instructions === "string" ? instructions : contentBlocksToText(instructions);
 }
 
 // ── Output 文本提取 ───────────────────────────────────────────

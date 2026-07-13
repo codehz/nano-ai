@@ -9,7 +9,7 @@
  */
 
 import { AdapterBase } from "../helpers/adapter-base.js";
-import { AIProviderError, AIRequestError, AIStreamError } from "../core/errors.js";
+import { AIRequestError } from "../core/errors.js";
 import {
   textBlock,
   messageItem,
@@ -18,14 +18,18 @@ import {
   opaqueItem,
   replayFromOutput,
   mapStopReason,
-  contentBlocksToText,
 } from "../helpers/mapping.js";
-import { emitMalformedStreamWarning } from "../helpers/adapter-auxiliary.js";
-import { assertOpaqueReplayEnvelope, providerHttpError } from "../helpers/adapter-security.js";
+import { assertOpaqueReplayEnvelope } from "../helpers/adapter-security.js";
 import { usageFromChatCompletions } from "../helpers/usage-mapping.js";
-import { NormalizedRequestMapper, splitLines, IncrementalStreamParser } from "../helpers/index.js";
+import {
+  NormalizedRequestMapper,
+  createChatCompletionsSseParser,
+  openProviderJsonStream,
+  iterateProviderStreamBatches,
+  createCompletionGate,
+} from "../helpers/index.js";
 
-import type { NormalizedRequest, AIStreamEvent, EventFactory, OutputItem, FetchFn } from "../index.js";
+import type { NormalizedRequest, AIStreamEvent, EventFactory, OutputItem, FetchFn, StopReason } from "../index.js";
 
 // ── 类型 ──────────────────────────────────────────────────────
 
@@ -260,9 +264,7 @@ export class ChatCompletionsAdapter extends AdapterBase {
       switch (item.type) {
         case "message": {
           const role = item.role;
-          const text = contentBlocksToText(
-            mapper.ensureTextBlocks(item.content, `input message (${item.role}) content`),
-          );
+          const text = mapper.textFromBlocks(item.content, `input message (${item.role}) content`);
           messages.push({ role, content: text || null });
           break;
         }
@@ -289,7 +291,7 @@ export class ChatCompletionsAdapter extends AdapterBase {
             role: "tool",
             tool_call_id: item.callId,
             name: item.toolName,
-            content: contentBlocksToText(mapper.ensureTextBlocks(item.content, `tool_result ${item.callId} content`)),
+            content: mapper.textFromBlocks(item.content, `tool_result ${item.callId} content`),
           });
           break;
         }
@@ -298,7 +300,7 @@ export class ChatCompletionsAdapter extends AdapterBase {
           // Convert to a text message for best-effort
           messages.push({
             role: "assistant",
-            content: contentBlocksToText(mapper.ensureTextBlocks(item.content, "reasoning content")),
+            content: mapper.textFromBlocks(item.content, "reasoning content"),
           });
           break;
         }
@@ -333,26 +335,23 @@ export class ChatCompletionsAdapter extends AdapterBase {
       n: 1,
     };
 
-    if (request.tools && request.tools.length > 0) {
-      body.tools = request.tools.map(
-        (t): ChatTool => ({
-          type: "function",
-          function: {
-            name: t.name,
-            description: t.description,
-            parameters: t.inputSchema as Record<string, unknown>,
-          },
-        }),
-      );
-    }
+    body.tools = mapper.mapToolsIfPresent(
+      request.tools,
+      (t): ChatTool => ({
+        type: "function",
+        function: {
+          name: t.name,
+          description: t.description,
+          parameters: t.inputSchema as Record<string, unknown>,
+        },
+      }),
+    );
 
-    if (request.toolChoice) {
-      if (request.toolChoice === "auto") body.tool_choice = "auto";
-      else if (request.toolChoice === "none") body.tool_choice = "none";
-      else if (request.toolChoice.type === "tool") {
-        body.tool_choice = { type: "function", function: { name: request.toolChoice.name } };
-      }
-    }
+    body.tool_choice = mapper.mapToolChoice<Exclude<ChatRequest["tool_choice"], undefined>>(request.toolChoice, {
+      auto: "auto",
+      none: "none",
+      tool: (name) => ({ type: "function" as const, function: { name } }),
+    });
 
     if (request.temperature !== undefined) body.temperature = request.temperature;
     if (request.maxOutputTokens !== undefined) body.max_tokens = request.maxOutputTokens;
@@ -369,46 +368,21 @@ export class ChatCompletionsAdapter extends AdapterBase {
     request: NormalizedRequest,
   ): AsyncIterable<AIStreamEvent> {
     const auxiliary = this.createAuxiliaryState(request);
-    let response: Response;
+    const gate = createCompletionGate();
 
-    try {
-      response = await this.fetchFn(`${this.baseUrl}/chat/completions`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${this.apiKey}`,
-        },
-        body: JSON.stringify(providerRequest),
-        signal: request.signal,
-      });
-    } catch (err) {
-      throw new AIProviderError(err instanceof Error ? err.message : String(err), "PROVIDER_ERROR");
-    }
-
-    if (!response.ok) {
-      const errorBody = await response.text().catch(() => "");
-      throw providerHttpError(response.status, errorBody);
-    }
-
-    const reader = response.body?.getReader();
-    if (!reader) {
-      throw new AIStreamError("Response body is not readable", "STREAM_ERROR");
-    }
-
-    const parser = new IncrementalStreamParser<ChatChunk>(splitLines, (item: string) => {
-      const trimmed = item.trim();
-      if (!trimmed.startsWith("data: ")) return { status: "ignored" };
-      const data = trimmed.slice(6).trim();
-      if (data === "[DONE]") return { status: "ignored" };
-      try {
-        return { status: "parsed", value: JSON.parse(data) as ChatChunk };
-      } catch {
-        return { status: "malformed" };
-      }
+    const { reader } = await openProviderJsonStream({
+      fetchFn: this.fetchFn,
+      url: `${this.baseUrl}/chat/completions`,
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${this.apiKey}`,
+      },
+      body: providerRequest,
+      signal: request.signal,
     });
 
+    const parser = createChatCompletionsSseParser<ChatChunk>();
     const output: OutputItem[] = [];
-    let streamDone = false;
 
     // 累积状态 — 支持多 choice，此处只取 index 0
     let responseId: string | undefined;
@@ -418,9 +392,7 @@ export class ChatCompletionsAdapter extends AdapterBase {
     let currentReasoningId = "";
     let hasMessageStarted = false;
     let hasReasoningStarted = false;
-    let completedEmitted = false;
     let warnedNonZeroChoice = false;
-    const buildResponse = this.buildResponse.bind(this);
 
     // tool_calls 累积: tool call index → { id, name, args }
     const pendingToolCalls = new Map<number, PendingToolCall>();
@@ -468,19 +440,17 @@ export class ChatCompletionsAdapter extends AdapterBase {
     };
 
     const emitCompleted = async function* (
-      stopReason: import("../index.js").StopReason | undefined,
+      this: ChatCompletionsAdapter,
+      stopReason: StopReason | undefined,
       assistantReplayMessage: ChatMessage | null,
       rawResponseId: string | undefined,
     ): AsyncIterable<AIStreamEvent> {
-      if (completedEmitted) {
+      if (!gate.tryComplete()) {
         yield factory.responseWarning("Duplicate finish signal ignored", "DUPLICATE_FINISH");
         return;
       }
 
-      completedEmitted = true;
-
       const replay = [...replayFromOutput(output)];
-
       if (assistantReplayMessage) {
         replay.push(
           opaqueItem("chat.completions", "replay", {
@@ -490,209 +460,145 @@ export class ChatCompletionsAdapter extends AdapterBase {
         );
       }
 
-      const auxiliaryResult = await auxiliary.finalize(factory);
-      for (const event of auxiliaryResult.events) {
-        yield event;
-      }
-
-      const finalResponse = buildResponse(
-        request,
-        {
-          output,
-          replay,
-          stopReason,
-          usage: auxiliaryResult.usage,
-          billing: auxiliaryResult.billing,
-          auxiliary: auxiliaryResult.auxiliary,
-          warnings: auxiliaryResult.warnings,
-          metadataSources: auxiliaryResult.metadataSources,
-          rawResponseId,
-        },
-        factory,
-      );
-      yield factory.responseCompleted({
-        replay: finalResponse.replay,
-        stopReason: finalResponse.stopReason,
-        trace: finalResponse.backend,
-        usage: finalResponse.usage,
-        billing: finalResponse.billing,
-        auxiliary: finalResponse.auxiliary,
-        warnings: finalResponse.warnings,
+      yield* this.emitStreamCompleted(factory, request, auxiliary, {
+        output,
+        replay,
+        stopReason,
+        rawResponseId,
       });
-    };
+    }.bind(this);
 
-    try {
-      while (true) {
-        const readResult = await reader.read().catch((err: unknown) => {
-          throw new AIStreamError(
-            `Failed to read response stream: ${err instanceof Error ? err.message : String(err)}`,
-            "STREAM_ERROR",
-          );
-        });
-        const { done, value } = readResult;
-        const { items: chunks, malformed: malformedEvents } = done ? parser.flush() : parser.feed(value as Uint8Array);
+    for await (const batch of iterateProviderStreamBatches({
+      reader,
+      parser,
+      factory,
+      providerLabel: "Chat Completions",
+      transportLabel: "SSE event(s)",
+      incompleteMessage: "Stream ended with an incomplete Chat Completions SSE frame",
+    })) {
+      for (const warning of batch.warnings) yield warning;
 
-        const malformedWarning = emitMalformedStreamWarning(factory, {
-          count: malformedEvents,
-          providerLabel: "Chat Completions",
-          transportLabel: "SSE event(s)",
-        });
-        if (malformedWarning) {
-          yield malformedWarning;
+      for (const chunk of batch.items) {
+        responseId = chunk.id;
+
+        if (chunk.usage) {
+          auxiliary.recordUsage(usageFromChatCompletions(chunk.usage), "final", chunk.usage);
         }
 
-        for (const chunk of chunks) {
-          responseId = chunk.id;
-
-          // usage 可能在最终 chunk 中
-          if (chunk.usage) {
-            auxiliary.recordUsage(usageFromChatCompletions(chunk.usage), "final", chunk.usage);
+        for (const choice of chunk.choices) {
+          if (choice.index !== 0) {
+            if (!warnedNonZeroChoice) {
+              yield factory.responseWarning(
+                `Chat Completions returned choice index ${choice.index}; only the first choice (index 0) is supported. This choice is ignored.`,
+                "MULTIPLE_CHOICES_IGNORED",
+              );
+              warnedNonZeroChoice = true;
+            }
+            continue;
           }
 
-          for (const choice of chunk.choices) {
-            if (choice.index !== 0) {
-              if (!warnedNonZeroChoice) {
-                yield factory.responseWarning(
-                  `Chat Completions returned choice index ${choice.index}; only the first choice (index 0) is supported. This choice is ignored.`,
-                  "MULTIPLE_CHOICES_IGNORED",
-                );
-                warnedNonZeroChoice = true;
-              }
-              continue;
+          if (gate.completed) {
+            if (choice.finish_reason) {
+              yield factory.responseWarning("Duplicate finish signal ignored", "DUPLICATE_FINISH");
+            }
+            continue;
+          }
+
+          const delta = choice.delta;
+          const finishReason = choice.finish_reason;
+          const reasoningDeltas = extractReasoningDeltas(delta);
+
+          const ensureMessageStarted = (): void => {
+            if (hasMessageStarted) return;
+            currentMessageId = `msg-${chunk.id}`;
+            hasMessageStarted = true;
+            accumulatedContent = "";
+          };
+
+          if (reasoningDeltas.length > 0) {
+            if (!hasReasoningStarted) {
+              currentReasoningId = `reason-${chunk.id}`;
+              hasReasoningStarted = true;
+              accumulatedReasoning = "";
+              yield factory.reasoningStarted(currentReasoningId, "full");
             }
 
-            if (completedEmitted) {
-              if (choice.finish_reason) {
-                yield factory.responseWarning("Duplicate finish signal ignored", "DUPLICATE_FINISH");
-              }
-              continue;
+            for (const reasoningDelta of reasoningDeltas) {
+              accumulatedReasoning += reasoningDelta.text;
+              reasoningByField.set(
+                reasoningDelta.field,
+                (reasoningByField.get(reasoningDelta.field) ?? "") + reasoningDelta.text,
+              );
+              yield factory.reasoningDelta(currentReasoningId, textBlock(reasoningDelta.text));
+            }
+          }
+
+          if (delta.content) {
+            if (!hasMessageStarted) {
+              ensureMessageStarted();
+              yield factory.messageStarted(currentMessageId);
+            }
+            accumulatedContent += delta.content;
+            yield factory.messageDelta(currentMessageId, textBlock(delta.content));
+          }
+
+          if (delta.tool_calls) {
+            if (!hasMessageStarted) {
+              ensureMessageStarted();
+              yield factory.messageStarted(currentMessageId);
             }
 
-            const delta = choice.delta;
-            const finishReason = choice.finish_reason;
-            const reasoningDeltas = extractReasoningDeltas(delta);
+            for (const tc of delta.tool_calls) {
+              const idx = tc.index;
 
-            const ensureMessageStarted = (): void => {
-              if (hasMessageStarted) return;
-              currentMessageId = `msg-${chunk.id}`;
-              hasMessageStarted = true;
-              accumulatedContent = "";
-            };
-
-            // 处理 third-party reasoning delta
-            if (reasoningDeltas.length > 0) {
-              if (!hasReasoningStarted) {
-                currentReasoningId = `reason-${chunk.id}`;
-                hasReasoningStarted = true;
-                accumulatedReasoning = "";
-                yield factory.reasoningStarted(currentReasoningId, "full");
+              if (tc.id) {
+                pendingToolCalls.set(idx, { id: tc.id, name: tc.function?.name ?? "", args: "" });
+                yield factory.toolCallStarted(tc.id, tc.function?.name ?? "");
               }
 
-              for (const reasoningDelta of reasoningDeltas) {
-                accumulatedReasoning += reasoningDelta.text;
-                reasoningByField.set(
-                  reasoningDelta.field,
-                  (reasoningByField.get(reasoningDelta.field) ?? "") + reasoningDelta.text,
-                );
-                yield factory.reasoningDelta(currentReasoningId, textBlock(reasoningDelta.text));
-              }
-            }
-
-            // 处理 content delta
-            if (delta.content) {
-              if (!hasMessageStarted) {
-                ensureMessageStarted();
-                yield factory.messageStarted(currentMessageId);
-              }
-              accumulatedContent += delta.content;
-              yield factory.messageDelta(currentMessageId, textBlock(delta.content));
-            }
-
-            // 处理 tool_calls delta
-            if (delta.tool_calls) {
-              if (!hasMessageStarted) {
-                ensureMessageStarted();
-                yield factory.messageStarted(currentMessageId);
-              }
-
-              for (const tc of delta.tool_calls) {
-                const idx = tc.index;
-
-                if (tc.id) {
-                  pendingToolCalls.set(idx, { id: tc.id, name: tc.function?.name ?? "", args: "" });
-                  yield factory.toolCallStarted(tc.id, tc.function?.name ?? "");
-                }
-
-                if (tc.function?.arguments) {
-                  const pending = pendingToolCalls.get(idx);
-                  if (pending) {
-                    pending.args += tc.function.arguments;
-                    yield factory.toolCallDelta(pending.id, { argumentsText: tc.function.arguments });
-                  }
-                }
-              }
-            }
-
-            // 处理 function_call delta (legacy format)
-            if (delta.function_call) {
-              if (!hasMessageStarted) {
-                ensureMessageStarted();
-                yield factory.messageStarted(currentMessageId);
-              }
-
-              if (delta.function_call.name) {
-                const fcId = `fc-${chunk.id}-0`;
-                pendingToolCalls.set(0, { id: fcId, name: delta.function_call.name, args: "" });
-                yield factory.toolCallStarted(fcId, delta.function_call.name);
-              }
-              if (delta.function_call.arguments) {
-                const pending = pendingToolCalls.get(0);
+              if (tc.function?.arguments) {
+                const pending = pendingToolCalls.get(idx);
                 if (pending) {
-                  pending.args += delta.function_call.arguments;
-                  yield factory.toolCallDelta(pending.id, { argumentsText: delta.function_call.arguments });
+                  pending.args += tc.function.arguments;
+                  yield factory.toolCallDelta(pending.id, { argumentsText: tc.function.arguments });
                 }
               }
             }
+          }
 
-            // 处理 finish_reason
-            if (finishReason && finishReason !== null) {
-              const { events, assistantReplayMessage } = finalizePendingTurn();
-              for (const event of events) {
-                yield event;
+          if (delta.function_call) {
+            if (!hasMessageStarted) {
+              ensureMessageStarted();
+              yield factory.messageStarted(currentMessageId);
+            }
+
+            if (delta.function_call.name) {
+              const fcId = `fc-${chunk.id}-0`;
+              pendingToolCalls.set(0, { id: fcId, name: delta.function_call.name, args: "" });
+              yield factory.toolCallStarted(fcId, delta.function_call.name);
+            }
+            if (delta.function_call.arguments) {
+              const pending = pendingToolCalls.get(0);
+              if (pending) {
+                pending.args += delta.function_call.arguments;
+                yield factory.toolCallDelta(pending.id, { argumentsText: delta.function_call.arguments });
               }
-
-              const stopReason = mapStopReason(finishReason);
-              yield* emitCompleted(stopReason, assistantReplayMessage, chunk.id);
             }
           }
-        }
 
-        if (done) {
-          streamDone = true;
-          break;
+          if (finishReason && finishReason !== null) {
+            const { events, assistantReplayMessage } = finalizePendingTurn();
+            for (const event of events) yield event;
+            yield* emitCompleted(mapStopReason(finishReason), assistantReplayMessage, chunk.id);
+          }
         }
-      }
-    } finally {
-      try {
-        if (!streamDone) await reader.cancel().catch(() => undefined);
-      } finally {
-        reader.releaseLock();
       }
     }
 
-    if (parser.getRemaining().trim().length > 0) {
-      yield factory.responseWarning("Stream ended with an incomplete Chat Completions SSE frame", "STREAM_ERROR");
-    }
-
-    // 如果流结束时没有 finish_reason（断流），也尝试关闭
-    if (!completedEmitted && (hasMessageStarted || hasReasoningStarted || pendingToolCalls.size > 0)) {
+    if (!gate.completed && (hasMessageStarted || hasReasoningStarted || pendingToolCalls.size > 0)) {
       yield factory.responseWarning("Stream ended without a finish_reason", "INCOMPLETE_STREAM");
-
       const { events, assistantReplayMessage } = finalizePendingTurn();
-      for (const event of events) {
-        yield event;
-      }
-
+      for (const event of events) yield event;
       yield* emitCompleted(undefined, assistantReplayMessage, responseId);
     }
   }

@@ -13,7 +13,6 @@ export {
   opaqueBlock,
   blockToText,
   contentBlocksToText,
-  instructionsToText,
   extractText,
   messageItem,
   reasoningItem,
@@ -23,12 +22,9 @@ export {
   replayFromOutput,
 } from "./mapping.js";
 
-export { parseSSEEvents } from "./sse-parser.js";
-export type { SSEEvent } from "./sse-parser.js";
-
 export { AdapterBase } from "./adapter-base.js";
 export type { StreamResult } from "./adapter-base.js";
-export { AdapterAuxiliaryState, emitMalformedStreamWarning, metadataSourceList } from "./adapter-auxiliary.js";
+export { AdapterAuxiliaryState, emitMalformedStreamWarning } from "./adapter-auxiliary.js";
 export type { AuxiliaryFinalizeOptions, AuxiliaryFinalizeResult, BillingPostprocessHook } from "./adapter-auxiliary.js";
 export { syntheticStream } from "./synthetic-stream.js";
 export type { SyntheticStreamOptions } from "./synthetic-stream.js";
@@ -54,7 +50,24 @@ export {
 } from "./adapter-security.js";
 export type { OpaqueEnvelopeResult } from "./adapter-security.js";
 
-export { IncrementalStreamParser, splitLines, splitSSEFrames } from "./incremental-stream-parser.js";
-export type { StreamSplitResult, StreamParseResult } from "./incremental-stream-parser.js";
+export {
+  IncrementalStreamParser,
+  splitLines,
+  splitSSEFrames,
+  parseSseJsonFrame,
+  createSseJsonParser,
+  parseChatCompletionsDataLine,
+  createChatCompletionsSseParser,
+  createNdjsonLineParser,
+} from "./incremental-stream-parser.js";
+export type { StreamSplitResult, StreamParseResult, SseJsonEvent } from "./incremental-stream-parser.js";
+
+export { openProviderJsonStream, iterateProviderStreamBatches, createCompletionGate } from "./provider-stream.js";
+export type {
+  OpenProviderJsonStreamOptions,
+  OpenedProviderStream,
+  ProviderStreamBatch,
+  ProviderStreamBatchOptions,
+} from "./provider-stream.js";
 
 export { NormalizedRequestMapper } from "./request-mapper.js";

@@ -20,6 +20,26 @@ function record(obj: Record<string, number | undefined>): Partial<Usage> {
   return out;
 }
 
+function withDerivedTotal(usage: {
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
+  cachedInputTokens?: number;
+  reasoningTokens?: number;
+  cacheWriteInputTokens?: number;
+}): Partial<Usage> {
+  const { inputTokens, outputTokens, totalTokens, cachedInputTokens, reasoningTokens, cacheWriteInputTokens } = usage;
+  return record({
+    inputTokens,
+    outputTokens,
+    totalTokens:
+      totalTokens ?? (inputTokens !== undefined && outputTokens !== undefined ? inputTokens + outputTokens : undefined),
+    cachedInputTokens,
+    reasoningTokens,
+    cacheWriteInputTokens,
+  });
+}
+
 /** OpenAI Chat Completions `usage` */
 export function usageFromChatCompletions(raw: {
   prompt_tokens?: number;
@@ -28,20 +48,12 @@ export function usageFromChatCompletions(raw: {
   prompt_tokens_details?: { cached_tokens?: number; [key: string]: unknown };
   completion_tokens_details?: { reasoning_tokens?: number; [key: string]: unknown };
 }): Partial<Usage> {
-  const inputTokens = num(raw.prompt_tokens);
-  const outputTokens = num(raw.completion_tokens);
-  const cachedInputTokens = num(raw.prompt_tokens_details?.cached_tokens);
-  const reasoningTokens = num(raw.completion_tokens_details?.reasoning_tokens);
-  const totalTokens =
-    num(raw.total_tokens) ??
-    (inputTokens !== undefined && outputTokens !== undefined ? inputTokens + outputTokens : undefined);
-
-  return record({
-    inputTokens,
-    outputTokens,
-    totalTokens,
-    cachedInputTokens,
-    reasoningTokens,
+  return withDerivedTotal({
+    inputTokens: num(raw.prompt_tokens),
+    outputTokens: num(raw.completion_tokens),
+    totalTokens: num(raw.total_tokens),
+    cachedInputTokens: num(raw.prompt_tokens_details?.cached_tokens),
+    reasoningTokens: num(raw.completion_tokens_details?.reasoning_tokens),
   });
 }
 
@@ -54,20 +66,12 @@ export function usageFromOpenAIResponses(raw: {
   output_tokens_details?: { reasoning_tokens?: number; [key: string]: unknown };
   [key: string]: unknown;
 }): Partial<Usage> {
-  const inputTokens = num(raw.input_tokens);
-  const outputTokens = num(raw.output_tokens);
-  const cachedInputTokens = num(raw.input_tokens_details?.cached_tokens);
-  const reasoningTokens = num(raw.output_tokens_details?.reasoning_tokens);
-  const totalTokens =
-    num(raw.total_tokens) ??
-    (inputTokens !== undefined && outputTokens !== undefined ? inputTokens + outputTokens : undefined);
-
-  return record({
-    inputTokens,
-    outputTokens,
-    totalTokens,
-    cachedInputTokens,
-    reasoningTokens,
+  return withDerivedTotal({
+    inputTokens: num(raw.input_tokens),
+    outputTokens: num(raw.output_tokens),
+    totalTokens: num(raw.total_tokens),
+    cachedInputTokens: num(raw.input_tokens_details?.cached_tokens),
+    reasoningTokens: num(raw.output_tokens_details?.reasoning_tokens),
   });
 }
 
@@ -88,12 +92,10 @@ export function usageFromAnthropicMessages(raw: {
     (n): n is number => n !== undefined,
   );
   const inputTokens = inputParts.length > 0 ? inputParts.reduce((sum, n) => sum + n, 0) : undefined;
-  const totalTokens = inputTokens !== undefined && outputTokens !== undefined ? inputTokens + outputTokens : undefined;
 
-  return record({
+  return withDerivedTotal({
     inputTokens,
     outputTokens,
-    totalTokens,
     cachedInputTokens,
     cacheWriteInputTokens,
   });
@@ -101,13 +103,8 @@ export function usageFromAnthropicMessages(raw: {
 
 /** Ollama 流式 chunk */
 export function usageFromOllama(raw: { prompt_eval_count?: number; eval_count?: number }): Partial<Usage> {
-  const inputTokens = num(raw.prompt_eval_count);
-  const outputTokens = num(raw.eval_count);
-  const totalTokens = inputTokens !== undefined && outputTokens !== undefined ? inputTokens + outputTokens : undefined;
-
-  return record({
-    inputTokens,
-    outputTokens,
-    totalTokens,
+  return withDerivedTotal({
+    inputTokens: num(raw.prompt_eval_count),
+    outputTokens: num(raw.eval_count),
   });
 }

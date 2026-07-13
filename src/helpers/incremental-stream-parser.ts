@@ -82,3 +82,61 @@ export function splitSSEFrames(buffer: string, allowEOF: boolean): StreamSplitRe
 
   return { items, rest: normalized.slice(cursor) };
 }
+
+// ── 常用 parse 工厂 ───────────────────────────────────────────
+
+export type SseJsonEvent = { type: string; data: unknown };
+
+/** 解析标准 SSE frame（event: + data:），用于 Messages / Responses。 */
+export function parseSseJsonFrame(frame: string): StreamParseResult<SseJsonEvent> {
+  let eventType = "";
+  let dataStr = "";
+  for (const rawLine of frame.split("\n")) {
+    const line = rawLine.trim();
+    if (line.startsWith("event: ")) eventType = line.slice(7).trim();
+    else if (line.startsWith("data: ")) dataStr += line.slice(6);
+  }
+  if (!eventType) return { status: "ignored" };
+  try {
+    const data: unknown = JSON.parse(dataStr);
+    return { status: "parsed", value: { type: eventType, data } };
+  } catch {
+    return { status: "malformed" };
+  }
+}
+
+export function createSseJsonParser<T extends SseJsonEvent = SseJsonEvent>(): IncrementalStreamParser<T> {
+  return new IncrementalStreamParser(splitSSEFrames, (frame) => parseSseJsonFrame(frame) as StreamParseResult<T>);
+}
+
+/** OpenAI Chat Completions 简化 SSE：仅 `data: ...` 行，忽略 `[DONE]`。 */
+export function parseChatCompletionsDataLine(item: string): StreamParseResult<unknown> {
+  const trimmed = item.trim();
+  if (!trimmed.startsWith("data: ")) return { status: "ignored" };
+  const data = trimmed.slice(6).trim();
+  if (data === "[DONE]") return { status: "ignored" };
+  try {
+    return { status: "parsed", value: JSON.parse(data) as unknown };
+  } catch {
+    return { status: "malformed" };
+  }
+}
+
+export function createChatCompletionsSseParser<T>(): IncrementalStreamParser<T> {
+  return new IncrementalStreamParser(splitLines, (item) => parseChatCompletionsDataLine(item) as StreamParseResult<T>);
+}
+
+/** NDJSON 行解析（Ollama 等）：空行忽略，JSON 失败为 malformed。 */
+export function createNdjsonLineParser<T>(isValid: (value: unknown) => value is T): IncrementalStreamParser<T> {
+  return new IncrementalStreamParser<T>(splitLines, (item: string): StreamParseResult<T> => {
+    const trimmed = item.trim();
+    if (!trimmed) return { status: "ignored" };
+    try {
+      const parsed: unknown = JSON.parse(trimmed);
+      if (isValid(parsed)) return { status: "parsed", value: parsed };
+      return { status: "malformed" };
+    } catch {
+      return { status: "malformed" };
+    }
+  });
+}

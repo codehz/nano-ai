@@ -16,7 +16,7 @@
  */
 
 import { AdapterBase } from "../helpers/adapter-base.js";
-import { AIProviderError, AIRequestError, AIStreamError, WarningCode } from "../core/errors.js";
+import { AIRequestError, WarningCode } from "../core/errors.js";
 import {
   textBlock,
   messageItem,
@@ -26,12 +26,17 @@ import {
   mapStopReason,
   contentBlocksToText,
 } from "../helpers/mapping.js";
-import { emitMalformedStreamWarning } from "../helpers/adapter-auxiliary.js";
-import { assertOpaqueReplayEnvelope, providerHttpError } from "../helpers/adapter-security.js";
+import { assertOpaqueReplayEnvelope } from "../helpers/adapter-security.js";
 import { usageFromOllama } from "../helpers/usage-mapping.js";
-import { NormalizedRequestMapper, splitLines, IncrementalStreamParser } from "../helpers/index.js";
+import {
+  NormalizedRequestMapper,
+  createNdjsonLineParser,
+  openProviderJsonStream,
+  iterateProviderStreamBatches,
+  createCompletionGate,
+} from "../helpers/index.js";
 
-import type { NormalizedRequest, AIStreamEvent, EventFactory, OutputItem, FetchFn } from "../index.js";
+import type { NormalizedRequest, AIStreamEvent, EventFactory, OutputItem, FetchFn, StopReason } from "../index.js";
 
 // ── 选项类型 ──────────────────────────────────────────────────
 
@@ -172,7 +177,7 @@ export class OllamaAdapter extends AdapterBase {
           const role = item.role;
           messages.push({
             role,
-            content: contentBlocksToText(mapper.ensureTextBlocks(item.content, `input message (${item.role}) content`)),
+            content: mapper.textFromBlocks(item.content, `input message (${item.role}) content`),
           });
           break;
         }
@@ -203,7 +208,7 @@ export class OllamaAdapter extends AdapterBase {
           }
           messages.push({
             role: "tool",
-            content: contentBlocksToText(mapper.ensureTextBlocks(item.content, `tool_result ${item.callId} content`)),
+            content: mapper.textFromBlocks(item.content, `tool_result ${item.callId} content`),
           });
           break;
         }
@@ -297,7 +302,8 @@ export class OllamaAdapter extends AdapterBase {
     request: NormalizedRequest,
   ): AsyncIterable<AIStreamEvent> {
     const auxiliary = this.createAuxiliaryState(request);
-    let completedEmitted = false;
+    const gate = createCompletionGate();
+
     if (request.toolChoice && request.toolChoice !== "auto") {
       yield factory.responseWarning(
         request.toolChoice === "none"
@@ -317,70 +323,37 @@ export class OllamaAdapter extends AdapterBase {
       headers.Authorization = `Bearer ${this.apiKey}`;
     }
 
-    let response: Response;
-
-    try {
-      response = await this.fetchFn(`${this.baseUrl}/api/chat`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(providerRequest),
-        signal: request.signal,
-      });
-    } catch (err) {
-      throw new AIProviderError(err instanceof Error ? err.message : String(err), "PROVIDER_ERROR");
-    }
-
-    if (!response.ok) {
-      const errorBody = await response.text().catch(() => "");
-      throw providerHttpError(response.status, errorBody);
-    }
-
-    const reader = response.body?.getReader();
-    if (!reader) {
-      throw new AIStreamError("Response body is not readable", "STREAM_ERROR");
-    }
-
-    const parser = new IncrementalStreamParser<OllamaChatChunk>(splitLines, (item: string) => {
-      const trimmed = item.trim();
-      if (!trimmed) return { status: "ignored" };
-      try {
-        const parsed = JSON.parse(trimmed);
-        if (parsed && typeof parsed === "object" && "message" in parsed) {
-          return { status: "parsed", value: parsed as OllamaChatChunk };
-        }
-        return { status: "malformed" };
-      } catch {
-        return { status: "malformed" };
-      }
+    const { reader } = await openProviderJsonStream({
+      fetchFn: this.fetchFn,
+      url: `${this.baseUrl}/api/chat`,
+      headers,
+      body: providerRequest,
+      signal: request.signal,
     });
 
-    const output: OutputItem[] = [];
-    let streamDone = false;
+    const parser = createNdjsonLineParser<OllamaChatChunk>(
+      (value): value is OllamaChatChunk => !!value && typeof value === "object" && "message" in value,
+    );
 
-    // 累积状态
+    const output: OutputItem[] = [];
     let responseId: string | undefined;
     let accumulatedContent = "";
     let currentMessageId = "";
     let hasMessageStarted = false;
-
-    // tool_calls 累积（于 final chunk 到达）
     let pendingToolCalls: Array<{ id: string; name: string; argumentsText: string }> = [];
     let toolCallIndex = 0;
-    const buildResponse = this.buildResponse.bind(this);
 
     const emitCompleted = async function* (
-      stopReason: import("../index.js").StopReason | undefined,
+      this: OllamaAdapter,
+      stopReason: StopReason | undefined,
       rawResponseId: string | undefined,
     ): AsyncIterable<AIStreamEvent> {
-      if (completedEmitted) {
+      if (!gate.tryComplete()) {
         yield factory.responseWarning("Duplicate finish signal ignored", "DUPLICATE_FINISH");
         return;
       }
 
-      completedEmitted = true;
-
       const replay = replayFromOutput(output);
-
       if (accumulatedContent || pendingToolCalls.length > 0) {
         replay.push(
           opaqueItem("ollama", "replay", {
@@ -394,177 +367,117 @@ export class OllamaAdapter extends AdapterBase {
         );
       }
 
-      const auxiliaryResult = await auxiliary.finalize(factory);
-      for (const event of auxiliaryResult.events) {
-        yield event;
-      }
-
-      const finalResponse = buildResponse(
-        request,
-        {
-          output,
-          replay,
-          stopReason,
-          usage: auxiliaryResult.usage,
-          billing: auxiliaryResult.billing,
-          auxiliary: auxiliaryResult.auxiliary,
-          warnings: auxiliaryResult.warnings,
-          metadataSources: auxiliaryResult.metadataSources,
-          rawResponseId,
-        },
-        factory,
-      );
-      yield factory.responseCompleted({
-        replay: finalResponse.replay,
-        stopReason: finalResponse.stopReason,
-        trace: finalResponse.backend,
-        usage: finalResponse.usage,
-        billing: finalResponse.billing,
-        auxiliary: finalResponse.auxiliary,
-        warnings: finalResponse.warnings,
+      yield* this.emitStreamCompleted(factory, request, auxiliary, {
+        output,
+        replay,
+        stopReason,
+        rawResponseId,
       });
-    };
+    }.bind(this);
 
-    try {
-      while (true) {
-        const readResult = await reader.read().catch((err: unknown) => {
-          throw new AIStreamError(
-            `Failed to read response stream: ${err instanceof Error ? err.message : String(err)}`,
-            "STREAM_ERROR",
-          );
-        });
-        const { done, value } = readResult;
-        const { items: chunks, malformed: malformedLines } = done ? parser.flush() : parser.feed(value as Uint8Array);
+    for await (const batch of iterateProviderStreamBatches({
+      reader,
+      parser,
+      factory,
+      providerLabel: "Ollama",
+      transportLabel: "NDJSON line(s)",
+      incompleteMessage: "Stream ended with an incomplete Ollama NDJSON line",
+    })) {
+      for (const warning of batch.warnings) yield warning;
 
-        const malformedWarning = emitMalformedStreamWarning(factory, {
-          count: malformedLines,
-          providerLabel: "Ollama",
-          transportLabel: "NDJSON line(s)",
-        });
-        if (malformedWarning) {
-          yield malformedWarning;
-        }
+      for (const chunk of batch.items) {
+        responseId = chunk.created_at;
 
-        for (const chunk of chunks) {
-          responseId = chunk.created_at;
-
-          if (completedEmitted) {
-            if (chunk.done) {
-              yield factory.responseWarning("Duplicate finish signal ignored", "DUPLICATE_FINISH");
-            }
-            continue;
-          }
-
-          const msg = chunk.message;
-
-          // 处理 content delta
-          if (msg.content) {
-            if (!hasMessageStarted) {
-              currentMessageId = `msg-${chunk.created_at}`;
-              hasMessageStarted = true;
-              yield factory.messageStarted(currentMessageId);
-            }
-            accumulatedContent += msg.content;
-            yield factory.messageDelta(currentMessageId, textBlock(msg.content));
-          }
-
-          // 处理 tool_calls (整块到达，在最终 chunk 中)
-          if (msg.tool_calls && msg.tool_calls.length > 0) {
-            for (const tc of msg.tool_calls) {
-              const tcId = `ollama-tc-${request.requestId}-${toolCallIndex++}`;
-              const argsText = JSON.stringify(tc.function.arguments);
-              pendingToolCalls.push({
-                id: tcId,
-                name: tc.function.name,
-                argumentsText: argsText,
-              });
-            }
-          }
-
-          // 处理 done_reason (final chunk)
+        if (gate.completed) {
           if (chunk.done) {
-            // 如果有未开始的 message 但没内容，发一个空消息启动
-            if (accumulatedContent === "" && pendingToolCalls.length > 0 && !hasMessageStarted) {
-              currentMessageId = `msg-${chunk.created_at}`;
-              hasMessageStarted = true;
-              yield factory.messageStarted(currentMessageId);
-            }
+            yield factory.responseWarning("Duplicate finish signal ignored", "DUPLICATE_FINISH");
+          }
+          continue;
+        }
 
-            // 完成消息（如果有累积的内容或正在进行的消息）
-            if (hasMessageStarted) {
-              const message = messageItem([textBlock(accumulatedContent)], { id: currentMessageId });
-              yield factory.messageCompleted(currentMessageId);
-              if (accumulatedContent) {
-                output.push(message);
-              }
-            }
+        const msg = chunk.message;
 
-            if (pendingToolCalls.length > 0) {
-              yield factory.responseWarning(
-                `Ollama delivered ${pendingToolCalls.length} tool call(s) as a batch; tool_call streaming is not supported`,
-                WarningCode.TOOL_CALL_BATCHED,
-              );
-            }
+        if (msg.content) {
+          if (!hasMessageStarted) {
+            currentMessageId = `msg-${chunk.created_at}`;
+            hasMessageStarted = true;
+            yield factory.messageStarted(currentMessageId);
+          }
+          accumulatedContent += msg.content;
+          yield factory.messageDelta(currentMessageId, textBlock(msg.content));
+        }
 
-            // 发出 tool_call 完成事件
-            for (const pending of pendingToolCalls) {
-              const toolCall = toolCallItem(pending.id, pending.name, pending.argumentsText);
-              yield factory.toolCallStarted(pending.id, pending.name);
-              yield factory.toolCallDelta(pending.id, { argumentsText: pending.argumentsText });
-              yield factory.toolCallCompleted(pending.id);
-              output.push(toolCall);
-            }
-
-            // 提取 usage
-            if (
-              request.include?.usage !== "off" &&
-              (chunk.prompt_eval_count !== undefined || chunk.eval_count !== undefined)
-            ) {
-              auxiliary.recordUsage(
-                usageFromOllama({
-                  prompt_eval_count: chunk.prompt_eval_count,
-                  eval_count: chunk.eval_count,
-                }),
-                "final",
-                {
-                  prompt_eval_count: chunk.prompt_eval_count,
-                  eval_count: chunk.eval_count,
-                },
-              );
-            }
-
-            // 构建 stop reason
-            const stopReason = chunk.done_reason ? mapStopReason(chunk.done_reason) : undefined;
-
-            yield* emitCompleted(stopReason, chunk.created_at);
-
-            // 重置累积状态
-            accumulatedContent = "";
-            currentMessageId = "";
-            hasMessageStarted = false;
-            pendingToolCalls = [];
+        if (msg.tool_calls && msg.tool_calls.length > 0) {
+          for (const tc of msg.tool_calls) {
+            const tcId = `ollama-tc-${request.requestId}-${toolCallIndex++}`;
+            const argsText = JSON.stringify(tc.function.arguments);
+            pendingToolCalls.push({
+              id: tcId,
+              name: tc.function.name,
+              argumentsText: argsText,
+            });
           }
         }
 
-        if (done) {
-          streamDone = true;
-          break;
+        if (chunk.done) {
+          if (accumulatedContent === "" && pendingToolCalls.length > 0 && !hasMessageStarted) {
+            currentMessageId = `msg-${chunk.created_at}`;
+            hasMessageStarted = true;
+            yield factory.messageStarted(currentMessageId);
+          }
+
+          if (hasMessageStarted) {
+            const message = messageItem([textBlock(accumulatedContent)], { id: currentMessageId });
+            yield factory.messageCompleted(currentMessageId);
+            if (accumulatedContent) {
+              output.push(message);
+            }
+          }
+
+          if (pendingToolCalls.length > 0) {
+            yield factory.responseWarning(
+              `Ollama delivered ${pendingToolCalls.length} tool call(s) as a batch; tool_call streaming is not supported`,
+              WarningCode.TOOL_CALL_BATCHED,
+            );
+          }
+
+          for (const pending of pendingToolCalls) {
+            const toolCall = toolCallItem(pending.id, pending.name, pending.argumentsText);
+            yield factory.toolCallStarted(pending.id, pending.name);
+            yield factory.toolCallDelta(pending.id, { argumentsText: pending.argumentsText });
+            yield factory.toolCallCompleted(pending.id);
+            output.push(toolCall);
+          }
+
+          if (
+            request.include?.usage !== "off" &&
+            (chunk.prompt_eval_count !== undefined || chunk.eval_count !== undefined)
+          ) {
+            auxiliary.recordUsage(
+              usageFromOllama({
+                prompt_eval_count: chunk.prompt_eval_count,
+                eval_count: chunk.eval_count,
+              }),
+              "final",
+              {
+                prompt_eval_count: chunk.prompt_eval_count,
+                eval_count: chunk.eval_count,
+              },
+            );
+          }
+
+          const stopReason = chunk.done_reason ? mapStopReason(chunk.done_reason) : undefined;
+          yield* emitCompleted(stopReason, chunk.created_at);
+
+          accumulatedContent = "";
+          currentMessageId = "";
+          hasMessageStarted = false;
+          pendingToolCalls = [];
         }
       }
-    } finally {
-      try {
-        if (!streamDone) await reader.cancel().catch(() => undefined);
-      } finally {
-        reader.releaseLock();
-      }
     }
 
-    if (parser.getRemaining().trim().length > 0) {
-      yield factory.responseWarning("Stream ended with an incomplete Ollama NDJSON line", "STREAM_ERROR");
-    }
-
-    // 流结束但无 done=true（断流保护）
-    if (!completedEmitted && (hasMessageStarted || pendingToolCalls.length > 0)) {
+    if (!gate.completed && (hasMessageStarted || pendingToolCalls.length > 0)) {
       yield factory.responseWarning("Stream ended without a done signal", "INCOMPLETE_STREAM");
 
       if (hasMessageStarted) {

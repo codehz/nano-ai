@@ -129,7 +129,7 @@ export abstract class AdapterBase implements BackendAdapter {
    * 子类可在返回前自定义覆盖。
    */
   protected buildResponse(request: NormalizedRequest, result: StreamResult, _factory: EventFactory): AIResponse {
-    const text = this.extractText(result.output);
+    const text = extractText(result.output);
     const warnings = mergeWarnings(result.warnings, _factory.warnings);
     const auxiliary = mergeAuxiliary(
       result.auxiliary,
@@ -158,9 +158,43 @@ export abstract class AdapterBase implements BackendAdapter {
     };
   }
 
-  /** 从 output items 中提取文本内容。 */
-  protected extractText(output: OutputItem[]): string {
-    return extractText(output);
+  /**
+   * 统一 finalize auxiliary → response.completed。
+   * adapter 在调用前组装 output / replay / stopReason 等业务字段。
+   */
+  protected async *emitStreamCompleted(
+    factory: EventFactory,
+    request: NormalizedRequest,
+    auxiliary: AdapterAuxiliaryState,
+    result: StreamResult,
+  ): AsyncIterable<AIStreamEvent> {
+    const auxiliaryResult = await auxiliary.finalize(factory);
+    for (const event of auxiliaryResult.events) {
+      yield event;
+    }
+
+    const finalResponse = this.buildResponse(
+      request,
+      {
+        ...result,
+        usage: result.usage ?? auxiliaryResult.usage,
+        billing: result.billing ?? auxiliaryResult.billing,
+        auxiliary: mergeAuxiliary(result.auxiliary, auxiliaryResult.auxiliary),
+        warnings: mergeWarnings(result.warnings, auxiliaryResult.warnings),
+        metadataSources: result.metadataSources ?? auxiliaryResult.metadataSources,
+      },
+      factory,
+    );
+
+    yield factory.responseCompleted({
+      replay: finalResponse.replay,
+      stopReason: finalResponse.stopReason,
+      trace: finalResponse.backend,
+      usage: finalResponse.usage,
+      billing: finalResponse.billing,
+      auxiliary: finalResponse.auxiliary,
+      warnings: finalResponse.warnings,
+    });
   }
 
   protected createAuxiliaryState(request: NormalizedRequest): AdapterAuxiliaryState {
