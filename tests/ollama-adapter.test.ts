@@ -335,6 +335,64 @@ describe("OllamaAdapter - request building", () => {
     expect(body.tools[0]!.function.name).toBe("get_weather");
   });
 
+  it("should omit think when reasoningLevel is unset", async () => {
+    let capturedBody: string | undefined;
+
+    const adapter = new OllamaAdapter({
+      fetch: async (_url, init) => {
+        capturedBody = init.body as string;
+        return ndjsonResponse(
+          `{"model":"llama3.2","created_at":"2024-01-01T00:00:00Z","message":{"role":"assistant","content":"OK"},"done":true,"done_reason":"stop"}\n`,
+        );
+      },
+    });
+
+    await collectStream(adapter.stream(makeRequest()));
+    const body = JSON.parse(capturedBody!);
+    expect(body).not.toHaveProperty("think");
+  });
+
+  it("should map reasoningLevel none/low/medium/high to think", async () => {
+    const cases = [
+      ["none", false],
+      ["low", "low"],
+      ["medium", "medium"],
+      ["high", "high"],
+    ] as const;
+
+    for (const [level, expected] of cases) {
+      let capturedBody: string | undefined;
+      const adapter = new OllamaAdapter({
+        fetch: async (_url, init) => {
+          capturedBody = init.body as string;
+          return ndjsonResponse(
+            `{"model":"llama3.2","created_at":"2024-01-01T00:00:00Z","message":{"role":"assistant","content":"OK"},"done":true,"done_reason":"stop"}\n`,
+          );
+        },
+      });
+
+      await collectStream(adapter.stream(makeRequest({ reasoningLevel: level })));
+      const body = JSON.parse(capturedBody!);
+      expect(body.think).toBe(expected);
+    }
+  });
+
+  it("should reject unsupported reasoningLevel values for ollama", async () => {
+    const adapter = new OllamaAdapter({
+      fetch: async () =>
+        ndjsonResponse(
+          `{"model":"llama3.2","created_at":"2024-01-01T00:00:00Z","message":{"role":"assistant","content":"OK"},"done":true,"done_reason":"stop"}\n`,
+        ),
+    });
+
+    await expect(collectStream(adapter.stream(makeRequest({ reasoningLevel: "minimal" })))).rejects.toMatchObject({
+      code: "UNSUPPORTED_REASONING_LEVEL",
+    });
+    await expect(collectStream(adapter.stream(makeRequest({ reasoningLevel: "xhigh" })))).rejects.toMatchObject({
+      code: "UNSUPPORTED_REASONING_LEVEL",
+    });
+  });
+
   it("should pass temperature and maxOutputTokens as options", async () => {
     let capturedBody: string | undefined;
 

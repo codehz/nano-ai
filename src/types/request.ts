@@ -25,6 +25,11 @@ export type IncludeSettings = {
   providerMetadata?: "off" | "best_effort";
 };
 
+// ── reasoning level ───────────────────────────────────────────
+
+/** Portable reasoning / thinking effort. Mapped per-adapter to provider wire fields. */
+export type ReasoningLevel = "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
+
 // ── 统一请求 ──────────────────────────────────────────────────
 
 export type AIRequest = {
@@ -36,6 +41,12 @@ export type AIRequest = {
   metadata?: Record<string, string>;
   temperature?: number;
   maxOutputTokens?: number;
+  /**
+   * Portable reasoning effort. Adapters map this to provider-native fields
+   * (e.g. Responses `reasoning.effort`, Chat Completions `reasoning_effort`,
+   * Messages `thinking`, Ollama `think`). Unsupported levels throw.
+   */
+  reasoningLevel?: ReasoningLevel;
   /** AbortSignal 用于打断请求。abort 时 fetch 调用会被取消，流迭代器抛出 AbortError。 */
   signal?: AbortSignal;
 };

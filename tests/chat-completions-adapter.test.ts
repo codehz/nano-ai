@@ -574,6 +574,37 @@ describe("ChatCompletionsAdapter - request building", () => {
     expect(body?.max_tokens).toBe(200);
   });
 
+  it("should omit reasoning_effort when reasoningLevel is unset", async () => {
+    const { captured, fetch } = captureRequest();
+    const adapter = new ChatCompletionsAdapter({ apiKey: "test-key", fetch });
+
+    await collectStream(adapter.stream(makeRequest()));
+    const body = captured.current as Record<string, unknown> | null;
+    expect(body).not.toHaveProperty("reasoning_effort");
+  });
+
+  it("should map reasoningLevel to reasoning_effort", async () => {
+    const { captured, fetch } = captureRequest();
+    const adapter = new ChatCompletionsAdapter({ apiKey: "test-key", fetch });
+
+    await collectStream(adapter.stream(makeRequest({ reasoningLevel: "minimal" })));
+    const body = captured.current as Record<string, unknown> | null;
+    expect(body?.reasoning_effort).toBe("minimal");
+  });
+
+  it("should let extraBody override mapped reasoning_effort", async () => {
+    const { captured, fetch } = captureRequest();
+    const adapter = new ChatCompletionsAdapter({
+      apiKey: "test-key",
+      fetch,
+      extraBody: { reasoning_effort: "medium" },
+    });
+
+    await collectStream(adapter.stream(makeRequest({ reasoningLevel: "high" })));
+    const body = captured.current as Record<string, unknown> | null;
+    expect(body?.reasoning_effort).toBe("medium");
+  });
+
   it("should merge custom headers and extraBody from constructor options", async () => {
     let capturedHeaders: Record<string, string> | undefined;
     let capturedBody: Record<string, unknown> | undefined;

@@ -72,4 +72,16 @@ export type {
 
 export { mergeProviderHeaders, applyExtraBody } from "./provider-request-options.js";
 
+export {
+  REASONING_LEVELS,
+  REASONING_LEVEL_SET,
+  assertSupportedReasoningLevel,
+  mapResponsesReasoning,
+  mapChatCompletionsReasoningEffort,
+  mapMessagesThinkingBudget,
+  mapMessagesThinking,
+  mapOllamaThink,
+} from "./reasoning-level.js";
+export type { OpenAIReasoningEffort, MessagesThinkingConfig, OllamaThinkValue } from "./reasoning-level.js";
+
 export { NormalizedRequestMapper } from "./request-mapper.js";

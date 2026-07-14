@@ -446,6 +446,37 @@ describe("ResponsesAdapter - request building", () => {
     expect(tools?.[0]).not.toHaveProperty("input_schema");
   });
 
+  it("should omit reasoning when reasoningLevel is unset", async () => {
+    const { captured, fetch } = captureRequest();
+    const adapter = new ResponsesAdapter({ apiKey: "test-key", fetch });
+
+    await collectStream(adapter.stream(makeRequest()));
+    const body = captured.current as Record<string, unknown> | null;
+    expect(body).not.toHaveProperty("reasoning");
+  });
+
+  it("should map reasoningLevel to reasoning.effort", async () => {
+    const { captured, fetch } = captureRequest();
+    const adapter = new ResponsesAdapter({ apiKey: "test-key", fetch });
+
+    await collectStream(adapter.stream(makeRequest({ reasoningLevel: "high" })));
+    const body = captured.current as Record<string, unknown> | null;
+    expect(body?.reasoning).toEqual({ effort: "high" });
+  });
+
+  it("should let extraBody override mapped reasoning", async () => {
+    const { captured, fetch } = captureRequest();
+    const adapter = new ResponsesAdapter({
+      apiKey: "test-key",
+      fetch,
+      extraBody: { reasoning: { effort: "medium", summary: "detailed" } },
+    });
+
+    await collectStream(adapter.stream(makeRequest({ reasoningLevel: "high" })));
+    const body = captured.current as Record<string, unknown> | null;
+    expect(body?.reasoning).toEqual({ effort: "medium", summary: "detailed" });
+  });
+
   it("should include temperature and max_output_tokens", async () => {
     const { captured, fetch } = captureRequest();
     const adapter = new ResponsesAdapter({ apiKey: "test-key", fetch });

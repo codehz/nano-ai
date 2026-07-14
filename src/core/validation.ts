@@ -18,6 +18,7 @@ const MESSAGE_ROLES = new Set(["user", "assistant"]);
 const REASONING_VISIBILITIES = new Set(["full", "summary", "redacted", "opaque"]);
 const TOOL_RESULT_OUTCOMES = new Set(["success", "error", "rejected"]);
 const INCLUDE_MODES = new Set(["off", "best_effort"]);
+const REASONING_LEVELS = new Set(["none", "minimal", "low", "medium", "high", "xhigh"]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -330,6 +331,18 @@ export function validateRequest(request: AIRequest): ValidationIssue[] {
         code: "MAX_OUTPUT_TOKENS_INVALID",
         message: "maxOutputTokens must be a positive integer",
       });
+    }
+  }
+
+  // reasoningLevel 枚举
+  if (request.reasoningLevel !== undefined) {
+    if (typeof request.reasoningLevel !== "string" || !REASONING_LEVELS.has(request.reasoningLevel)) {
+      pushIssue(
+        issues,
+        "reasoningLevel",
+        "REASONING_LEVEL_INVALID",
+        'reasoningLevel must be one of: none, minimal, low, medium, high, xhigh',
+      );
     }
   }
 

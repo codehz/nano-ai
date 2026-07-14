@@ -21,7 +21,7 @@ export type {
 } from "./items.js";
 
 // 请求模型
-export type { AIRequest, ToolDefinition, ToolChoice, IncludeSettings } from "./request.js";
+export type { AIRequest, ToolDefinition, ToolChoice, IncludeSettings, ReasoningLevel } from "./request.js";
 
 // 响应模型
 export type { AIResponse, StopReason, Usage, BillingInfo, AuxiliaryInfo, BackendTrace } from "./response.js";

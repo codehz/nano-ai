@@ -29,6 +29,7 @@ import {
   createCompletionGate,
   mergeProviderHeaders,
   applyExtraBody,
+  mapChatCompletionsReasoningEffort,
 } from "../helpers/index.js";
 
 import type { NormalizedRequest, AIStreamEvent, EventFactory, OutputItem, FetchFn, StopReason } from "../index.js";
@@ -55,6 +56,8 @@ type ChatRequest = {
   metadata?: Record<string, string>;
   temperature?: number;
   max_tokens?: number;
+  /** Portable reasoningLevel → reasoning_effort */
+  reasoning_effort?: string;
   stream: true;
   n: 1;
 };
@@ -366,6 +369,9 @@ export class ChatCompletionsAdapter extends AdapterBase {
     if (request.temperature !== undefined) body.temperature = request.temperature;
     if (request.maxOutputTokens !== undefined) body.max_tokens = request.maxOutputTokens;
     if (request.metadata) body.metadata = request.metadata;
+    if (request.reasoningLevel !== undefined) {
+      body.reasoning_effort = mapChatCompletionsReasoningEffort(request.reasoningLevel);
+    }
 
     return applyExtraBody(body, this.extraBody);
   }

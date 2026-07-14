@@ -29,6 +29,7 @@ import {
   createCompletionGate,
   mergeProviderHeaders,
   applyExtraBody,
+  mapResponsesReasoning,
 } from "../helpers/index.js";
 
 import type { NormalizedRequest, AIStreamEvent, EventFactory, OutputItem, FetchFn } from "../index.js";
@@ -61,6 +62,8 @@ type ResponsesAPIRequest = {
   metadata?: Record<string, string>;
   temperature?: number;
   max_output_tokens?: number;
+  /** Portable reasoningLevel → effort；summary 等特化字段不在此层 */
+  reasoning?: { effort: string };
   /** 服务端多轮续写；opaque replay 的 response id 映射到此字段，而非 item_reference */
   previous_response_id?: string;
   stream: true;
@@ -467,6 +470,9 @@ export class ResponsesAdapter extends AdapterBase {
     if (request.temperature !== undefined) body.temperature = request.temperature;
     if (request.maxOutputTokens !== undefined) body.max_output_tokens = request.maxOutputTokens;
     if (request.metadata) body.metadata = request.metadata;
+    if (request.reasoningLevel !== undefined) {
+      body.reasoning = mapResponsesReasoning(request.reasoningLevel);
+    }
 
     return applyExtraBody(body, this.extraBody);
   }

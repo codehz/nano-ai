@@ -504,6 +504,57 @@ describe("MessagesAdapter - request building", () => {
     expect(body?.tool_choice).toEqual({ type: "tool", name: "get_weather" });
   });
 
+  it("should omit thinking when reasoningLevel is unset", async () => {
+    const { captured, fetch } = captureRequest();
+    const adapter = new MessagesAdapter({ apiKey: "test-key", fetch });
+
+    await collectStream(adapter.stream(makeRequest()));
+    const body = captured.current as Record<string, unknown> | null;
+    expect(body).not.toHaveProperty("thinking");
+  });
+
+  it("should map reasoningLevel none to thinking disabled", async () => {
+    const { captured, fetch } = captureRequest();
+    const adapter = new MessagesAdapter({ apiKey: "test-key", fetch });
+
+    await collectStream(adapter.stream(makeRequest({ reasoningLevel: "none" })));
+    const body = captured.current as Record<string, unknown> | null;
+    expect(body?.thinking).toEqual({ type: "disabled" });
+  });
+
+  it("should map reasoningLevel to thinking budget from maxOutputTokens", async () => {
+    const { captured, fetch } = captureRequest();
+    const adapter = new MessagesAdapter({ apiKey: "test-key", fetch });
+
+    await collectStream(adapter.stream(makeRequest({ reasoningLevel: "medium", maxOutputTokens: 4096 })));
+    const body = captured.current as Record<string, unknown> | null;
+    // medium ≈ 30% of 4096 → 1229, clamped to >= 1024
+    expect(body?.thinking).toEqual({ type: "enabled", budget_tokens: 1229 });
+  });
+
+  it("should derive thinking budget from default max_tokens when maxOutputTokens unset", async () => {
+    const { captured, fetch } = captureRequest();
+    const adapter = new MessagesAdapter({ apiKey: "test-key", fetch });
+
+    await collectStream(adapter.stream(makeRequest({ reasoningLevel: "low" })));
+    const body = captured.current as Record<string, unknown> | null;
+    // default max_tokens = 4096; low ≈ 10% → 410, clamped to 1024
+    expect(body?.thinking).toEqual({ type: "enabled", budget_tokens: 1024 });
+  });
+
+  it("should let extraBody override mapped thinking", async () => {
+    const { captured, fetch } = captureRequest();
+    const adapter = new MessagesAdapter({
+      apiKey: "test-key",
+      fetch,
+      extraBody: { thinking: { type: "enabled", budget_tokens: 8000 } },
+    });
+
+    await collectStream(adapter.stream(makeRequest({ reasoningLevel: "high", maxOutputTokens: 16000 })));
+    const body = captured.current as Record<string, unknown> | null;
+    expect(body?.thinking).toEqual({ type: "enabled", budget_tokens: 8000 });
+  });
+
   it("should reject unsupported image content instead of coercing it to text", async () => {
     const { fetch } = captureRequest();
     const adapter = new MessagesAdapter({ apiKey: "test-key", fetch });

@@ -24,6 +24,7 @@ import type {
   MessageItem,
   NormalizedRequest,
   OutputItem,
+  ReasoningLevel,
   ReplayItem,
   StopReason,
   ToolCallItem,
@@ -70,6 +71,8 @@ export type MockHandlerContext = {
   history: readonly MockHistoryRecord[];
   /** 请求的 AbortSignal，handler 可检查 signal.aborted 提前退出。 */
   signal?: AbortSignal;
+  /** 当前请求的 portable reasoningLevel（若设置）。 */
+  reasoningLevel?: ReasoningLevel;
 };
 
 export type MockWarningStep = {
@@ -284,7 +287,7 @@ export class MockAdapter extends AdapterBase {
 
   protected async buildRequest(request: NormalizedRequest): Promise<MockProviderRequest> {
     const turnIndex = this.cursor;
-    const context = this.buildHandlerContext(turnIndex, request.signal);
+    const context = this.buildHandlerContext(turnIndex, request);
     const remainingPendingToolCalls = consumePendingToolCalls(this.pendingToolCalls, request.input);
     const handlerResult = this.handler(request, context);
 
@@ -476,7 +479,7 @@ export class MockAdapter extends AdapterBase {
     );
   }
 
-  private buildHandlerContext(turnIndex: number, signal?: AbortSignal): MockHandlerContext {
+  private buildHandlerContext(turnIndex: number, request: NormalizedRequest): MockHandlerContext {
     return {
       turnIndex,
       previousReplay: this.previousReplay.map(cloneItem),
@@ -486,7 +489,8 @@ export class MockAdapter extends AdapterBase {
         replay: record.replay.map(cloneItem),
         toolCalls: record.toolCalls.map(cloneItem),
       })),
-      signal,
+      signal: request.signal,
+      reasoningLevel: request.reasoningLevel,
     };
   }
 }

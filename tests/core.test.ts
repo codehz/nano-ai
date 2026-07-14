@@ -245,6 +245,17 @@ describe("validateRequest", () => {
     expect(validateRequest(validRequest({ toolChoice: "auto" }))).toHaveLength(0);
     expect(validateRequest(validRequest({ toolChoice: "none" }))).toHaveLength(0);
   });
+
+  it("should accept all valid reasoningLevel values", () => {
+    for (const level of ["none", "minimal", "low", "medium", "high", "xhigh"] as const) {
+      expect(validateRequest(validRequest({ reasoningLevel: level }))).toHaveLength(0);
+    }
+  });
+
+  it("should detect invalid reasoningLevel", () => {
+    const issues = validateRequest(validRequest({ reasoningLevel: "turbo" as "low" }));
+    expect(issues.some((i) => i.code === "REASONING_LEVEL_INVALID")).toBe(true);
+  });
 });
 
 // ── assertValidRequest ────────────────────────────────────────
@@ -300,6 +311,20 @@ describe("normalizeRequest", () => {
     expect(result.temperature).toBe(0.5);
     // defaults.maxOutputTokens fills in
     expect(result.maxOutputTokens).toBe(100);
+  });
+
+  it("should merge reasoningLevel defaults with request winning", () => {
+    const fromDefaults = normalizeRequest(validRequest(), {
+      model: "gpt-4",
+      defaults: { reasoningLevel: "low" },
+    });
+    expect(fromDefaults.reasoningLevel).toBe("low");
+
+    const fromRequest = normalizeRequest(validRequest({ reasoningLevel: "high" }), {
+      model: "gpt-4",
+      defaults: { reasoningLevel: "low" },
+    });
+    expect(fromRequest.reasoningLevel).toBe("high");
   });
 
   it("should fill include defaults when not provided", () => {

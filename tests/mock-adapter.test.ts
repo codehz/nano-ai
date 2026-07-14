@@ -13,6 +13,27 @@ import {
 } from "../src/index.js";
 
 describe("MockAdapter", () => {
+  it("should expose reasoningLevel in handler context", async () => {
+    let seen: string | undefined;
+    const adapter = new MockAdapter({
+      handler: async function* (_request, context) {
+        seen = context.reasoningLevel;
+        yield { type: "message", content: "ok" };
+      },
+    });
+
+    await collectStream(
+      adapter.stream({
+        model: "mock-model",
+        requestId: "mock-reasoning",
+        reasoningLevel: "high",
+        input: [{ type: "message", role: "user", content: [textBlock("hi")] }],
+      }),
+    );
+
+    expect(seen).toBe("high");
+  });
+
   it("should script a tool-calling turn and expose turn metadata", async () => {
     const adapter = new MockAdapter({
       handler: async function* (request, context) {

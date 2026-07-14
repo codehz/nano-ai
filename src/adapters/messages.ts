@@ -32,6 +32,7 @@ import {
   createCompletionGate,
   mergeProviderHeaders,
   applyExtraBody,
+  mapMessagesThinking,
 } from "../helpers/index.js";
 
 import type { NormalizedRequest, AIStreamEvent, EventFactory, OutputItem, FetchFn } from "../index.js";
@@ -60,7 +61,7 @@ type MessagesAPIRequest = {
   tools?: MessagesAPITool[];
   tool_choice?: { type: "auto" | "none" } | { type: "tool"; name: string };
   temperature?: number;
-  thinking?: { type: "enabled"; budget_tokens: number };
+  thinking?: { type: "enabled"; budget_tokens: number } | { type: "disabled" };
   stream: true;
 };
 
@@ -379,6 +380,9 @@ export class MessagesAdapter extends AdapterBase {
     });
 
     if (request.temperature !== undefined) body.temperature = request.temperature;
+    if (request.reasoningLevel !== undefined) {
+      body.thinking = mapMessagesThinking(request.reasoningLevel, body.max_tokens);
+    }
 
     return applyExtraBody(body, this.extraBody);
   }

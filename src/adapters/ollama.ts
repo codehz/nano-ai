@@ -36,6 +36,7 @@ import {
   createCompletionGate,
   mergeProviderHeaders,
   applyExtraBody,
+  mapOllamaThink,
 } from "../helpers/index.js";
 
 import type { NormalizedRequest, AIStreamEvent, EventFactory, OutputItem, FetchFn, StopReason } from "../index.js";
@@ -62,6 +63,8 @@ type OllamaChatRequest = {
   messages: OllamaMessage[];
   stream: true;
   tools?: OllamaTool[];
+  /** Portable reasoningLevel → think；minimal/xhigh 不支持 */
+  think?: boolean | "low" | "medium" | "high";
   options?: {
     temperature?: number;
     num_predict?: number;
@@ -299,6 +302,10 @@ export class OllamaAdapter extends AdapterBase {
       body.options = {};
       if (request.temperature !== undefined) body.options.temperature = request.temperature;
       if (request.maxOutputTokens !== undefined) body.options.num_predict = request.maxOutputTokens;
+    }
+
+    if (request.reasoningLevel !== undefined) {
+      body.think = mapOllamaThink(request.reasoningLevel);
     }
 
     return applyExtraBody(body, this.extraBody);
