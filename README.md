@@ -45,12 +45,12 @@ type AIRequest = {
   toolChoice?: ToolChoice; // 工具选择策略
   temperature?: number; // 温度 (0–2)
   maxOutputTokens?: number; // 最大输出 token
-  reasoningLevel?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh"; // 可移植思考力度
+  reasoningLevel?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max"; // 可移植思考力度
   include?: { usage?; billing?; providerMetadata? };
 };
 ```
 
-`reasoningLevel` 是 portable 枚举，由各 adapter 映射到 provider 原生字段；未设置时不写相关 wire 字段。adapter 无法映射的 level（如 Ollama 的 `minimal` / `xhigh`）会抛 `AIRequestError`（`UNSUPPORTED_REASONING_LEVEL`）。需要 budget / summary 等特化参数时，仍可用构造期 `extraBody` 覆盖同名顶层键。
+`reasoningLevel` 是 portable 枚举，由各 adapter 映射到 provider 原生字段；未设置时不写相关 wire 字段。adapter 无法映射的 level（如 Ollama 的 `minimal` / `xhigh` / `max`）会抛 `AIRequestError`（`UNSUPPORTED_REASONING_LEVEL`）。需要 budget / summary 等特化参数时，仍可用构造期 `extraBody` 覆盖同名顶层键。
 
 | Adapter | 映射 |
 | --- | --- |

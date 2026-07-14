@@ -391,6 +391,9 @@ describe("OllamaAdapter - request building", () => {
     await expect(collectStream(adapter.stream(makeRequest({ reasoningLevel: "xhigh" })))).rejects.toMatchObject({
       code: "UNSUPPORTED_REASONING_LEVEL",
     });
+    await expect(collectStream(adapter.stream(makeRequest({ reasoningLevel: "max" })))).rejects.toMatchObject({
+      code: "UNSUPPORTED_REASONING_LEVEL",
+    });
   });
 
   it("should pass temperature and maxOutputTokens as options", async () => {

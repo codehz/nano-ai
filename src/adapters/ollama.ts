@@ -63,7 +63,7 @@ type OllamaChatRequest = {
   messages: OllamaMessage[];
   stream: true;
   tools?: OllamaTool[];
-  /** Portable reasoningLevel → think；minimal/xhigh 不支持 */
+  /** Portable reasoningLevel → think；minimal/xhigh/max 不支持 */
   think?: boolean | "low" | "medium" | "high";
   options?: {
     temperature?: number;

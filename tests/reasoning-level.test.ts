@@ -21,6 +21,7 @@ describe("reasoning-level helpers", () => {
   it("maps Chat Completions reasoning_effort 1:1", () => {
     expect(mapChatCompletionsReasoningEffort("minimal")).toBe("minimal");
     expect(mapChatCompletionsReasoningEffort("xhigh")).toBe("xhigh");
+    expect(mapChatCompletionsReasoningEffort("max")).toBe("max");
   });
 
   it("maps Messages none to disabled", () => {
@@ -39,6 +40,8 @@ describe("reasoning-level helpers", () => {
   it("clamps Messages budget below max_tokens", () => {
     // xhigh ≈ 90% of 1200 = 1080, upper = max(1024, 1199) = 1199
     expect(mapMessagesThinkingBudget("xhigh", 1200)).toBe(1080);
+    // max ≈ 95% of 1200 = 1140
+    expect(mapMessagesThinkingBudget("max", 1200)).toBe(1140);
     // tiny maxTokens: upper = max(1024, 0) = 1024, raw clamps to 1024 even if maxTokens is 1
     expect(mapMessagesThinkingBudget("minimal", 1)).toBe(1024);
   });
@@ -50,6 +53,7 @@ describe("reasoning-level helpers", () => {
     expect(mapOllamaThink("high")).toBe("high");
 
     expect(() => mapOllamaThink("minimal")).toThrow(AIRequestError);
+    expect(() => mapOllamaThink("max")).toThrow(AIRequestError);
     try {
       mapOllamaThink("xhigh");
     } catch (err) {

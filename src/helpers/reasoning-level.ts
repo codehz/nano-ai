@@ -8,7 +8,7 @@
 import { AIRequestError } from "../core/errors.js";
 import type { ReasoningLevel } from "../types/request.js";
 
-export const REASONING_LEVELS = ["none", "minimal", "low", "medium", "high", "xhigh"] as const satisfies readonly ReasoningLevel[];
+export const REASONING_LEVELS = ["none", "minimal", "low", "medium", "high", "xhigh", "max"] as const satisfies readonly ReasoningLevel[];
 
 export const REASONING_LEVEL_SET: ReadonlySet<string> = new Set(REASONING_LEVELS);
 
@@ -18,6 +18,7 @@ const MESSAGES_BUDGET_RATIOS: Record<Exclude<ReasoningLevel, "none">, number> = 
   medium: 0.3,
   high: 0.6,
   xhigh: 0.9,
+  max: 0.95,
 };
 
 const OLLAMA_SUPPORTED = new Set<ReasoningLevel>(["none", "low", "medium", "high"]);
@@ -76,7 +77,7 @@ export function mapMessagesThinking(level: ReasoningLevel, maxTokens: number): M
   };
 }
 
-/** Ollama：`think` 字段；minimal/xhigh 不支持 */
+/** Ollama：`think` 字段；minimal/xhigh/max 不支持 */
 export function mapOllamaThink(level: ReasoningLevel): OllamaThinkValue {
   assertSupportedReasoningLevel(level, OLLAMA_SUPPORTED, "ollama");
   if (level === "none") return false;

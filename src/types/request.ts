@@ -28,7 +28,7 @@ export type IncludeSettings = {
 // ── reasoning level ───────────────────────────────────────────
 
 /** Portable reasoning / thinking effort. Mapped per-adapter to provider wire fields. */
-export type ReasoningLevel = "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
+export type ReasoningLevel = "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 
 // ── 统一请求 ──────────────────────────────────────────────────
 

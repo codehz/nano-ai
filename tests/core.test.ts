@@ -247,7 +247,7 @@ describe("validateRequest", () => {
   });
 
   it("should accept all valid reasoningLevel values", () => {
-    for (const level of ["none", "minimal", "low", "medium", "high", "xhigh"] as const) {
+    for (const level of ["none", "minimal", "low", "medium", "high", "xhigh", "max"] as const) {
       expect(validateRequest(validRequest({ reasoningLevel: level }))).toHaveLength(0);
     }
   });

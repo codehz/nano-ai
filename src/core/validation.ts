@@ -18,7 +18,7 @@ const MESSAGE_ROLES = new Set(["user", "assistant"]);
 const REASONING_VISIBILITIES = new Set(["full", "summary", "redacted", "opaque"]);
 const TOOL_RESULT_OUTCOMES = new Set(["success", "error", "rejected"]);
 const INCLUDE_MODES = new Set(["off", "best_effort"]);
-const REASONING_LEVELS = new Set(["none", "minimal", "low", "medium", "high", "xhigh"]);
+const REASONING_LEVELS = new Set(["none", "minimal", "low", "medium", "high", "xhigh", "max"]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -341,7 +341,7 @@ export function validateRequest(request: AIRequest): ValidationIssue[] {
         issues,
         "reasoningLevel",
         "REASONING_LEVEL_INVALID",
-        'reasoningLevel must be one of: none, minimal, low, medium, high, xhigh',
+        "reasoningLevel must be one of: none, minimal, low, medium, high, xhigh, max",
       );
     }
   }
