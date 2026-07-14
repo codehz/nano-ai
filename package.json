@@ -9,6 +9,14 @@
       "types": "./dist/index.d.mts"
     }
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/codehz/nano-ai.git"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "lint": "oxlint",
