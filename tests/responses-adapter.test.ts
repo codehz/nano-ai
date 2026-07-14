@@ -456,6 +456,37 @@ describe("ResponsesAdapter - request building", () => {
     expect(body?.max_output_tokens).toBe(100);
   });
 
+  it("should merge custom headers and extraBody from constructor options", async () => {
+    let capturedHeaders: Record<string, string> | undefined;
+    let capturedBody: Record<string, unknown> | undefined;
+
+    const adapter = new ResponsesAdapter({
+      apiKey: "test-key",
+      headers: {
+        Authorization: "Bearer override-key",
+        "X-Custom-Header": "custom-value",
+      },
+      extraBody: {
+        top_p: 0.9,
+        temperature: 0.1,
+      },
+      fetch: async (_url, init) => {
+        capturedHeaders = init.headers as Record<string, string>;
+        capturedBody = JSON.parse(init.body as string);
+        return sseResponse(
+          `event: response.completed\ndata: ${JSON.stringify({ response: { id: "r", model: "gpt-4o", output: [] } })}\n\n`,
+        );
+      },
+    });
+
+    await collectStream(adapter.stream(makeRequest({ temperature: 0.5 })));
+    expect(capturedHeaders?.Authorization).toBe("Bearer override-key");
+    expect(capturedHeaders?.["X-Custom-Header"]).toBe("custom-value");
+    expect(capturedHeaders?.["Content-Type"]).toBe("application/json");
+    expect(capturedBody?.top_p).toBe(0.9);
+    expect(capturedBody?.temperature).toBe(0.1);
+  });
+
   it("should include tool_choice when provided", async () => {
     const { captured, fetch } = captureRequest();
     const adapter = new ResponsesAdapter({ apiKey: "test-key", fetch });

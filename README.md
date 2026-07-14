@@ -133,16 +133,33 @@ import {
 } from "@codehz/ai";
 
 // OpenAI Responses API
-const responses = new ResponsesAdapter({ apiKey: "sk-..." });
+const responses = new ResponsesAdapter({
+  apiKey: "sk-...",
+  // 可选：自定义请求头 / body 额外顶层字段（构造期静态，后写覆盖内置鉴权头与同名 body 键）
+  headers: { "OpenAI-Organization": "org-..." },
+  extraBody: { top_p: 0.9 },
+});
 
 // Anthropic Messages API
-const messages = new MessagesAdapter({ apiKey: "sk-ant-..." });
+const messages = new MessagesAdapter({
+  apiKey: "sk-ant-...",
+  headers: { "anthropic-beta": "..." },
+  extraBody: { top_p: 0.9 },
+});
 
 // OpenAI Chat Completions
-const chat = new ChatCompletionsAdapter({ apiKey: "sk-..." });
+const chat = new ChatCompletionsAdapter({
+  apiKey: "sk-...",
+  headers: { "OpenAI-Organization": "org-..." },
+  extraBody: { top_p: 0.9 },
+});
 
 // Ollama
-const ollama = new OllamaAdapter({ baseUrl: "http://localhost:11434" });
+const ollama = new OllamaAdapter({
+  baseUrl: "http://localhost:11434",
+  headers: { "X-Custom": "..." },
+  extraBody: { keep_alive: "10m" },
+});
 
 // 面向测试的回调驱动 mock backend
 const mock = new MockAdapter({

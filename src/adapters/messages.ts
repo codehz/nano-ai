@@ -30,6 +30,8 @@ import {
   openProviderJsonStream,
   iterateProviderStreamBatches,
   createCompletionGate,
+  mergeProviderHeaders,
+  applyExtraBody,
 } from "../helpers/index.js";
 
 import type { NormalizedRequest, AIStreamEvent, EventFactory, OutputItem, FetchFn } from "../index.js";
@@ -42,6 +44,10 @@ export type MessagesAdapterOptions = {
   baseUrl?: string;
   /** 可注入自定义 fetch 实现（用于测试／代理） */
   fetch?: FetchFn;
+  /** 额外请求头；后写覆盖内置 x-api-key / Content-Type / anthropic-version */
+  headers?: Record<string, string>;
+  /** 额外 body 顶层字段；浅层合并，同名键可覆盖 */
+  extraBody?: Record<string, unknown>;
 };
 
 // ── Messages API 请求类型 ────────────────────────────────────
@@ -243,6 +249,8 @@ export class MessagesAdapter extends AdapterBase {
   private apiVersion: string;
   private baseUrl: string;
   private fetchFn: FetchFn;
+  private headers: Record<string, string> | undefined;
+  private extraBody: Record<string, unknown> | undefined;
 
   constructor(options: MessagesAdapterOptions) {
     super();
@@ -250,6 +258,8 @@ export class MessagesAdapter extends AdapterBase {
     this.apiVersion = options.apiVersion ?? "2023-06-01";
     this.baseUrl = options.baseUrl ?? "https://api.anthropic.com/v1";
     this.fetchFn = options.fetch ?? globalThis.fetch;
+    this.headers = options.headers;
+    this.extraBody = options.extraBody;
   }
 
   // ── buildRequest ──────────────────────────────────────────
@@ -370,7 +380,7 @@ export class MessagesAdapter extends AdapterBase {
 
     if (request.temperature !== undefined) body.temperature = request.temperature;
 
-    return body;
+    return applyExtraBody(body, this.extraBody);
   }
 
   // ── runStream ─────────────────────────────────────────────
@@ -393,11 +403,14 @@ export class MessagesAdapter extends AdapterBase {
     const { reader, headers } = await openProviderJsonStream({
       fetchFn: this.fetchFn,
       url: `${this.baseUrl}/messages`,
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": this.apiKey,
-        "anthropic-version": this.apiVersion,
-      },
+      headers: mergeProviderHeaders(
+        {
+          "Content-Type": "application/json",
+          "x-api-key": this.apiKey,
+          "anthropic-version": this.apiVersion,
+        },
+        this.headers,
+      ),
       body: providerRequest,
       signal: request.signal,
     });

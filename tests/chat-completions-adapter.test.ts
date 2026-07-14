@@ -574,6 +574,38 @@ describe("ChatCompletionsAdapter - request building", () => {
     expect(body?.max_tokens).toBe(200);
   });
 
+  it("should merge custom headers and extraBody from constructor options", async () => {
+    let capturedHeaders: Record<string, string> | undefined;
+    let capturedBody: Record<string, unknown> | undefined;
+
+    const adapter = new ChatCompletionsAdapter({
+      apiKey: "test-key",
+      headers: {
+        Authorization: "Bearer override-key",
+        "X-Custom-Header": "custom-value",
+      },
+      extraBody: {
+        top_p: 0.8,
+        temperature: 0.1,
+      },
+      fetch: async (_url, init) => {
+        capturedHeaders = init.headers as Record<string, string>;
+        capturedBody = JSON.parse(init.body as string);
+        return sseResponse(
+          'data: {"id":"chatcmpl-r","choices":[{"index":0,"delta":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}\n',
+          "data: [DONE]\n",
+        );
+      },
+    });
+
+    await collectStream(adapter.stream(makeRequest({ temperature: 0.5 })));
+    expect(capturedHeaders?.Authorization).toBe("Bearer override-key");
+    expect(capturedHeaders?.["X-Custom-Header"]).toBe("custom-value");
+    expect(capturedHeaders?.["Content-Type"]).toBe("application/json");
+    expect(capturedBody?.top_p).toBe(0.8);
+    expect(capturedBody?.temperature).toBe(0.1);
+  });
+
   it("should reject unsupported image content instead of silently dropping it", async () => {
     const { fetch } = captureRequest();
     const adapter = new ChatCompletionsAdapter({ apiKey: "test-key", fetch });

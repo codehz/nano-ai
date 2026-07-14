@@ -70,4 +70,6 @@ export type {
   ProviderStreamBatchOptions,
 } from "./provider-stream.js";
 
+export { mergeProviderHeaders, applyExtraBody } from "./provider-request-options.js";
+
 export { NormalizedRequestMapper } from "./request-mapper.js";

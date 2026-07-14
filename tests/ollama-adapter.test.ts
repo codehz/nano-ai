@@ -468,6 +468,38 @@ describe("OllamaAdapter - request building", () => {
     expect(capturedAuth).toBe("Bearer secret-key");
   });
 
+  it("should merge custom headers and extraBody from constructor options", async () => {
+    let capturedHeaders: Record<string, string> | undefined;
+    let capturedBody: Record<string, unknown> | undefined;
+
+    const adapter = new OllamaAdapter({
+      apiKey: "secret-key",
+      headers: {
+        Authorization: "Bearer override-key",
+        "X-Custom-Header": "custom-value",
+      },
+      extraBody: {
+        keep_alive: "10m",
+        options: { temperature: 0.1, num_predict: 50 },
+      },
+      fetch: async (_url, init) => {
+        capturedHeaders = init.headers as Record<string, string>;
+        capturedBody = JSON.parse(init.body as string);
+        return ndjsonResponse(
+          `{"model":"llama3.2","created_at":"2024-01-01T00:00:00Z","message":{"role":"assistant","content":"OK"},"done":true,"done_reason":"stop"}\n`,
+        );
+      },
+    });
+
+    await collectStream(adapter.stream(makeRequest({ temperature: 0.5, maxOutputTokens: 200 })));
+    expect(capturedHeaders?.Authorization).toBe("Bearer override-key");
+    expect(capturedHeaders?.["X-Custom-Header"]).toBe("custom-value");
+    expect(capturedHeaders?.["Content-Type"]).toBe("application/json");
+    expect(capturedBody?.keep_alive).toBe("10m");
+    // 浅层合并：extraBody.options 整键覆盖 adapter 构建的 options
+    expect(capturedBody?.options).toEqual({ temperature: 0.1, num_predict: 50 });
+  });
+
   it("should round-trip replay into a single assistant message with tool_calls", async () => {
     const round1Chunks = [
       `{"model":"llama3.2","created_at":"2024-01-01T00:00:00Z","message":{"role":"assistant","content":"I'll check"},"done":false}\n`,

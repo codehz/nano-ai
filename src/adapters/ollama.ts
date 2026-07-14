@@ -34,6 +34,8 @@ import {
   openProviderJsonStream,
   iterateProviderStreamBatches,
   createCompletionGate,
+  mergeProviderHeaders,
+  applyExtraBody,
 } from "../helpers/index.js";
 
 import type { NormalizedRequest, AIStreamEvent, EventFactory, OutputItem, FetchFn, StopReason } from "../index.js";
@@ -47,6 +49,10 @@ export type OllamaAdapterOptions = {
   apiKey?: string;
   /** 可注入自定义 fetch 实现 */
   fetch?: FetchFn;
+  /** 额外请求头；后写覆盖内置 Content-Type / Authorization */
+  headers?: Record<string, string>;
+  /** 额外 body 顶层字段；浅层合并，同名键可覆盖 */
+  extraBody?: Record<string, unknown>;
 };
 
 // ── Ollama Chat API 类型 ──────────────────────────────────────
@@ -151,12 +157,16 @@ export class OllamaAdapter extends AdapterBase {
   private baseUrl: string;
   private apiKey: string | undefined;
   private fetchFn: FetchFn;
+  private headers: Record<string, string> | undefined;
+  private extraBody: Record<string, unknown> | undefined;
 
   constructor(options: OllamaAdapterOptions = {}) {
     super();
     this.baseUrl = options.baseUrl ?? "http://localhost:11434";
     this.apiKey = options.apiKey;
     this.fetchFn = options.fetch ?? globalThis.fetch;
+    this.headers = options.headers;
+    this.extraBody = options.extraBody;
   }
 
   // ── buildRequest ──────────────────────────────────────────
@@ -291,7 +301,7 @@ export class OllamaAdapter extends AdapterBase {
       if (request.maxOutputTokens !== undefined) body.options.num_predict = request.maxOutputTokens;
     }
 
-    return body;
+    return applyExtraBody(body, this.extraBody);
   }
 
   // ── runStream ─────────────────────────────────────────────
@@ -326,7 +336,7 @@ export class OllamaAdapter extends AdapterBase {
     const { reader } = await openProviderJsonStream({
       fetchFn: this.fetchFn,
       url: `${this.baseUrl}/api/chat`,
-      headers,
+      headers: mergeProviderHeaders(headers, this.headers),
       body: providerRequest,
       signal: request.signal,
     });

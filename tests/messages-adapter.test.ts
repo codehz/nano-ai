@@ -533,6 +533,44 @@ describe("MessagesAdapter - request building", () => {
     expect(result.warnings?.some((w) => w.includes("Request metadata is not supported"))).toBe(true);
   });
 
+  it("should merge custom headers and extraBody from constructor options", async () => {
+    let capturedHeaders: Record<string, string> | undefined;
+    let capturedBody: Record<string, unknown> | undefined;
+
+    const adapter = new MessagesAdapter({
+      apiKey: "test-key",
+      headers: {
+        "x-api-key": "override-key",
+        "X-Custom-Header": "custom-value",
+      },
+      extraBody: {
+        top_p: 0.7,
+        temperature: 0.1,
+      },
+      fetch: async (_url, init) => {
+        capturedHeaders = init.headers as Record<string, string>;
+        capturedBody = JSON.parse(init.body as string);
+        const finish = [
+          `event: message_start\ndata: ${JSON.stringify({ type: "message_start", message: { id: "m", type: "message", role: "assistant", content: [], stop_reason: null, usage: { input_tokens: 0, output_tokens: 0 } } })}\n\n`,
+          `event: content_block_start\ndata: ${JSON.stringify({ type: "content_block_start", index: 0, content_block: { type: "text", text: "" } })}\n\n`,
+          `event: content_block_delta\ndata: ${JSON.stringify({ type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "ok" } })}\n\n`,
+          `event: content_block_stop\ndata: ${JSON.stringify({ type: "content_block_stop", index: 0 })}\n\n`,
+          `event: message_delta\ndata: ${JSON.stringify({ type: "message_delta", delta: { stop_reason: "end_turn", stop_sequence: null }, usage: { input_tokens: 1, output_tokens: 1 } })}\n\n`,
+          messageStopSSE(),
+        ];
+        return sseResponse(...finish);
+      },
+    });
+
+    await collectStream(adapter.stream(makeRequest({ temperature: 0.5 })));
+    expect(capturedHeaders?.["x-api-key"]).toBe("override-key");
+    expect(capturedHeaders?.["X-Custom-Header"]).toBe("custom-value");
+    expect(capturedHeaders?.["Content-Type"]).toBe("application/json");
+    expect(capturedHeaders?.["anthropic-version"]).toBe("2023-06-01");
+    expect(capturedBody?.top_p).toBe(0.7);
+    expect(capturedBody?.temperature).toBe(0.1);
+  });
+
   it("should ignore opaque replay from another provider", async () => {
     const { captured, fetch } = captureRequest();
     const adapter = new MessagesAdapter({ apiKey: "test-key", fetch });

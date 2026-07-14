@@ -27,6 +27,8 @@ import {
   openProviderJsonStream,
   iterateProviderStreamBatches,
   createCompletionGate,
+  mergeProviderHeaders,
+  applyExtraBody,
 } from "../helpers/index.js";
 
 import type { NormalizedRequest, AIStreamEvent, EventFactory, OutputItem, FetchFn } from "../index.js";
@@ -38,6 +40,10 @@ export type ResponsesAdapterOptions = {
   baseUrl?: string;
   /** 可注入自定义 fetch 实现（用于测试／代理） */
   fetch?: FetchFn;
+  /** 额外请求头；后写覆盖内置 Authorization / Content-Type */
+  headers?: Record<string, string>;
+  /** 额外 body 顶层字段；浅层合并，同名键可覆盖 */
+  extraBody?: Record<string, unknown>;
 };
 
 // ── Responses API 请求类型（对齐 OpenAI Responses schema）────
@@ -341,12 +347,16 @@ export class ResponsesAdapter extends AdapterBase {
   private apiKey: string;
   private baseUrl: string;
   private fetchFn: FetchFn;
+  private headers: Record<string, string> | undefined;
+  private extraBody: Record<string, unknown> | undefined;
 
   constructor(options: ResponsesAdapterOptions) {
     super();
     this.apiKey = options.apiKey;
     this.baseUrl = options.baseUrl ?? "https://api.openai.com/v1";
     this.fetchFn = options.fetch ?? globalThis.fetch;
+    this.headers = options.headers;
+    this.extraBody = options.extraBody;
   }
 
   // ── buildRequest ──────────────────────────────────────────
@@ -458,7 +468,7 @@ export class ResponsesAdapter extends AdapterBase {
     if (request.maxOutputTokens !== undefined) body.max_output_tokens = request.maxOutputTokens;
     if (request.metadata) body.metadata = request.metadata;
 
-    return body;
+    return applyExtraBody(body, this.extraBody);
   }
 
   // ── runStream ─────────────────────────────────────────────
@@ -474,10 +484,13 @@ export class ResponsesAdapter extends AdapterBase {
     const { reader } = await openProviderJsonStream({
       fetchFn: this.fetchFn,
       url: `${this.baseUrl}/responses`,
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${this.apiKey}`,
-      },
+      headers: mergeProviderHeaders(
+        {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${this.apiKey}`,
+        },
+        this.headers,
+      ),
       body: providerRequest,
       signal: request.signal,
     });
