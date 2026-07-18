@@ -5,7 +5,7 @@ import {
   usageFromGemini,
   usageFromOllama,
   usageFromOpenAIResponses,
-} from "../src/provider/usage/index.js";
+} from "../../src/provider/usage/index.js";
 
 describe("usage-mapping", () => {
   it("maps OpenAI chat completions usage details", () => {

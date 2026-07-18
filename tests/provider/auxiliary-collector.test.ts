@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect } from "bun:test";
-import { AuxiliaryCollector } from "../src/provider/auxiliary-collector.js";
+import { AuxiliaryCollector } from "../../src/provider/auxiliary-collector.js";
 // ── 基础行为 ──────────────────────────────────────────────────
 
 describe("AuxiliaryCollector - basic", () => {

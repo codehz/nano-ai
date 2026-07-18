@@ -2,7 +2,7 @@
  * Provider 基础设施（内部）
  *
  * 模块边界：adapter 基类、transport、security、usage/reasoning 映射。
- * 不构成根入口公开 API（Phase 3 将停止从根 re-export）。
+ * 内部模块：不构成 @codehz/ai 根入口 semver 公开面。
  */
 
 export { AdapterBase } from "./base.js";

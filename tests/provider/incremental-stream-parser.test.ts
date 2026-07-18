@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { IncrementalStreamParser, splitLines, splitSSEFrames } from "../src/provider/transport/parser.js";
+import { IncrementalStreamParser, splitLines, splitSSEFrames } from "../../src/provider/transport/parser.js";
 const encoder = new TextEncoder();
 
 function jsonParser(raw: string) {

@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect } from "bun:test";
-import { applyExtraBody, mergeProviderHeaders } from "../src/provider/request-options.js";
+import { applyExtraBody, mergeProviderHeaders } from "../../src/provider/request-options.js";
 
 describe("mergeProviderHeaders", () => {
   it("returns base when custom is undefined", () => {

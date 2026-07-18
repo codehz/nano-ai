@@ -8,7 +8,7 @@ import { // ContentBlock
   type AIRequest, type ToolDefinition, type ToolChoice, // Response
   type AIResponse, type StopReason, type Usage, type BillingInfo, // Events
   type AIStreamEvent, // Client
-  assertMockRequest, createAIClient, MockAdapter, withMockStreaming } from "../src/index.js";
+  assertMockRequest, createAIClient, MockAdapter, withMockStreaming } from "../../src/index.js";
 // ── ContentBlock ──────────────────────────────────────────────
 
 describe("ContentBlock", () => {
@@ -278,7 +278,7 @@ describe("AIStreamEvent", () => {
 
 // ── Export sanity / 公开面契约 ────────────────────────────────
 
-import * as publicApi from "../src/index.js";
+import * as publicApi from "../../src/index.js";
 
 describe("exports", () => {
   it("should export createAIClient", () => {
@@ -307,7 +307,7 @@ describe("exports", () => {
 
   
   it("should accept custom AdapterKind on BackendAdapter", () => {
-    const adapter: import("../src/index.js").BackendAdapter = {
+    const adapter: import("../../src/index.js").BackendAdapter = {
       kind: "custom-x",
       isSyntheticStream: true,
       stream() {

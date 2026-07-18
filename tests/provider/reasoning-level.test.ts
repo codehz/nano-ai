@@ -3,8 +3,8 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { AIRequestError } from "../src/index.js";
-import { mapChatCompletionsReasoningEffort, mapGeminiThinking, mapMessagesThinking, mapMessagesThinkingBudget, mapOllamaThink, mapResponsesReasoning } from "../src/provider/reasoning.js";
+import { AIRequestError } from "../../src/index.js";
+import { mapChatCompletionsReasoningEffort, mapGeminiThinking, mapMessagesThinking, mapMessagesThinkingBudget, mapOllamaThink, mapResponsesReasoning } from "../../src/provider/reasoning.js";
 describe("reasoning-level helpers", () => {
   it("maps Responses reasoning.effort 1:1", () => {
     expect(mapResponsesReasoning("high")).toEqual({ effort: "high" });

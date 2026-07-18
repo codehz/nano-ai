@@ -10,13 +10,13 @@
 
 import { describe, expect, it } from "bun:test";
 
-import { MockAdapter, createAIClient, textBlock, withMockStreaming } from "../src/index.js";
+import { MockAdapter, createAIClient, textBlock, withMockStreaming } from "../../src/index.js";
 // ── 辅助：收集所有事件直到迭代器结束或 reject ────────────────
 
 async function collectAllEvents(
-  stream: AsyncIterable<import("../src/index.js").AIStreamEvent>,
-): Promise<import("../src/index.js").AIStreamEvent[]> {
-  const events: import("../src/index.js").AIStreamEvent[] = [];
+  stream: AsyncIterable<import("../../src/index.js").AIStreamEvent>,
+): Promise<import("../../src/index.js").AIStreamEvent[]> {
+  const events: import("../../src/index.js").AIStreamEvent[] = [];
   try {
     for await (const event of stream) {
       events.push(event);

@@ -6,8 +6,8 @@ import {
   validateOpaqueReplayEnvelope,
   MAX_OPAQUE_JSON_DEPTH,
   MAX_OPAQUE_PAYLOAD_BYTES,
-} from "../src/provider/security.js";
-import { AIProviderError } from "../src/runtime/errors.js";
+} from "../../src/provider/security.js";
+import { AIProviderError } from "../../src/runtime/errors.js";
 
 describe("measureJsonDepth", () => {
   it("returns 0 for primitives", () => {

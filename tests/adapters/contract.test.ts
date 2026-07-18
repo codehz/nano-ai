@@ -1,9 +1,9 @@
 import { describe, expect, it } from "bun:test";
 
-import { ChatCompletionsAdapter, collectStream, GeminiAdapter, MessagesAdapter, MockAdapter, OllamaAdapter, ResponsesAdapter } from "../src/index.js";
+import { ChatCompletionsAdapter, collectStream, GeminiAdapter, MessagesAdapter, MockAdapter, OllamaAdapter, ResponsesAdapter } from "../../src/index.js";
 
-import { aggregateEvents } from "../src/stream/aggregator.js";
-import type { AIStreamEvent, FetchFn, NormalizedRequest } from "../src/index.js";
+import { aggregateEvents } from "../../src/stream/aggregator.js";
+import type { AIStreamEvent, FetchFn, NormalizedRequest } from "../../src/index.js";
 function sseResponse(...chunks: string[]): Response {
   const encoder = new TextEncoder();
   const body = new ReadableStream({

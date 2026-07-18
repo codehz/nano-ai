@@ -5,8 +5,8 @@
  */
 
 import { describe, it, expect } from "bun:test";
-import { AIProviderError, AIRequestError, OllamaAdapter, collectStream } from "../src/index.js";
-import type { NormalizedRequest, FetchFn } from "../src/index.js";
+import { AIProviderError, AIRequestError, OllamaAdapter, collectStream } from "../../src/index.js";
+import type { NormalizedRequest, FetchFn } from "../../src/index.js";
 // ── Helpers ───────────────────────────────────────────────────
 
 function ndjsonResponse(...chunks: string[]): Response {

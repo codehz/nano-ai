@@ -6,14 +6,14 @@
 
 import { describe, it, expect } from "bun:test";
 
-import { textBlock, messageItem, reasoningItem, toolCallItem, opaqueItem } from "../src/index.js";
+import { textBlock, messageItem, reasoningItem, toolCallItem, opaqueItem } from "../../src/index.js";
 
-import { syntheticStream } from "../src/provider/synthetic-stream.js";
+import { syntheticStream } from "../../src/provider/synthetic-stream.js";
 
-import { aggregateEvents } from "../src/stream/aggregator.js";
-import type { AIStreamEvent } from "../src/index.js";
+import { aggregateEvents } from "../../src/stream/aggregator.js";
+import type { AIStreamEvent } from "../../src/index.js";
 
-import type { SyntheticStreamOptions } from "../src/provider/synthetic-stream.js";
+import type { SyntheticStreamOptions } from "../../src/provider/synthetic-stream.js";
 // ── Helpers ───────────────────────────────────────────────────
 
 function makeOptions(overrides?: Partial<SyntheticStreamOptions>): SyntheticStreamOptions {
