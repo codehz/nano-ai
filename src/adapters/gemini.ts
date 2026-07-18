@@ -30,18 +30,25 @@ import {
 } from "../helpers/mapping.js";
 import { assertOpaqueReplayEnvelope } from "../helpers/adapter-security.js";
 import { usageFromGemini } from "../helpers/usage-mapping.js";
+import { NormalizedRequestMapper } from "../helpers/request-mapper.js";
+import { createChatCompletionsSseParser } from "../helpers/incremental-stream-parser.js";
 import {
-  NormalizedRequestMapper,
-  createChatCompletionsSseParser,
   openProviderJsonStream,
   iterateProviderStreamBatches,
   createCompletionGate,
-  mergeProviderHeaders,
-  applyExtraBody,
-  mapGeminiThinking,
-} from "../helpers/index.js";
+} from "../helpers/provider-stream.js";
+import { mergeProviderHeaders, applyExtraBody } from "../helpers/provider-request-options.js";
+import { mapGeminiThinking } from "../helpers/reasoning-level.js";
 
-import type { NormalizedRequest, AIStreamEvent, EventFactory, OutputItem, FetchFn, StopReason } from "../index.js";
+import type {
+  NormalizedRequest,
+  AIStreamEvent,
+  OutputItem,
+  FetchFn,
+  StopReason,
+  ContentBlock,
+} from "../types/index.js";
+import type { EventFactory } from "../core/event-factory.js";
 
 // ── 选项类型 ──────────────────────────────────────────────────
 
@@ -167,7 +174,7 @@ function appendPart(contents: GeminiContent[], role: "user" | "model", part: Gem
   contents.push({ role, parts: [part] });
 }
 
-function textPartsFromBlocks(blocks: import("../index.js").ContentBlock[], field: string): GeminiPart[] {
+function textPartsFromBlocks(blocks: ContentBlock[], field: string): GeminiPart[] {
   const supported = mapper.ensureTextBlocks(blocks, field);
   return supported.map((block) => {
     if (block.type === "text") return { text: block.text };

@@ -28,18 +28,24 @@ import {
 } from "../helpers/mapping.js";
 import { assertOpaqueReplayEnvelope } from "../helpers/adapter-security.js";
 import { usageFromOllama } from "../helpers/usage-mapping.js";
+import { NormalizedRequestMapper } from "../helpers/request-mapper.js";
+import { createNdjsonLineParser } from "../helpers/incremental-stream-parser.js";
 import {
-  NormalizedRequestMapper,
-  createNdjsonLineParser,
   openProviderJsonStream,
   iterateProviderStreamBatches,
   createCompletionGate,
-  mergeProviderHeaders,
-  applyExtraBody,
-  mapOllamaThink,
-} from "../helpers/index.js";
+} from "../helpers/provider-stream.js";
+import { mergeProviderHeaders, applyExtraBody } from "../helpers/provider-request-options.js";
+import { mapOllamaThink } from "../helpers/reasoning-level.js";
 
-import type { NormalizedRequest, AIStreamEvent, EventFactory, OutputItem, FetchFn, StopReason } from "../index.js";
+import type {
+  NormalizedRequest,
+  AIStreamEvent,
+  OutputItem,
+  FetchFn,
+  StopReason,
+} from "../types/index.js";
+import type { EventFactory } from "../core/event-factory.js";
 
 // ── 选项类型 ──────────────────────────────────────────────────
 

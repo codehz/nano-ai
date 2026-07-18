@@ -21,18 +21,24 @@ import {
 } from "../helpers/mapping.js";
 import { assertOpaqueReplayEnvelope } from "../helpers/adapter-security.js";
 import { usageFromChatCompletions } from "../helpers/usage-mapping.js";
+import { NormalizedRequestMapper } from "../helpers/request-mapper.js";
+import { createChatCompletionsSseParser } from "../helpers/incremental-stream-parser.js";
 import {
-  NormalizedRequestMapper,
-  createChatCompletionsSseParser,
   openProviderJsonStream,
   iterateProviderStreamBatches,
   createCompletionGate,
-  mergeProviderHeaders,
-  applyExtraBody,
-  mapChatCompletionsReasoningEffort,
-} from "../helpers/index.js";
+} from "../helpers/provider-stream.js";
+import { mergeProviderHeaders, applyExtraBody } from "../helpers/provider-request-options.js";
+import { mapChatCompletionsReasoningEffort } from "../helpers/reasoning-level.js";
 
-import type { NormalizedRequest, AIStreamEvent, EventFactory, OutputItem, FetchFn, StopReason } from "../index.js";
+import type {
+  NormalizedRequest,
+  AIStreamEvent,
+  OutputItem,
+  FetchFn,
+  StopReason,
+} from "../types/index.js";
+import type { EventFactory } from "../core/event-factory.js";
 
 // ── 类型 ──────────────────────────────────────────────────────
 

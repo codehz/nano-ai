@@ -19,7 +19,6 @@ import type {
   AuxiliaryInfo,
   BillingInfo,
   ContentBlock,
-  EventFactory,
   InputItem,
   MessageItem,
   NormalizedRequest,
@@ -30,7 +29,8 @@ import type {
   ToolCallItem,
   ToolResultItem,
   Usage,
-} from "../index.js";
+} from "../types/index.js";
+import type { EventFactory } from "../core/event-factory.js";
 
 export type MockInputExpectation = {
   type: InputItem["type"];

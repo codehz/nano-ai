@@ -24,18 +24,24 @@ import {
 } from "../helpers/mapping.js";
 import { assertOpaqueReplayEnvelope } from "../helpers/adapter-security.js";
 import { usageFromAnthropicMessages } from "../helpers/usage-mapping.js";
+import { NormalizedRequestMapper } from "../helpers/request-mapper.js";
+import { createSseJsonParser } from "../helpers/incremental-stream-parser.js";
 import {
-  NormalizedRequestMapper,
-  createSseJsonParser,
   openProviderJsonStream,
   iterateProviderStreamBatches,
   createCompletionGate,
-  mergeProviderHeaders,
-  applyExtraBody,
-  mapMessagesThinking,
-} from "../helpers/index.js";
+} from "../helpers/provider-stream.js";
+import { mergeProviderHeaders, applyExtraBody } from "../helpers/provider-request-options.js";
+import { mapMessagesThinking } from "../helpers/reasoning-level.js";
 
-import type { NormalizedRequest, AIStreamEvent, EventFactory, OutputItem, FetchFn } from "../index.js";
+import type {
+  NormalizedRequest,
+  AIStreamEvent,
+  OutputItem,
+  FetchFn,
+  ContentBlock,
+} from "../types/index.js";
+import type { EventFactory } from "../core/event-factory.js";
 
 // ── 类型 ──────────────────────────────────────────────────────
 
@@ -181,7 +187,7 @@ function parseProviderToolUseInput(input: string): Record<string, unknown> {
 
 // ── Content block 映射 ─────────────────────────────────────────
 
-function canonicalToMessagesBlock(b: import("../index.js").ContentBlock): MessagesAPIContentBlock {
+function canonicalToMessagesBlock(b: ContentBlock): MessagesAPIContentBlock {
   if (b.type === "text") return { type: "text", text: b.text };
   if (b.type === "json") return { type: "text", text: JSON.stringify(b.json) };
   throw new AIRequestError(

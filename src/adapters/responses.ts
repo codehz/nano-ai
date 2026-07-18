@@ -21,18 +21,26 @@ import {
 } from "../helpers/mapping.js";
 import { assertOpaqueReplayEnvelope } from "../helpers/adapter-security.js";
 import { usageFromOpenAIResponses } from "../helpers/usage-mapping.js";
+import { NormalizedRequestMapper } from "../helpers/request-mapper.js";
+import { createSseJsonParser } from "../helpers/incremental-stream-parser.js";
 import {
-  NormalizedRequestMapper,
-  createSseJsonParser,
   openProviderJsonStream,
   iterateProviderStreamBatches,
   createCompletionGate,
-  mergeProviderHeaders,
-  applyExtraBody,
-  mapResponsesReasoning,
-} from "../helpers/index.js";
+} from "../helpers/provider-stream.js";
+import { mergeProviderHeaders, applyExtraBody } from "../helpers/provider-request-options.js";
+import { mapResponsesReasoning } from "../helpers/reasoning-level.js";
 
-import type { NormalizedRequest, AIStreamEvent, EventFactory, OutputItem, FetchFn } from "../index.js";
+import type {
+  NormalizedRequest,
+  AIStreamEvent,
+  OutputItem,
+  FetchFn,
+  ContentBlock,
+  ReasoningItem,
+  StopReason,
+} from "../types/index.js";
+import type { EventFactory } from "../core/event-factory.js";
 
 // ── 类型 ──────────────────────────────────────────────────────
 
@@ -186,7 +194,7 @@ const KNOWN_RESPONSES_SSE_TYPES = new Set([
   "error",
 ]);
 
-type ReasoningVisibility = import("../index.js").ReasoningItem["visibility"];
+type ReasoningVisibility = ReasoningItem["visibility"];
 
 type ReasoningStreamState = {
   visibility: ReasoningVisibility;
@@ -296,13 +304,13 @@ function readNonEmptyString(value: unknown, maxLen = 256): string | undefined {
 
 /** 将 canonical text/json blocks 压成 EasyInputMessage 的 string content。 */
 function messageContentAsString(
-  blocks: import("../index.js").ContentBlock[],
+  blocks: ContentBlock[],
   field: string,
 ): string {
   return mapper.textFromBlocks(blocks, field);
 }
 
-function mapReasoningInput(item: import("../index.js").ReasoningItem, index: number): ResponsesReasoningInput {
+function mapReasoningInput(item: ReasoningItem, index: number): ResponsesReasoningInput {
   const text = mapper.textFromBlocks(
     mapper.ensureReasoningBlocks(item.content, "reasoning content"),
     "reasoning content",
@@ -791,7 +799,7 @@ export class ResponsesAdapter extends AdapterBase {
 
   // ── 辅助方法 ──────────────────────────────────────────────
 
-  private inferStopReason(response: ResponsesAPIResponse): import("../index.js").StopReason {
+  private inferStopReason(response: ResponsesAPIResponse): StopReason {
     if (response.status === "failed") return "error";
 
     if (response.status === "incomplete") {
