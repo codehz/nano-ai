@@ -23,6 +23,7 @@ import type {
   Usage,
   BillingInfo,
   ToolCallItem,
+  AdapterKind,
 } from "../types/index.js";
 import { createEventFactory } from "../stream/event-factory.js";
 import { AIMappingError, AIProviderError, AIRequestError, AIStreamError } from "../runtime/errors.js";
@@ -55,7 +56,7 @@ export type StreamResult = {
 // ── 抽象基类 ──────────────────────────────────────────────────
 
 export abstract class AdapterBase implements BackendAdapter {
-  abstract readonly kind: "chat-completions" | "messages" | "responses" | "ollama" | "gemini" | "mock";
+  abstract readonly kind: AdapterKind;
   abstract readonly isSyntheticStream: boolean;
 
   /**

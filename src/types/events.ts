@@ -9,6 +9,7 @@
 import type { ContentBlock } from "./content.js";
 import type { Usage, BillingInfo, AuxiliaryInfo, BackendTrace, StopReason } from "./response.js";
 import type { OpaqueItem, ReplayItem } from "./items.js";
+import type { AdapterKind } from "./kind.js";
 
 // ── 事件基类 ──────────────────────────────────────────────────
 
@@ -18,7 +19,7 @@ export type StreamEventBase = {
   sequence: number;
   timestamp: string;
   backend: {
-    kind: "chat-completions" | "messages" | "responses" | "ollama" | "gemini" | "mock";
+    kind: AdapterKind;
     isSynthetic: boolean;
   };
 };

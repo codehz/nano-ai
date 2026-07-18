@@ -5,6 +5,10 @@
  * 所有公开类型最终从这里导出。
  */
 
+// Adapter kind
+export type { KnownAdapterKind, AdapterKind } from "./kind.js";
+export { KNOWN_ADAPTER_KINDS } from "./kind.js";
+
 // 基础内容块
 export type { TextContentBlock, JsonContentBlock, InstructionBlock, ContentBlock } from "./content.js";
 

@@ -5,6 +5,7 @@
  */
 
 import type { OutputItem, ReplayItem, ToolCallItem } from "./items.js";
+import type { AdapterKind } from "./kind.js";
 
 // ── StopReason ────────────────────────────────────────────────
 
@@ -45,7 +46,7 @@ export type AuxiliaryInfo = {
 export type BackendTrace = {
   requestId?: string;
   rawResponseId?: string;
-  adapter: "chat-completions" | "messages" | "responses" | "ollama" | "gemini" | "mock";
+  adapter: AdapterKind;
   isSyntheticStream: boolean;
   metadataSources?: string[];
   warnings?: string[];

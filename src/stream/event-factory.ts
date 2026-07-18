@@ -28,10 +28,11 @@ import type {
   BackendTrace,
   OpaqueItem,
   ReasoningItem,
+  AdapterKind,
 } from "../types/index.js";
 
 export type EventFactoryBackend = {
-  kind: "chat-completions" | "messages" | "responses" | "ollama" | "gemini" | "mock";
+  kind: AdapterKind;
   isSynthetic: boolean;
 };
 

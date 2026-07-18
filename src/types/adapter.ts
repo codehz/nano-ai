@@ -6,6 +6,7 @@
 
 import type { AIRequest } from "./request.js";
 import type { AIStreamEvent } from "./events.js";
+import type { AdapterKind } from "./kind.js";
 
 // ── 公共工具类型 ──────────────────────────────────────────────
 
@@ -22,7 +23,7 @@ export type NormalizedRequest = AIRequest & {
 // ── Adapter 接口 ──────────────────────────────────────────────
 
 export interface BackendAdapter {
-  readonly kind: "chat-completions" | "messages" | "responses" | "ollama" | "gemini" | "mock";
+  readonly kind: AdapterKind;
   readonly isSyntheticStream: boolean;
   stream(request: NormalizedRequest): AsyncIterable<AIStreamEvent>;
 }

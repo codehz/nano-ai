@@ -305,6 +305,19 @@ describe("exports", () => {
     expect(publicApi.REASONING_LEVELS).toContain("high");
   });
 
+  
+  it("should accept custom AdapterKind on BackendAdapter", () => {
+    const adapter: import("../src/index.js").BackendAdapter = {
+      kind: "custom-x",
+      isSyntheticStream: true,
+      stream() {
+        return (async function* () {})();
+      },
+    };
+    expect(adapter.kind).toBe("custom-x");
+    expect(publicApi.KNOWN_ADAPTER_KINDS).toContain("gemini");
+  });
+
   it("should not export internal provider/stream helpers from root", () => {
     const keys = new Set(Object.keys(publicApi));
     for (const name of [

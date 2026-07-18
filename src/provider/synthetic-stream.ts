@@ -27,6 +27,7 @@ import type {
   ReasoningItem,
   ToolCallItem,
   OpaqueItem,
+  AdapterKind,
 } from "../types/index.js";
 
 // ── 输入参数 ──────────────────────────────────────────────────
@@ -35,7 +36,7 @@ export type SyntheticStreamOptions = {
   model: string;
   responseId: string;
   backend: {
-    kind: "chat-completions" | "messages" | "responses" | "mock";
+    kind: AdapterKind;
     /** syntheticStream 强制设为 true */
   };
   output: OutputItem[];

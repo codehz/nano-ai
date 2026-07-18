@@ -9,6 +9,9 @@
 
 // ── Types ────────────────────────────────────────────────────
 export type {
+  // kind
+  KnownAdapterKind,
+  AdapterKind,
   // content
   TextContentBlock,
   JsonContentBlock,
@@ -59,6 +62,7 @@ export type {
   CreateAIClientOptions,
   AIClient,
 } from "./types/index.js";
+export { KNOWN_ADAPTER_KINDS } from "./types/index.js";
 
 // ── Runtime ──────────────────────────────────────────────────
 export { createAIClient } from "./runtime/client.js";
