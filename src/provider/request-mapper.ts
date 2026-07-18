@@ -1,5 +1,5 @@
-import { AIRequestError } from "../core/errors.js";
-import { contentBlocksToText } from "./mapping.js";
+import { AIRequestError } from "../runtime/errors.js";
+import { contentBlocksToText } from "../canonical/index.js";
 
 import type { ContentBlock, InstructionBlock, ToolCallItem, ToolChoice, ToolDefinition } from "../types/index.js";
 

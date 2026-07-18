@@ -24,12 +24,12 @@ import type {
   BillingInfo,
   ToolCallItem,
 } from "../types/index.js";
-import { createEventFactory } from "../core/event-factory.js";
-import { AIMappingError, AIProviderError, AIRequestError, AIStreamError } from "../core/errors.js";
-import type { EventFactory } from "../core/event-factory.js";
-import { extractText } from "./mapping.js";
-import { AdapterAuxiliaryState } from "./adapter-auxiliary.js";
-import { mergeAuxiliary } from "../core/merge-auxiliary.js";
+import { createEventFactory } from "../stream/event-factory.js";
+import { AIMappingError, AIProviderError, AIRequestError, AIStreamError } from "../runtime/errors.js";
+import type { EventFactory } from "../stream/event-factory.js";
+import { extractText } from "../canonical/index.js";
+import { AdapterAuxiliaryState } from "./auxiliary.js";
+import { mergeAuxiliary } from "../stream/merge-auxiliary.js";
 
 // ── Adapter 解析中间结果 ──────────────────────────────────────
 

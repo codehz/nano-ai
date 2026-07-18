@@ -10,9 +10,9 @@
  * 这不是通用“假模型”，而是测试工具调用编排与错误路径的测试夹具。
  */
 
-import { AIRequestError } from "../core/errors.js";
-import { AdapterBase } from "../helpers/adapter-base.js";
-import { messageItem, reasoningItem, replayFromOutput, textBlock } from "../helpers/mapping.js";
+import { AIRequestError } from "../runtime/errors.js";
+import { AdapterBase } from "../provider/base.js";
+import { messageItem, reasoningItem, replayFromOutput, textBlock } from "../canonical/index.js";
 
 import type {
   AIStreamEvent,
@@ -30,7 +30,7 @@ import type {
   ToolResultItem,
   Usage,
 } from "../types/index.js";
-import type { EventFactory } from "../core/event-factory.js";
+import type { EventFactory } from "../stream/event-factory.js";
 
 export type MockInputExpectation = {
   type: InputItem["type"];

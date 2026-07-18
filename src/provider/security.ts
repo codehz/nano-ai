@@ -5,7 +5,7 @@
  * - provider HTTP 错误 body 出站脱敏
  */
 
-import { AIProviderError, AIRequestError } from "../core/errors.js";
+import { AIProviderError, AIRequestError } from "../runtime/errors.js";
 
 export const MAX_OPAQUE_PAYLOAD_BYTES = 65536;
 export const MAX_OPAQUE_JSON_DEPTH = 8;

@@ -16,8 +16,8 @@
  * - tool_call 不保证逐 token 流式
  */
 
-import { AdapterBase } from "../helpers/adapter-base.js";
-import { AIRequestError, WarningCode } from "../core/errors.js";
+import { AdapterBase } from "../provider/base.js";
+import { AIRequestError, WarningCode } from "../runtime/errors.js";
 import {
   textBlock,
   messageItem,
@@ -27,18 +27,18 @@ import {
   replayFromOutput,
   mapStopReason,
   contentBlocksToText,
-} from "../helpers/mapping.js";
-import { assertOpaqueReplayEnvelope } from "../helpers/adapter-security.js";
-import { usageFromGemini } from "../helpers/usage-mapping.js";
-import { NormalizedRequestMapper } from "../helpers/request-mapper.js";
-import { createChatCompletionsSseParser } from "../helpers/incremental-stream-parser.js";
+} from "../canonical/index.js";
+import { assertOpaqueReplayEnvelope } from "../provider/security.js";
+import { usageFromGemini } from "../provider/usage/index.js";
+import { NormalizedRequestMapper } from "../provider/request-mapper.js";
+import { createChatCompletionsSseParser } from "../provider/transport/parser.js";
 import {
   openProviderJsonStream,
   iterateProviderStreamBatches,
   createCompletionGate,
-} from "../helpers/provider-stream.js";
-import { mergeProviderHeaders, applyExtraBody } from "../helpers/provider-request-options.js";
-import { mapGeminiThinking } from "../helpers/reasoning-level.js";
+} from "../provider/transport/open-stream.js";
+import { mergeProviderHeaders, applyExtraBody } from "../provider/request-options.js";
+import { mapGeminiThinking } from "../provider/reasoning.js";
 
 import type {
   NormalizedRequest,
@@ -48,7 +48,7 @@ import type {
   StopReason,
   ContentBlock,
 } from "../types/index.js";
-import type { EventFactory } from "../core/event-factory.js";
+import type { EventFactory } from "../stream/event-factory.js";
 
 // ── 选项类型 ──────────────────────────────────────────────────
 

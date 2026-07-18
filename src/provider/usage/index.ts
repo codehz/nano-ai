@@ -4,7 +4,7 @@
  * best-effort 提取 reasoning / cache 等扩展字段。
  */
 
-import type { Usage } from "../types/index.js";
+import type { Usage } from "../../types/index.js";
 
 function num(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;

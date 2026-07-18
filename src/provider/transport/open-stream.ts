@@ -8,12 +8,12 @@
  * - 不完整尾帧 warning
  */
 
-import { AIProviderError, AIStreamError } from "../core/errors.js";
-import type { EventFactory } from "../core/event-factory.js";
-import type { AIStreamEvent, FetchFn } from "../types/index.js";
-import { emitMalformedStreamWarning } from "./adapter-auxiliary.js";
-import { providerHttpError } from "./adapter-security.js";
-import type { IncrementalStreamParser } from "./incremental-stream-parser.js";
+import { AIProviderError, AIStreamError } from "../../runtime/errors.js";
+import type { EventFactory } from "../../stream/event-factory.js";
+import type { AIStreamEvent, FetchFn } from "../../types/index.js";
+import { emitMalformedStreamWarning } from "../auxiliary.js";
+import { providerHttpError } from "../security.js";
+import type { IncrementalStreamParser } from "./parser.js";
 
 export type OpenProviderJsonStreamOptions = {
   fetchFn: FetchFn;

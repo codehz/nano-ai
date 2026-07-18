@@ -30,7 +30,7 @@ import type {
   StopReason,
   ContentBlock,
 } from "../types/index.js";
-import { AIStreamError } from "./errors.js";
+import { AIStreamError } from "../runtime/errors.js";
 import { mergeAuxiliary } from "./merge-auxiliary.js";
 
 // ── Active item types ─────────────────────────────────────────

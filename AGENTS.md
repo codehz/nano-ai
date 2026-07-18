@@ -2,7 +2,16 @@
 
 ## Project Structure & Module Organization
 
-`src/` contains the library source. Keep canonical request/response logic in `src/core/`, provider integrations in `src/adapters/`, reusable stream utilities in `src/helpers/`, and shared types in `src/types/`. The public entrypoint is `src/index.ts`.
+`src/` contains the library source, layered by dependency direction (only import downward):
+
+- `src/types/` — pure canonical types
+- `src/runtime/` — client, normalize, validation, errors
+- `src/stream/` — event factory, aggregator, `collectStream`
+- `src/canonical/` — content/item/replay constructors and pure mapping helpers
+- `src/provider/` — adapter base, transport, security, usage/reasoning mapping (internal infrastructure)
+- `src/adapters/` — provider integrations
+
+The public entrypoint is `src/index.ts`. Prefer deep imports for internal modules; do not import the root entry from within `src/`.
 
 `tests/` holds Bun test suites plus shared fixtures such as `tests/fixtures.ts`. `examples/` contains runnable usage samples like `examples/basic.ts` and `examples/tool-loop.ts`. `dist/` is generated output from the packaging build and should not be edited by hand.
 

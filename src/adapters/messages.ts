@@ -10,8 +10,8 @@
  * - 能力降级 warning
  */
 
-import { AdapterBase } from "../helpers/adapter-base.js";
-import { AIRequestError } from "../core/errors.js";
+import { AdapterBase } from "../provider/base.js";
+import { AIRequestError } from "../runtime/errors.js";
 import {
   textBlock,
   messageItem,
@@ -21,18 +21,18 @@ import {
   replayFromOutput,
   mapStopReason,
   contentBlocksToText,
-} from "../helpers/mapping.js";
-import { assertOpaqueReplayEnvelope } from "../helpers/adapter-security.js";
-import { usageFromAnthropicMessages } from "../helpers/usage-mapping.js";
-import { NormalizedRequestMapper } from "../helpers/request-mapper.js";
-import { createSseJsonParser } from "../helpers/incremental-stream-parser.js";
+} from "../canonical/index.js";
+import { assertOpaqueReplayEnvelope } from "../provider/security.js";
+import { usageFromAnthropicMessages } from "../provider/usage/index.js";
+import { NormalizedRequestMapper } from "../provider/request-mapper.js";
+import { createSseJsonParser } from "../provider/transport/parser.js";
 import {
   openProviderJsonStream,
   iterateProviderStreamBatches,
   createCompletionGate,
-} from "../helpers/provider-stream.js";
-import { mergeProviderHeaders, applyExtraBody } from "../helpers/provider-request-options.js";
-import { mapMessagesThinking } from "../helpers/reasoning-level.js";
+} from "../provider/transport/open-stream.js";
+import { mergeProviderHeaders, applyExtraBody } from "../provider/request-options.js";
+import { mapMessagesThinking } from "../provider/reasoning.js";
 
 import type {
   NormalizedRequest,
@@ -41,7 +41,7 @@ import type {
   FetchFn,
   ContentBlock,
 } from "../types/index.js";
-import type { EventFactory } from "../core/event-factory.js";
+import type { EventFactory } from "../stream/event-factory.js";
 
 // ── 类型 ──────────────────────────────────────────────────────
 

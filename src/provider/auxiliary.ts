@@ -1,5 +1,5 @@
-import { WarningCode } from "../core/errors.js";
-import type { EventFactory } from "../core/event-factory.js";
+import { WarningCode } from "../runtime/errors.js";
+import type { EventFactory } from "../stream/event-factory.js";
 import type { AIStreamEvent, BillingInfo, NormalizedRequest, Usage, AuxiliaryInfo } from "../types/index.js";
 import { AuxiliaryCollector, type BillingSource, type LookupResult, type UsageSource } from "./auxiliary-collector.js";
 

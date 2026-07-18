@@ -8,8 +8,8 @@
  * - replay fidelity 依赖 provider 是否暴露可回放的 assistant turn 字段
  */
 
-import { AdapterBase } from "../helpers/adapter-base.js";
-import { AIRequestError, WarningCode } from "../core/errors.js";
+import { AdapterBase } from "../provider/base.js";
+import { AIRequestError, WarningCode } from "../runtime/errors.js";
 import {
   textBlock,
   messageItem,
@@ -18,18 +18,18 @@ import {
   opaqueItem,
   replayFromOutput,
   mapStopReason,
-} from "../helpers/mapping.js";
-import { assertOpaqueReplayEnvelope } from "../helpers/adapter-security.js";
-import { usageFromChatCompletions } from "../helpers/usage-mapping.js";
-import { NormalizedRequestMapper } from "../helpers/request-mapper.js";
-import { createChatCompletionsSseParser } from "../helpers/incremental-stream-parser.js";
+} from "../canonical/index.js";
+import { assertOpaqueReplayEnvelope } from "../provider/security.js";
+import { usageFromChatCompletions } from "../provider/usage/index.js";
+import { NormalizedRequestMapper } from "../provider/request-mapper.js";
+import { createChatCompletionsSseParser } from "../provider/transport/parser.js";
 import {
   openProviderJsonStream,
   iterateProviderStreamBatches,
   createCompletionGate,
-} from "../helpers/provider-stream.js";
-import { mergeProviderHeaders, applyExtraBody } from "../helpers/provider-request-options.js";
-import { mapChatCompletionsReasoningEffort } from "../helpers/reasoning-level.js";
+} from "../provider/transport/open-stream.js";
+import { mergeProviderHeaders, applyExtraBody } from "../provider/request-options.js";
+import { mapChatCompletionsReasoningEffort } from "../provider/reasoning.js";
 
 import type {
   NormalizedRequest,
@@ -38,7 +38,7 @@ import type {
   FetchFn,
   StopReason,
 } from "../types/index.js";
-import type { EventFactory } from "../core/event-factory.js";
+import type { EventFactory } from "../stream/event-factory.js";
 
 // ── 类型 ──────────────────────────────────────────────────────
 

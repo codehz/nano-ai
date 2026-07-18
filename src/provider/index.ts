@@ -1,31 +1,14 @@
 /**
- * 共享工具模块
+ * Provider 基础设施（内部）
  *
- * 模块边界：adapter 间共享的映射 helper、adapter 基类、模拟流式、辅助信息采集等。
+ * 模块边界：adapter 基类、transport、security、usage/reasoning 映射。
+ * 不构成根入口公开 API（Phase 3 将停止从根 re-export）。
  */
 
-export {
-  mapStopReason,
-  mapReasoningVisibility,
-  textBlock,
-  jsonBlock,
-  imageBlock,
-  opaqueBlock,
-  blockToText,
-  contentBlocksToText,
-  extractText,
-  messageItem,
-  reasoningItem,
-  toolCallItem,
-  toolResultItem,
-  opaqueItem,
-  replayFromOutput,
-} from "./mapping.js";
-
-export { AdapterBase } from "./adapter-base.js";
-export type { StreamResult } from "./adapter-base.js";
-export { AdapterAuxiliaryState, emitMalformedStreamWarning } from "./adapter-auxiliary.js";
-export type { AuxiliaryFinalizeOptions, AuxiliaryFinalizeResult, BillingPostprocessHook } from "./adapter-auxiliary.js";
+export { AdapterBase } from "./base.js";
+export type { StreamResult } from "./base.js";
+export { AdapterAuxiliaryState, emitMalformedStreamWarning } from "./auxiliary.js";
+export type { AuxiliaryFinalizeOptions, AuxiliaryFinalizeResult, BillingPostprocessHook } from "./auxiliary.js";
 export { syntheticStream } from "./synthetic-stream.js";
 export type { SyntheticStreamOptions } from "./synthetic-stream.js";
 export { AuxiliaryCollector } from "./auxiliary-collector.js";
@@ -36,8 +19,7 @@ export {
   usageFromGemini,
   usageFromOllama,
   usageFromOpenAIResponses,
-} from "./usage-mapping.js";
-
+} from "./usage/index.js";
 export {
   assertOpaqueReplayEnvelope,
   extractProviderErrorMessage,
@@ -48,9 +30,8 @@ export {
   MAX_OPAQUE_PAYLOAD_BYTES,
   PROVIDER_ERROR_MESSAGE_MAX_LEN,
   PROVIDER_ERROR_RAW_BODY_THRESHOLD,
-} from "./adapter-security.js";
-export type { OpaqueEnvelopeResult } from "./adapter-security.js";
-
+} from "./security.js";
+export type { OpaqueEnvelopeResult } from "./security.js";
 export {
   IncrementalStreamParser,
   splitLines,
@@ -60,19 +41,16 @@ export {
   parseChatCompletionsDataLine,
   createChatCompletionsSseParser,
   createNdjsonLineParser,
-} from "./incremental-stream-parser.js";
-export type { StreamSplitResult, StreamParseResult, SseJsonEvent } from "./incremental-stream-parser.js";
-
-export { openProviderJsonStream, iterateProviderStreamBatches, createCompletionGate } from "./provider-stream.js";
+} from "./transport/parser.js";
+export type { StreamSplitResult, StreamParseResult, SseJsonEvent } from "./transport/parser.js";
+export { openProviderJsonStream, iterateProviderStreamBatches, createCompletionGate } from "./transport/open-stream.js";
 export type {
   OpenProviderJsonStreamOptions,
   OpenedProviderStream,
   ProviderStreamBatch,
   ProviderStreamBatchOptions,
-} from "./provider-stream.js";
-
-export { mergeProviderHeaders, applyExtraBody } from "./provider-request-options.js";
-
+} from "./transport/open-stream.js";
+export { mergeProviderHeaders, applyExtraBody } from "./request-options.js";
 export {
   REASONING_LEVELS,
   REASONING_LEVEL_SET,
@@ -83,13 +61,12 @@ export {
   mapMessagesThinking,
   mapOllamaThink,
   mapGeminiThinking,
-} from "./reasoning-level.js";
+} from "./reasoning.js";
 export type {
   OpenAIReasoningEffort,
   MessagesThinkingConfig,
   OllamaThinkValue,
   GeminiThinkingLevel,
   GeminiThinkingConfig,
-} from "./reasoning-level.js";
-
+} from "./reasoning.js";
 export { NormalizedRequestMapper } from "./request-mapper.js";

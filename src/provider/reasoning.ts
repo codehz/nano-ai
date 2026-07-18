@@ -5,7 +5,7 @@
  * 无法映射的 level 抛 AIRequestError(UNSUPPORTED_REASONING_LEVEL)。
  */
 
-import { AIRequestError } from "../core/errors.js";
+import { AIRequestError } from "../runtime/errors.js";
 import type { ReasoningLevel } from "../types/request.js";
 
 export const REASONING_LEVELS = ["none", "minimal", "low", "medium", "high", "xhigh", "max"] as const satisfies readonly ReasoningLevel[];

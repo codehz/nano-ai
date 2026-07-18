@@ -13,8 +13,8 @@
  * - 不改写工具参数
  */
 
-import { createEventFactory } from "../core/event-factory.js";
-import { replayFromOutput } from "./mapping.js";
+import { createEventFactory } from "../stream/event-factory.js";
+import { replayFromOutput } from "../canonical/index.js";
 
 import type {
   OutputItem,
