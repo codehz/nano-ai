@@ -10,8 +10,8 @@
  * - 能力降级 warning
  */
 
-import { AdapterBase } from "../provider/base.js";
-import { AIRequestError } from "../runtime/errors.js";
+import { AdapterBase } from "../../provider/base.js";
+import { AIRequestError } from "../../runtime/errors.js";
 import {
   textBlock,
   messageItem,
@@ -21,18 +21,18 @@ import {
   replayFromOutput,
   mapStopReason,
   contentBlocksToText,
-} from "../canonical/index.js";
-import { assertOpaqueReplayEnvelope } from "../provider/security.js";
-import { usageFromAnthropicMessages } from "../provider/usage/index.js";
-import { NormalizedRequestMapper } from "../provider/request-mapper.js";
-import { createSseJsonParser } from "../provider/transport/parser.js";
+} from "../../canonical/index.js";
+import { assertOpaqueReplayEnvelope } from "../../provider/security.js";
+import { usageFromAnthropicMessages } from "../../provider/usage/index.js";
+import { NormalizedRequestMapper } from "../../provider/request-mapper.js";
+import { createSseJsonParser } from "../../provider/transport/parser.js";
 import {
   openProviderJsonStream,
   iterateProviderStreamBatches,
   createCompletionGate,
-} from "../provider/transport/open-stream.js";
-import { mergeProviderHeaders, applyExtraBody } from "../provider/request-options.js";
-import { mapMessagesThinking } from "../provider/reasoning.js";
+} from "../../provider/transport/open-stream.js";
+import { mergeProviderHeaders, applyExtraBody } from "../../provider/request-options.js";
+import { mapMessagesThinking } from "../../provider/reasoning.js";
 
 import type {
   NormalizedRequest,
@@ -40,54 +40,18 @@ import type {
   OutputItem,
   FetchFn,
   ContentBlock,
-} from "../types/index.js";
-import type { EventFactory } from "../stream/event-factory.js";
+} from "../../types/index.js";
+import type { EventFactory } from "../../stream/event-factory.js";
 
 // ── 类型 ──────────────────────────────────────────────────────
 
-export type MessagesAdapterOptions = {
-  apiKey: string;
-  apiVersion?: string;
-  baseUrl?: string;
-  /** 可注入自定义 fetch 实现（用于测试／代理） */
-  fetch?: FetchFn;
-  /** 额外请求头；后写覆盖内置 x-api-key / Content-Type / anthropic-version */
-  headers?: Record<string, string>;
-  /** 额外 body 顶层字段；浅层合并，同名键可覆盖 */
-  extraBody?: Record<string, unknown>;
-};
-
-// ── Messages API 请求类型 ────────────────────────────────────
-
-type MessagesAPIRequest = {
-  model: string;
-  max_tokens: number;
-  messages: MessagesAPIMessage[];
-  system?: string;
-  tools?: MessagesAPITool[];
-  tool_choice?: { type: "auto" | "none" } | { type: "tool"; name: string };
-  temperature?: number;
-  thinking?: { type: "enabled"; budget_tokens: number } | { type: "disabled" };
-  stream: true;
-};
-
-type MessagesAPIMessage = {
-  role: "user" | "assistant";
-  content: string | MessagesAPIContentBlock[];
-};
-
-type MessagesAPIContentBlock =
-  | { type: "text"; text: string }
-  | { type: "thinking"; thinking: string; signature?: string }
-  | { type: "redacted_thinking"; data: string }
-  | { type: "tool_use"; id: string; name: string; input: Record<string, unknown> }
-  | { type: "tool_result"; tool_use_id: string; content: string | MessagesAPIContentBlock[]; is_error?: boolean };
-
-type MessagesAPITool = {
-  name: string;
-  description?: string;
-  input_schema: Record<string, unknown>;
-};
+import type {
+  MessagesAdapterOptions,
+  MessagesAPIRequest,
+  MessagesAPIMessage,
+  MessagesAPIContentBlock,
+  MessagesAPITool
+} from "./types.js";
 
 const mapper = new NormalizedRequestMapper("messages");
 

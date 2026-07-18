@@ -8,8 +8,8 @@
  * - replay fidelity 依赖 provider 是否暴露可回放的 assistant turn 字段
  */
 
-import { AdapterBase } from "../provider/base.js";
-import { AIRequestError, WarningCode } from "../runtime/errors.js";
+import { AdapterBase } from "../../provider/base.js";
+import { AIRequestError, WarningCode } from "../../runtime/errors.js";
 import {
   textBlock,
   messageItem,
@@ -18,18 +18,18 @@ import {
   opaqueItem,
   replayFromOutput,
   mapStopReason,
-} from "../canonical/index.js";
-import { assertOpaqueReplayEnvelope } from "../provider/security.js";
-import { usageFromChatCompletions } from "../provider/usage/index.js";
-import { NormalizedRequestMapper } from "../provider/request-mapper.js";
-import { createChatCompletionsSseParser } from "../provider/transport/parser.js";
+} from "../../canonical/index.js";
+import { assertOpaqueReplayEnvelope } from "../../provider/security.js";
+import { usageFromChatCompletions } from "../../provider/usage/index.js";
+import { NormalizedRequestMapper } from "../../provider/request-mapper.js";
+import { createChatCompletionsSseParser } from "../../provider/transport/parser.js";
 import {
   openProviderJsonStream,
   iterateProviderStreamBatches,
   createCompletionGate,
-} from "../provider/transport/open-stream.js";
-import { mergeProviderHeaders, applyExtraBody } from "../provider/request-options.js";
-import { mapChatCompletionsReasoningEffort } from "../provider/reasoning.js";
+} from "../../provider/transport/open-stream.js";
+import { mergeProviderHeaders, applyExtraBody } from "../../provider/request-options.js";
+import { mapChatCompletionsReasoningEffort } from "../../provider/reasoning.js";
 
 import type {
   NormalizedRequest,
@@ -37,104 +37,24 @@ import type {
   OutputItem,
   FetchFn,
   StopReason,
-} from "../types/index.js";
-import type { EventFactory } from "../stream/event-factory.js";
+} from "../../types/index.js";
+import type { EventFactory } from "../../stream/event-factory.js";
 
 // ── 类型 ──────────────────────────────────────────────────────
 
-export type ChatCompletionsAdapterOptions = {
-  apiKey: string;
-  baseUrl?: string;
-  fetch?: FetchFn;
-  /** 额外请求头；后写覆盖内置 Authorization / Content-Type */
-  headers?: Record<string, string>;
-  /** 额外 body 顶层字段；浅层合并，同名键可覆盖 */
-  extraBody?: Record<string, unknown>;
-};
-
-// ── Chat API 请求类型 ─────────────────────────────────────────
-
-type ChatRequest = {
-  model: string;
-  messages: ChatMessage[];
-  tools?: ChatTool[];
-  tool_choice?: "auto" | "none" | { type: "function"; function: { name: string } };
-  metadata?: Record<string, string>;
-  temperature?: number;
-  max_tokens?: number;
-  /** Portable reasoningLevel → reasoning_effort */
-  reasoning_effort?: string;
-  stream: true;
-  n: 1;
-};
-
-type ChatMessage = {
-  role: "system" | "user" | "assistant" | "tool";
-  content: string | null;
-  tool_calls?: ChatToolCall[];
-  tool_call_id?: string;
-  name?: string;
-  [key: string]: unknown;
-};
-
-type ChatToolCall = {
-  id: string;
-  type: "function";
-  function: { name: string; arguments: string };
-};
-
-type ChatTool = {
-  type: "function";
-  function: { name: string; description?: string; parameters: Record<string, unknown> };
-};
-
-// ── SSE chunk 类型 ────────────────────────────────────────────
-
-type ChatChunk = {
-  id: string;
-  object: string;
-  created: number;
-  model: string;
-  choices: ChatChunkChoice[];
-  usage?: {
-    prompt_tokens: number;
-    completion_tokens: number;
-    total_tokens: number;
-    prompt_tokens_details?: { cached_tokens?: number };
-    completion_tokens_details?: { reasoning_tokens?: number };
-  };
-};
-
-type ChatChunkChoice = {
-  index: number;
-  delta: {
-    role?: string;
-    content?: string | null;
-    reasoning?: unknown;
-    reasoning_content?: unknown;
-    tool_calls?: ChatChunkToolCall[];
-    function_call?: { name?: string; arguments?: string };
-    [key: string]: unknown;
-  };
-  finish_reason?: string | null;
-};
-
-type ChatChunkToolCall = {
-  index: number;
-  id?: string;
-  type?: string;
-  function?: { name?: string; arguments?: string };
-};
-
-type PendingToolCall = {
-  id: string;
-  name: string;
-  args: string;
-};
-
-type ReasoningFieldName = "reasoning" | "reasoning_content";
-
-const REASONING_FIELDS: readonly ReasoningFieldName[] = ["reasoning_content", "reasoning"];
+import {
+  REASONING_FIELDS,
+  type ChatCompletionsAdapterOptions,
+  type ChatRequest,
+  type ChatMessage,
+  type ChatToolCall,
+  type ChatTool,
+  type ChatChunk,
+  type ChatChunkChoice,
+  type ChatChunkToolCall,
+  type PendingToolCall,
+  type ReasoningFieldName,
+} from "./types.js";
 
 const mapper = new NormalizedRequestMapper("chat-completions");
 

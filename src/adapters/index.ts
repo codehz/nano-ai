@@ -12,17 +12,17 @@
  * 每个 adapter 实现 BackendAdapter 内部协议。
  */
 
-export { ResponsesAdapter } from "./responses.js";
-export type { ResponsesAdapterOptions } from "./responses.js";
-export { MessagesAdapter } from "./messages.js";
-export type { MessagesAdapterOptions } from "./messages.js";
-export { ChatCompletionsAdapter } from "./chat-completions.js";
-export type { ChatCompletionsAdapterOptions } from "./chat-completions.js";
-export { OllamaAdapter } from "./ollama.js";
-export type { OllamaAdapterOptions } from "./ollama.js";
-export { GeminiAdapter } from "./gemini.js";
-export type { GeminiAdapterOptions } from "./gemini.js";
-export { MockAdapter } from "./mock.js";
+export { ResponsesAdapter } from "./responses/index.js";
+export type { ResponsesAdapterOptions } from "./responses/index.js";
+export { MessagesAdapter } from "./messages/index.js";
+export type { MessagesAdapterOptions } from "./messages/index.js";
+export { ChatCompletionsAdapter } from "./chat-completions/index.js";
+export type { ChatCompletionsAdapterOptions } from "./chat-completions/index.js";
+export { OllamaAdapter } from "./ollama/index.js";
+export type { OllamaAdapterOptions } from "./ollama/index.js";
+export { GeminiAdapter } from "./gemini/index.js";
+export type { GeminiAdapterOptions } from "./gemini/index.js";
+export { MockAdapter } from "./mock/index.js";
 export type {
   MockAdapterOptions,
   MockHistoryRecord,
@@ -43,5 +43,5 @@ export type {
   MockInterruptStep,
   MockThrowStep,
   MockStep,
-} from "./mock.js";
-export { assertMockRequest, withMockStreaming } from "./mock.js";
+} from "./mock/index.js";
+export { assertMockRequest, withMockStreaming } from "./mock/index.js";

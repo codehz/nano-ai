@@ -15,8 +15,8 @@
  * - replay 保真度低（无 opaque continuation 机制）
  */
 
-import { AdapterBase } from "../provider/base.js";
-import { AIRequestError, WarningCode } from "../runtime/errors.js";
+import { AdapterBase } from "../../provider/base.js";
+import { AIRequestError, WarningCode } from "../../runtime/errors.js";
 import {
   textBlock,
   messageItem,
@@ -25,18 +25,18 @@ import {
   replayFromOutput,
   mapStopReason,
   contentBlocksToText,
-} from "../canonical/index.js";
-import { assertOpaqueReplayEnvelope } from "../provider/security.js";
-import { usageFromOllama } from "../provider/usage/index.js";
-import { NormalizedRequestMapper } from "../provider/request-mapper.js";
-import { createNdjsonLineParser } from "../provider/transport/parser.js";
+} from "../../canonical/index.js";
+import { assertOpaqueReplayEnvelope } from "../../provider/security.js";
+import { usageFromOllama } from "../../provider/usage/index.js";
+import { NormalizedRequestMapper } from "../../provider/request-mapper.js";
+import { createNdjsonLineParser } from "../../provider/transport/parser.js";
 import {
   openProviderJsonStream,
   iterateProviderStreamBatches,
   createCompletionGate,
-} from "../provider/transport/open-stream.js";
-import { mergeProviderHeaders, applyExtraBody } from "../provider/request-options.js";
-import { mapOllamaThink } from "../provider/reasoning.js";
+} from "../../provider/transport/open-stream.js";
+import { mergeProviderHeaders, applyExtraBody } from "../../provider/request-options.js";
+import { mapOllamaThink } from "../../provider/reasoning.js";
 
 import type {
   NormalizedRequest,
@@ -44,62 +44,18 @@ import type {
   OutputItem,
   FetchFn,
   StopReason,
-} from "../types/index.js";
-import type { EventFactory } from "../stream/event-factory.js";
+} from "../../types/index.js";
+import type { EventFactory } from "../../stream/event-factory.js";
 
 // ── 选项类型 ──────────────────────────────────────────────────
 
-export type OllamaAdapterOptions = {
-  /** Ollama 服务地址，默认 http://localhost:11434 */
-  baseUrl?: string;
-  /** 可选 API key（用于需要认证的代理场景） */
-  apiKey?: string;
-  /** 可注入自定义 fetch 实现 */
-  fetch?: FetchFn;
-  /** 额外请求头；后写覆盖内置 Content-Type / Authorization */
-  headers?: Record<string, string>;
-  /** 额外 body 顶层字段；浅层合并，同名键可覆盖 */
-  extraBody?: Record<string, unknown>;
-};
-
-// ── Ollama Chat API 类型 ──────────────────────────────────────
-
-type OllamaChatRequest = {
-  model: string;
-  messages: OllamaMessage[];
-  stream: true;
-  tools?: OllamaTool[];
-  /** Portable reasoningLevel → think；minimal/xhigh/max 不支持 */
-  think?: boolean | "low" | "medium" | "high";
-  options?: {
-    temperature?: number;
-    num_predict?: number;
-    [key: string]: unknown;
-  };
-};
-
-type OllamaMessage = {
-  role: "system" | "user" | "assistant" | "tool";
-  content: string;
-  images?: string[];
-  tool_calls?: OllamaToolCall[];
-};
-
-type OllamaToolCall = {
-  function: {
-    name: string;
-    arguments: Record<string, unknown>;
-  };
-};
-
-type OllamaTool = {
-  type: "function";
-  function: {
-    name: string;
-    description?: string;
-    parameters: Record<string, unknown>;
-  };
-};
+import type {
+  OllamaAdapterOptions,
+  OllamaChatRequest,
+  OllamaMessage,
+  OllamaToolCall,
+  OllamaTool
+} from "./types.js";
 
 const mapper = new NormalizedRequestMapper("ollama");
 
