@@ -2,36 +2,13 @@ import { describe, it, expect } from "bun:test";
 
 // ── 类型导入验证 ──────────────────────────────────────────────
 
-import {
-  // ContentBlock
-  type ContentBlock,
-  type InstructionBlock,
-  // Items
-  type MessageItem,
-  type ReasoningItem,
-  type ToolCallItem,
-  type ToolResultItem,
-  type OpaqueItem,
-  type InputItem,
-  type ReplayItem,
-  // Request
-  type AIRequest,
-  type ToolDefinition,
-  type ToolChoice,
-  // Response
-  type AIResponse,
-  type StopReason,
-  type Usage,
-  type BillingInfo,
-  // Events
-  type AIStreamEvent,
-  // Client
-  assertMockRequest,
-  createAIClient,
-  MockAdapter,
-  withMockStreaming,
-} from "../src/index.js";
-
+import { // ContentBlock
+  type ContentBlock, type InstructionBlock, // Items
+  type MessageItem, type ReasoningItem, type ToolCallItem, type ToolResultItem, type OpaqueItem, type InputItem, type ReplayItem, // Request
+  type AIRequest, type ToolDefinition, type ToolChoice, // Response
+  type AIResponse, type StopReason, type Usage, type BillingInfo, // Events
+  type AIStreamEvent, // Client
+  assertMockRequest, createAIClient, MockAdapter, withMockStreaming } from "../src/index.js";
 // ── ContentBlock ──────────────────────────────────────────────
 
 describe("ContentBlock", () => {
@@ -299,10 +276,12 @@ describe("AIStreamEvent", () => {
   });
 });
 
-// ── Export sanity ─────────────────────────────────────────────
+// ── Export sanity / 公开面契约 ────────────────────────────────
+
+import * as publicApi from "../src/index.js";
 
 describe("exports", () => {
-  it("should export createAIClient (stub)", () => {
+  it("should export createAIClient", () => {
     expect(createAIClient).toBeFunction();
   });
 
@@ -316,5 +295,44 @@ describe("exports", () => {
 
   it("should export withMockStreaming", () => {
     expect(withMockStreaming).toBeFunction();
+  });
+
+  it("should export public runtime surface", () => {
+    expect(publicApi.collectStream).toBeFunction();
+    expect(publicApi.textBlock).toBeFunction();
+    expect(publicApi.messageItem).toBeFunction();
+    expect(publicApi.ResponsesAdapter).toBeFunction();
+    expect(publicApi.REASONING_LEVELS).toContain("high");
+  });
+
+  it("should not export internal provider/stream helpers from root", () => {
+    const keys = new Set(Object.keys(publicApi));
+    for (const name of [
+      "AdapterBase",
+      "createEventFactory",
+      "normalizeRequest",
+      "validateRequest",
+      "assertValidRequest",
+      "aggregateEvents",
+      "NormalizedRequestMapper",
+      "IncrementalStreamParser",
+      "openProviderJsonStream",
+      "iterateProviderStreamBatches",
+      "createCompletionGate",
+      "mergeProviderHeaders",
+      "applyExtraBody",
+      "AdapterAuxiliaryState",
+      "AuxiliaryCollector",
+      "syntheticStream",
+      "mapResponsesReasoning",
+      "mapChatCompletionsReasoningEffort",
+      "mapMessagesThinking",
+      "mapOllamaThink",
+      "mapGeminiThinking",
+      "assertOpaqueReplayEnvelope",
+      "usageFromOpenAIResponses",
+    ]) {
+      expect(keys.has(name)).toBe(false);
+    }
   });
 });

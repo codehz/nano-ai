@@ -2,6 +2,20 @@
 
 统一流式 AI 客户端，提供一套 canonical API，对接真实模型后端与面向测试的回调驱动 `MockAdapter`（`responses` / `messages` / `chat-completions` / `ollama` / `gemini` / `mock`）。
 
+## 0.5.0 迁移说明
+
+`0.5.0` 收紧了根入口 `@codehz/ai` 的公开面。以下符号**不再**从包根导出（内部模块，不构成 semver 公开面）：
+
+- `AdapterBase` / `createEventFactory` / `aggregateEvents`
+- `normalizeRequest` / `validateRequest` / `assertValidRequest`
+- `NormalizedRequestMapper` / `IncrementalStreamParser` / `openProviderJsonStream` 等 transport 脚手架
+- `syntheticStream` / `AuxiliaryCollector` / usage 与 provider reasoning 映射函数
+- `assertOpaqueReplayEnvelope` 等 security 工具
+
+**仍从根导出：** `createAIClient`、`collectStream`、错误类型与 `WarningCode`、全部 adapters 与 Mock 夹具、canonical 构造（`textBlock` / `messageItem` 等）、`REASONING_LEVELS`，以及全部 canonical 类型。
+
+自定义 adapter 请实现 `BackendAdapter` 接口；库内部测试可通过源码 deep import 访问 `src/provider/*` / `src/stream/*`，但这些路径不保证稳定。
+
 ## 安装
 
 ```bash
@@ -358,37 +372,13 @@ const r2 = await collectStream(client.stream({ input, tools }));
 
 ## 模拟流式
 
-非流式后端可通过 `syntheticStream()` 包装为规范事件流：
+真实 adapter 在原生流不可用时，库内部会用 synthetic 路径包装为规范事件流。应用层一般只需消费 `client.stream()` / `collectStream()`；`0.5.0` 起 `syntheticStream` 不再从根入口导出。
 
-```ts
-import { syntheticStream } from "@codehz/ai";
-
-const events = syntheticStream({
-  model: "gpt-4o",
-  responseId: "req-1",
-  backend: { kind: "chat-completions" },
-  output: [messageItem([textBlock("Hello")])],
-  stopReason: "end_turn",
-});
-
-for await (const event of events) {
-  // 消费规范事件
-}
-```
+若只需前端逐字预览效果，请优先使用 `MockAdapter` + `withMockStreaming()`（见上文 Mock 后端）。
 
 ## 辅助信息采集
 
-`AuxiliaryCollector` 提供分层 best-effort 采集（流事件 → headers → lookup → derived）：
-
-```ts
-import { AuxiliaryCollector } from "@codehz/ai";
-
-const collector = new AuxiliaryCollector();
-collector.recordUsage({ inputTokens: 10, outputTokens: 5 }, "stream");
-collector.recordBilling({ amount: 0.002, currency: "USD", isEstimated: false, source: "provider" }, "final");
-
-const { usage, billing, auxiliary, warnings } = collector.build();
-```
+usage / billing / providerMetadata 由 adapter 在流结束时经 `response.auxiliary` 与 `AIResponse` 字段交付。`AuxiliaryCollector` 是 provider 内部实现细节，`0.5.0` 起不再从根入口导出。
 
 ## 开发命令
 

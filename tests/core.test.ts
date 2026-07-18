@@ -1,8 +1,8 @@
 import { describe, it, expect } from "bun:test";
-import { createAIClient, normalizeRequest, validateRequest, assertValidRequest, AIRequestError } from "../src/index.js";
-
+import { createAIClient, AIRequestError } from "../src/index.js";
+import { normalizeRequest } from "../src/runtime/normalize.js";
+import { validateRequest, assertValidRequest } from "../src/runtime/validation.js";
 import type { AIRequest, NormalizedRequest, AIStreamEvent, BackendAdapter, ContentBlock } from "../src/index.js";
-
 // ── Helpers ───────────────────────────────────────────────────
 
 function createMockAdapter(kind: BackendAdapter["kind"] = "responses"): BackendAdapter {

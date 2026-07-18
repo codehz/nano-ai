@@ -9,23 +9,12 @@
  */
 
 import { describe, it, expect } from "bun:test";
-import {
-  AIError,
-  AIRequestError,
-  AIProviderError,
-  AIStreamError,
-  AIMappingError,
-  WarningCode,
-  createEventFactory,
-  aggregateEvents,
-  collectStream,
-  AdapterBase,
-  textBlock,
-  normalizeRequest,
-} from "../src/index.js";
-
+import { AIError, AIRequestError, AIProviderError, AIStreamError, AIMappingError, WarningCode, collectStream, textBlock } from "../src/index.js";
+import { createEventFactory } from "../src/stream/event-factory.js";
+import { aggregateEvents } from "../src/stream/aggregator.js";
+import { AdapterBase } from "../src/provider/base.js";
+import { normalizeRequest } from "../src/runtime/normalize.js";
 import type { AIStreamEvent } from "../src/index.js";
-
 // ── 错误类型 ──────────────────────────────────────────────────
 
 describe("Error types", () => {

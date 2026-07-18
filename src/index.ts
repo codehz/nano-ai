@@ -4,22 +4,132 @@
  * 对外只暴露一个 canonical 主入口：client.stream()
  *
  * 分层：types → runtime → stream → canonical → provider → adapters
+ * 根入口只 re-export 公开面；provider 基础设施为内部模块。
  */
 
-// Re-export all canonical types
-export * from "./types/index.js";
+// ── Types ────────────────────────────────────────────────────
+export type {
+  // content
+  TextContentBlock,
+  JsonContentBlock,
+  InstructionBlock,
+  ContentBlock,
+  // items
+  MessageItem,
+  ReasoningItem,
+  ToolCallItem,
+  ToolResultItem,
+  OpaqueItem,
+  InputItem,
+  OutputItem,
+  ReplayItem,
+  // request
+  AIRequest,
+  ToolDefinition,
+  ToolChoice,
+  IncludeSettings,
+  ReasoningLevel,
+  // response
+  AIResponse,
+  StopReason,
+  Usage,
+  BillingInfo,
+  AuxiliaryInfo,
+  BackendTrace,
+  // events
+  AIStreamEvent,
+  StreamEventBase,
+  ResponseStartedEvent,
+  ResponseWarningEvent,
+  ResponseAuxiliaryEvent,
+  ResponseCompletedEvent,
+  MessageStartedEvent,
+  MessageDeltaEvent,
+  MessageCompletedEvent,
+  ReasoningStartedEvent,
+  ReasoningDeltaEvent,
+  ReasoningCompletedEvent,
+  ToolCallStartedEvent,
+  ToolCallDeltaEvent,
+  ToolCallCompletedEvent,
+  // adapter protocol / client
+  BackendAdapter,
+  FetchFn,
+  NormalizedRequest,
+  CreateAIClientOptions,
+  AIClient,
+} from "./types/index.js";
 
-// Runtime: client / normalize / validate / errors
-export * from "./runtime/index.js";
+// ── Runtime ──────────────────────────────────────────────────
+export { createAIClient } from "./runtime/client.js";
+export {
+  AIError,
+  AIRequestError,
+  AIProviderError,
+  AIStreamError,
+  AIMappingError,
+  WarningCode,
+} from "./runtime/errors.js";
 
-// Stream: event factory / aggregator / collect
-export * from "./stream/index.js";
+// ── Stream ───────────────────────────────────────────────────
+export { collectStream } from "./stream/collect-stream.js";
 
-// Canonical constructors & pure mapping helpers
-export * from "./canonical/index.js";
+// ── Canonical constructors ───────────────────────────────────
+export {
+  mapStopReason,
+  mapReasoningVisibility,
+  textBlock,
+  jsonBlock,
+  imageBlock,
+  opaqueBlock,
+  blockToText,
+  contentBlocksToText,
+  messageItem,
+  reasoningItem,
+  toolCallItem,
+  toolResultItem,
+  opaqueItem,
+  replayFromOutput,
+  extractText,
+} from "./canonical/index.js";
 
-// Provider infrastructure (still re-exported in Phase 2; tightened in Phase 3)
-export * from "./provider/index.js";
+// ── Portable reasoning level constants (no provider mappers) ─
+export { REASONING_LEVELS, REASONING_LEVEL_SET } from "./provider/reasoning.js";
 
-// Adapters
-export * from "./adapters/index.js";
+// ── Adapters ─────────────────────────────────────────────────
+export {
+  ResponsesAdapter,
+  MessagesAdapter,
+  ChatCompletionsAdapter,
+  OllamaAdapter,
+  GeminiAdapter,
+  MockAdapter,
+  assertMockRequest,
+  withMockStreaming,
+} from "./adapters/index.js";
+export type {
+  ResponsesAdapterOptions,
+  MessagesAdapterOptions,
+  ChatCompletionsAdapterOptions,
+  OllamaAdapterOptions,
+  GeminiAdapterOptions,
+  MockAdapterOptions,
+  MockHistoryRecord,
+  MockTextStreamOptions,
+  MockInputExpectation,
+  MockRequestExpectation,
+  MockHandlerContext,
+  MockHandler,
+  MockStaticHandler,
+  MockWarningStep,
+  MockAuxiliaryStep,
+  MockMessageStep,
+  MockReasoningStep,
+  MockToolCallStep,
+  MockOutputStep,
+  MockCompleteStep,
+  MockErrorStep,
+  MockInterruptStep,
+  MockThrowStep,
+  MockStep,
+} from "./adapters/index.js";

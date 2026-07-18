@@ -4,10 +4,10 @@
  * 共享的构造器和样本数据，用于场景测试和 golden sequence 验证。
  */
 
-import { createEventFactory, textBlock, messageItem, reasoningItem, toolCallItem, WarningCode } from "../src/index.js";
+import { textBlock, messageItem, reasoningItem, toolCallItem, WarningCode } from "../src/index.js";
 
+import { createEventFactory } from "../src/stream/event-factory.js";
 import type { AIResponse, AIStreamEvent, MessageItem, ReasoningItem, ToolCallItem } from "../src/index.js";
-
 // ── 工厂辅助 ──────────────────────────────────────────────────
 
 export function responsesFactory() {

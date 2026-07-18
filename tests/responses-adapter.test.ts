@@ -6,9 +6,7 @@
 
 import { describe, it, expect } from "bun:test";
 import { AIProviderError, AIRequestError, ResponsesAdapter, collectStream } from "../src/index.js";
-
 import type { NormalizedRequest, FetchFn } from "../src/index.js";
-
 // ── Helpers ───────────────────────────────────────────────────
 
 /**

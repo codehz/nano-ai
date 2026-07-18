@@ -1,9 +1,11 @@
 import { describe, it, expect } from "bun:test";
 
-import { createEventFactory, aggregateEvents, collectStream, textBlock, WarningCode } from "../src/index.js";
+import { collectStream, textBlock, WarningCode } from "../src/index.js";
 
+import { createEventFactory } from "../src/stream/event-factory.js";
+
+import { aggregateEvents } from "../src/stream/aggregator.js";
 import type { AIStreamEvent } from "../src/index.js";
-
 // ── Shared helpers ───────────────────────────────────────────
 
 function makeFactory() {

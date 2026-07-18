@@ -11,7 +11,6 @@
 import { describe, expect, it } from "bun:test";
 
 import { MockAdapter, createAIClient, textBlock, withMockStreaming } from "../src/index.js";
-
 // ── 辅助：收集所有事件直到迭代器结束或 reject ────────────────
 
 async function collectAllEvents(

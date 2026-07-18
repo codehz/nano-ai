@@ -1,17 +1,8 @@
 import { describe, expect, it } from "bun:test";
 
-import {
-  AIRequestError,
-  aggregateEvents,
-  MockAdapter,
-  assertMockRequest,
-  collectStream,
-  createAIClient,
-  jsonBlock,
-  textBlock,
-  withMockStreaming,
-} from "../src/index.js";
+import { AIRequestError, MockAdapter, assertMockRequest, collectStream, createAIClient, jsonBlock, textBlock, withMockStreaming } from "../src/index.js";
 
+import { aggregateEvents } from "../src/stream/aggregator.js";
 describe("MockAdapter", () => {
   it("should expose reasoningLevel in handler context", async () => {
     let seen: string | undefined;

@@ -6,19 +6,12 @@
 
 import { describe, it, expect } from "bun:test";
 
-import {
-  aggregateEvents,
-  collectStream,
-  createAIClient,
-  createEventFactory,
-  textBlock,
-  messageItem,
-  toolResultItem,
-  replayFromOutput,
-} from "../src/index.js";
+import { collectStream, createAIClient, textBlock, messageItem, toolResultItem, replayFromOutput } from "../src/index.js";
 
+import { aggregateEvents } from "../src/stream/aggregator.js";
+
+import { createEventFactory } from "../src/stream/event-factory.js";
 import type { AIStreamEvent, BackendAdapter, NormalizedRequest } from "../src/index.js";
-
 import {
   goldenMessageReasoningToolCallSequence,
   goldenTextOnlySequence,
