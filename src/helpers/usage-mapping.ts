@@ -108,3 +108,21 @@ export function usageFromOllama(raw: { prompt_eval_count?: number; eval_count?: 
     outputTokens: num(raw.eval_count),
   });
 }
+
+/** Gemini GenerateContent `usageMetadata` */
+export function usageFromGemini(raw: {
+  promptTokenCount?: number;
+  candidatesTokenCount?: number;
+  totalTokenCount?: number;
+  cachedContentTokenCount?: number;
+  thoughtsTokenCount?: number;
+  [key: string]: unknown;
+}): Partial<Usage> {
+  return withDerivedTotal({
+    inputTokens: num(raw.promptTokenCount),
+    outputTokens: num(raw.candidatesTokenCount),
+    totalTokens: num(raw.totalTokenCount),
+    cachedInputTokens: num(raw.cachedContentTokenCount),
+    reasoningTokens: num(raw.thoughtsTokenCount),
+  });
+}

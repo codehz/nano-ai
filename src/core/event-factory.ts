@@ -31,7 +31,7 @@ import type {
 } from "../types/index.js";
 
 export type EventFactoryBackend = {
-  kind: "chat-completions" | "messages" | "responses" | "ollama" | "mock";
+  kind: "chat-completions" | "messages" | "responses" | "ollama" | "gemini" | "mock";
   isSynthetic: boolean;
 };
 

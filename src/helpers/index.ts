@@ -33,6 +33,7 @@ export type { UsageSource, BillingSource, LookupResult } from "./auxiliary-colle
 export {
   usageFromAnthropicMessages,
   usageFromChatCompletions,
+  usageFromGemini,
   usageFromOllama,
   usageFromOpenAIResponses,
 } from "./usage-mapping.js";
@@ -81,7 +82,14 @@ export {
   mapMessagesThinkingBudget,
   mapMessagesThinking,
   mapOllamaThink,
+  mapGeminiThinking,
 } from "./reasoning-level.js";
-export type { OpenAIReasoningEffort, MessagesThinkingConfig, OllamaThinkValue } from "./reasoning-level.js";
+export type {
+  OpenAIReasoningEffort,
+  MessagesThinkingConfig,
+  OllamaThinkValue,
+  GeminiThinkingLevel,
+  GeminiThinkingConfig,
+} from "./reasoning-level.js";
 
 export { NormalizedRequestMapper } from "./request-mapper.js";

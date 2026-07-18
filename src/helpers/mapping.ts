@@ -38,6 +38,18 @@ const STOP_REASON_MAP: Record<string, StopReason> = {
   end_turn: "end_turn",
   max_tokens: "max_output_tokens",
   tool_use: "tool_call",
+  // Gemini GenerateContent finishReason
+  STOP: "end_turn",
+  MAX_TOKENS: "max_output_tokens",
+  SAFETY: "content_filter",
+  RECITATION: "content_filter",
+  BLOCKLIST: "content_filter",
+  PROHIBITED_CONTENT: "content_filter",
+  SPII: "content_filter",
+  MALFORMED_FUNCTION_CALL: "error",
+  UNEXPECTED_TOOL_CALL: "error",
+  TOO_MANY_TOOL_CALLS: "error",
+  MISSING_THOUGHT_SIGNATURE: "error",
   // Generic
   error: "error",
 };

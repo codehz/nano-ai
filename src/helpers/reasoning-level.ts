@@ -22,6 +22,7 @@ const MESSAGES_BUDGET_RATIOS: Record<Exclude<ReasoningLevel, "none">, number> = 
 };
 
 const OLLAMA_SUPPORTED = new Set<ReasoningLevel>(["none", "low", "medium", "high"]);
+const GEMINI_SUPPORTED = new Set<ReasoningLevel>(["none", "minimal", "low", "medium", "high"]);
 
 export type OpenAIReasoningEffort = ReasoningLevel;
 
@@ -30,6 +31,12 @@ export type MessagesThinkingConfig =
   | { type: "enabled"; budget_tokens: number };
 
 export type OllamaThinkValue = false | "low" | "medium" | "high";
+
+export type GeminiThinkingLevel = "MINIMAL" | "LOW" | "MEDIUM" | "HIGH";
+
+export type GeminiThinkingConfig =
+  | { includeThoughts: false }
+  | { includeThoughts: true; thinkingLevel: GeminiThinkingLevel };
 
 /** 若 level 不在 supported 集合内则抛 AIRequestError。 */
 export function assertSupportedReasoningLevel(
@@ -83,4 +90,18 @@ export function mapOllamaThink(level: ReasoningLevel): OllamaThinkValue {
   if (level === "none") return false;
   // narrow after assert: only low|medium|high remain
   return level as Exclude<OllamaThinkValue, false>;
+}
+
+/** Gemini：`generationConfig.thinkingConfig`；xhigh/max 不支持 */
+export function mapGeminiThinking(level: ReasoningLevel): GeminiThinkingConfig {
+  assertSupportedReasoningLevel(level, GEMINI_SUPPORTED, "gemini");
+  if (level === "none") {
+    return { includeThoughts: false };
+  }
+
+  const thinkingLevel = level.toUpperCase() as GeminiThinkingLevel;
+  return {
+    includeThoughts: true,
+    thinkingLevel,
+  };
 }
