@@ -6,6 +6,7 @@ import { describe, expect, it } from "bun:test";
 import {
   AIRequestError,
   mapChatCompletionsReasoningEffort,
+  mapGeminiThinking,
   mapMessagesThinking,
   mapMessagesThinkingBudget,
   mapOllamaThink,
@@ -56,6 +57,22 @@ describe("reasoning-level helpers", () => {
     expect(() => mapOllamaThink("max")).toThrow(AIRequestError);
     try {
       mapOllamaThink("xhigh");
+    } catch (err) {
+      expect(err).toBeInstanceOf(AIRequestError);
+      expect((err as AIRequestError).code).toBe("UNSUPPORTED_REASONING_LEVEL");
+    }
+  });
+
+  it("maps Gemini thinkingConfig and rejects unsupported", () => {
+    expect(mapGeminiThinking("none")).toEqual({ includeThoughts: false });
+    expect(mapGeminiThinking("minimal")).toEqual({ includeThoughts: true, thinkingLevel: "MINIMAL" });
+    expect(mapGeminiThinking("low")).toEqual({ includeThoughts: true, thinkingLevel: "LOW" });
+    expect(mapGeminiThinking("medium")).toEqual({ includeThoughts: true, thinkingLevel: "MEDIUM" });
+    expect(mapGeminiThinking("high")).toEqual({ includeThoughts: true, thinkingLevel: "HIGH" });
+
+    expect(() => mapGeminiThinking("xhigh")).toThrow(AIRequestError);
+    try {
+      mapGeminiThinking("max");
     } catch (err) {
       expect(err).toBeInstanceOf(AIRequestError);
       expect((err as AIRequestError).code).toBe("UNSUPPORTED_REASONING_LEVEL");

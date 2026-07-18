@@ -6,6 +6,7 @@
  * - messages
  * - chat.completions
  * - ollama
+ * - gemini
  * - mock
  *
  * 每个 adapter 实现 BackendAdapter 内部协议。
@@ -19,6 +20,8 @@ export { ChatCompletionsAdapter } from "./chat-completions.js";
 export type { ChatCompletionsAdapterOptions } from "./chat-completions.js";
 export { OllamaAdapter } from "./ollama.js";
 export type { OllamaAdapterOptions } from "./ollama.js";
+export { GeminiAdapter } from "./gemini.js";
+export type { GeminiAdapterOptions } from "./gemini.js";
 export { MockAdapter } from "./mock.js";
 export type {
   MockAdapterOptions,

@@ -44,7 +44,8 @@ export type AIRequest = {
   /**
    * Portable reasoning effort. Adapters map this to provider-native fields
    * (e.g. Responses `reasoning.effort`, Chat Completions `reasoning_effort`,
-   * Messages `thinking`, Ollama `think`). Unsupported levels throw.
+   * Messages `thinking`, Ollama `think`, Gemini `thinkingConfig`).
+   * Unsupported levels throw.
    */
   reasoningLevel?: ReasoningLevel;
   /** AbortSignal 用于打断请求。abort 时 fetch 调用会被取消，流迭代器抛出 AbortError。 */

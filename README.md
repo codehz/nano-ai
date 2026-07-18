@@ -1,6 +1,6 @@
 # @codehz/ai
 
-统一流式 AI 客户端，提供一套 canonical API，对接真实模型后端与面向测试的回调驱动 `MockAdapter`（`responses` / `messages` / `chat-completions` / `ollama` / `mock`）。
+统一流式 AI 客户端，提供一套 canonical API，对接真实模型后端与面向测试的回调驱动 `MockAdapter`（`responses` / `messages` / `chat-completions` / `ollama` / `gemini` / `mock`）。
 
 ## 安装
 
@@ -58,6 +58,7 @@ type AIRequest = {
 | `ChatCompletionsAdapter` | 顶层 `reasoning_effort` |
 | `MessagesAdapter` | `thinking: { type: "disabled" }` 或 `{ type: "enabled", budget_tokens }`（由 `maxOutputTokens` 按比例推导，默认 4096） |
 | `OllamaAdapter` | `think: false \| "low" \| "medium" \| "high"` |
+| `GeminiAdapter` | `generationConfig.thinkingConfig`（`none` 关闭 thoughts；`minimal`/`low`/`medium`/`high` → `thinkingLevel`；`xhigh`/`max` 不支持） |
 | `MockAdapter` | 透传到 `MockHandlerContext.reasoningLevel` |
 
 `input` 是 item 数组，每个 item 可以是：
@@ -125,13 +126,14 @@ console.log(response.replay); // 续接材料
 
 ## 后端 Adapter
 
-| Adapter                 | 类                       | 说明                    |
-| ----------------------- | ------------------------ | ----------------------- |
-| OpenAI Responses API    | `ResponsesAdapter`       | OpenAI Responses 端点   |
-| Anthropic Messages API  | `MessagesAdapter`        | Anthropic Messages 端点 |
-| OpenAI Chat Completions | `ChatCompletionsAdapter` | Chat Completions 端点   |
-| Ollama Chat API         | `OllamaAdapter`          | 本地或自托管 Ollama     |
-| Scripted Test Backend   | `MockAdapter`            | 脚本化测试夹具          |
+| Adapter                 | 类                       | 说明                              |
+| ----------------------- | ------------------------ | --------------------------------- |
+| OpenAI Responses API    | `ResponsesAdapter`       | OpenAI Responses 端点             |
+| Anthropic Messages API  | `MessagesAdapter`        | Anthropic Messages 端点           |
+| OpenAI Chat Completions | `ChatCompletionsAdapter` | Chat Completions 端点             |
+| Ollama Chat API         | `OllamaAdapter`          | 本地或自托管 Ollama               |
+| Google Gemini API       | `GeminiAdapter`          | Gemini `streamGenerateContent`    |
+| Scripted Test Backend   | `MockAdapter`            | 脚本化测试夹具                    |
 
 ```ts
 import {
@@ -139,6 +141,7 @@ import {
   MessagesAdapter,
   ChatCompletionsAdapter,
   OllamaAdapter,
+  GeminiAdapter,
   MockAdapter,
   withMockStreaming,
 } from "@codehz/ai";
@@ -170,6 +173,15 @@ const ollama = new OllamaAdapter({
   baseUrl: "http://localhost:11434",
   headers: { "X-Custom": "..." },
   extraBody: { keep_alive: "10m" },
+});
+
+// Google Gemini Developer API（原生 generateContent 流，非 OpenAI 兼容层）
+const gemini = new GeminiAdapter({
+  apiKey: process.env.GEMINI_API_KEY!,
+  // 可选：代理 / Vertex 兼容端点
+  // baseUrl: "https://generativelanguage.googleapis.com/v1beta",
+  headers: { "X-Custom": "..." },
+  extraBody: { safetySettings: [] },
 });
 
 // 面向测试的回调驱动 mock backend

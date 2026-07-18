@@ -4,6 +4,7 @@ import {
   aggregateEvents,
   ChatCompletionsAdapter,
   collectStream,
+  GeminiAdapter,
   MessagesAdapter,
   MockAdapter,
   OllamaAdapter,
@@ -171,6 +172,32 @@ function buildUsagePresentAdapters() {
         ),
       }),
     },
+    {
+      kind: "gemini",
+      usageSource: "stream",
+      adapter: new GeminiAdapter({
+        apiKey: "test-key",
+        fetch: mockFetch(() =>
+          sseResponse(
+            `data: ${JSON.stringify({
+              responseId: "gemini-usage",
+              candidates: [
+                {
+                  content: { role: "model", parts: [{ text: "Hi" }] },
+                  finishReason: "STOP",
+                  index: 0,
+                },
+              ],
+              usageMetadata: {
+                promptTokenCount: 10,
+                candidatesTokenCount: 2,
+                totalTokenCount: 12,
+              },
+            })}\n`,
+          ),
+        ),
+      }),
+    },
   ] as const;
 }
 
@@ -251,6 +278,26 @@ function buildMissingUsageAdapters() {
         ),
       }),
     },
+    {
+      kind: "gemini",
+      adapter: new GeminiAdapter({
+        apiKey: "test-key",
+        fetch: mockFetch(() =>
+          sseResponse(
+            `data: ${JSON.stringify({
+              responseId: "gemini-missing",
+              candidates: [
+                {
+                  content: { role: "model", parts: [{ text: "Hi" }] },
+                  finishReason: "STOP",
+                  index: 0,
+                },
+              ],
+            })}\n`,
+          ),
+        ),
+      }),
+    },
   ] as const;
 }
 
@@ -306,6 +353,27 @@ function buildMalformedAdapters() {
         ),
       }),
     },
+    {
+      kind: "gemini",
+      adapter: new GeminiAdapter({
+        apiKey: "test-key",
+        fetch: mockFetch(() =>
+          sseResponse(
+            "data: {bad json}\n",
+            `data: ${JSON.stringify({
+              responseId: "gemini-malformed",
+              candidates: [
+                {
+                  content: { role: "model", parts: [{ text: "" }] },
+                  finishReason: "STOP",
+                  index: 0,
+                },
+              ],
+            })}\n`,
+          ),
+        ),
+      }),
+    },
   ] as const;
 }
 
@@ -315,6 +383,7 @@ describe("Adapter contracts", () => {
     expect(new MessagesAdapter({ apiKey: "test-key" }).isSyntheticStream).toBe(false);
     expect(new ResponsesAdapter({ apiKey: "test-key" }).isSyntheticStream).toBe(false);
     expect(new OllamaAdapter().isSyntheticStream).toBe(false);
+    expect(new GeminiAdapter({ apiKey: "test-key" }).isSyntheticStream).toBe(false);
     expect(new MockAdapter({ handler: async function* () {} }).isSyntheticStream).toBe(true);
   });
 
@@ -334,6 +403,7 @@ describe("Adapter contracts", () => {
       new ChatCompletionsAdapter({ apiKey: "test-key", fetch: mockFetch(() => sseResponse("")) }),
       new MessagesAdapter({ apiKey: "test-key", fetch: mockFetch(() => sseResponse("")) }),
       new OllamaAdapter({ fetch: mockFetch(() => ndjsonResponse("")) }),
+      new GeminiAdapter({ apiKey: "test-key", fetch: mockFetch(() => sseResponse("")) }),
     ];
 
     const results = await Promise.allSettled(adapters.map(async (adapter) => collectStream(adapter.stream(request))));

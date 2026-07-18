@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import {
   usageFromAnthropicMessages,
   usageFromChatCompletions,
+  usageFromGemini,
   usageFromOllama,
   usageFromOpenAIResponses,
 } from "../src/helpers/usage-mapping.js";
@@ -113,6 +114,24 @@ describe("usage-mapping", () => {
     expect(usage.inputTokens).toBeUndefined();
     expect(usage.outputTokens).toBeUndefined();
     expect(usage.totalTokens).toBeUndefined();
+  });
+
+  it("maps Gemini usageMetadata", () => {
+    expect(
+      usageFromGemini({
+        promptTokenCount: 20,
+        candidatesTokenCount: 5,
+        totalTokenCount: 32,
+        cachedContentTokenCount: 4,
+        thoughtsTokenCount: 7,
+      }),
+    ).toEqual({
+      inputTokens: 20,
+      outputTokens: 5,
+      totalTokens: 32,
+      cachedInputTokens: 4,
+      reasoningTokens: 7,
+    });
   });
 
   it("maps Ollama counts", () => {
