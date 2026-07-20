@@ -236,6 +236,8 @@ export class MessagesAdapter extends AdapterBase {
   // ── buildRequest ──────────────────────────────────────────
 
   protected buildRequest(request: NormalizedRequest): MessagesAPIRequest {
+    mapper.assertNoServerTools(request.serverTools);
+
     const messages: MessagesAPIMessage[] = [];
     let systemPrompt: string | undefined;
     let pendingToolResultMessage: MessagesAPIMessage | undefined;

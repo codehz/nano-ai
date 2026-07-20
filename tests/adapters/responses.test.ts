@@ -444,6 +444,95 @@ describe("ResponsesAdapter - request building", () => {
     expect(tools?.[0]).not.toHaveProperty("input_schema");
   });
 
+  it("should merge function tools and serverTools into Responses tools array", async () => {
+    const { captured, fetch } = captureRequest();
+    const adapter = new ResponsesAdapter({ apiKey: "test-key", fetch });
+    const inputSchema = {
+      type: "object",
+      properties: { city: { type: "string" } },
+      required: ["city"],
+    };
+
+    await collectStream(
+      adapter.stream(
+        makeRequest({
+          tools: [{ name: "get_weather", description: "Get weather", inputSchema }],
+          serverTools: [
+            {
+              type: "web_search",
+              allowedDomains: ["example.com"],
+              userLocation: { type: "approximate", country: "CN", city: "Hangzhou" },
+              searchContextSize: "low",
+            },
+            {
+              type: "code_execution",
+              container: { type: "auto", memoryLimit: "4g", fileIds: ["file-1"] },
+            },
+            {
+              type: "mcp",
+              serverLabel: "dmcp",
+              serverUrl: "https://dmcp-server.example/mcp",
+              serverDescription: "dice",
+              authorization: "secret-token",
+              allowedTools: ["roll"],
+              requireApproval: "never",
+            },
+          ],
+        }),
+      ),
+    );
+
+    const body = captured.current as Record<string, unknown> | null;
+    expect(body?.tools).toEqual([
+      {
+        type: "function",
+        name: "get_weather",
+        description: "Get weather",
+        parameters: inputSchema,
+      },
+      {
+        type: "web_search",
+        filters: { allowed_domains: ["example.com"] },
+        user_location: { type: "approximate", country: "CN", city: "Hangzhou" },
+        search_context_size: "low",
+      },
+      {
+        type: "code_interpreter",
+        container: { type: "auto", memory_limit: "4g", file_ids: ["file-1"] },
+      },
+      {
+        type: "mcp",
+        server_label: "dmcp",
+        server_url: "https://dmcp-server.example/mcp",
+        server_description: "dice",
+        authorization: "secret-token",
+        allowed_tools: ["roll"],
+        require_approval: "never",
+      },
+    ]);
+  });
+
+  it("should default code_execution container to auto when omitted", async () => {
+    const { captured, fetch } = captureRequest();
+    const adapter = new ResponsesAdapter({ apiKey: "test-key", fetch });
+
+    await collectStream(
+      adapter.stream(
+        makeRequest({
+          serverTools: [{ type: "code_execution" }],
+        }),
+      ),
+    );
+
+    const body = captured.current as Record<string, unknown> | null;
+    expect(body?.tools).toEqual([
+      {
+        type: "code_interpreter",
+        container: { type: "auto" },
+      },
+    ]);
+  });
+
   it("should omit reasoning when reasoningLevel is unset", async () => {
     const { captured, fetch } = captureRequest();
     const adapter = new ResponsesAdapter({ apiKey: "test-key", fetch });

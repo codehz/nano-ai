@@ -755,3 +755,25 @@ describe("GeminiAdapter - properties", () => {
     expect(adapter.isSyntheticStream).toBe(false);
   });
 });
+
+describe("GeminiAdapter - serverTools guard", () => {
+  it("should reject serverTools with UNSUPPORTED_SERVER_TOOL", async () => {
+    const adapter = new GeminiAdapter({
+      apiKey: "test-key",
+      fetch: mockFetch(sseResponse("data: {}\n\n")),
+    });
+
+    await expect(
+      collectStream(
+        adapter.stream(
+          makeRequest({
+            serverTools: [{ type: "web_search" }],
+          }),
+        ),
+      ),
+    ).rejects.toMatchObject({
+      name: "AIRequestError",
+      code: "UNSUPPORTED_SERVER_TOOL",
+    });
+  });
+});

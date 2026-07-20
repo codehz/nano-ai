@@ -1048,3 +1048,25 @@ describe("ChatCompletionsAdapter - integration", () => {
     expect(result.replay!.length).toBeGreaterThanOrEqual(1);
   });
 });
+
+describe("ChatCompletionsAdapter - serverTools guard", () => {
+  it("should reject serverTools with UNSUPPORTED_SERVER_TOOL", async () => {
+    const adapter = new ChatCompletionsAdapter({
+      apiKey: "test-key",
+      fetch: mockFetch(sseResponse("data: [DONE]\n")),
+    });
+
+    await expect(
+      collectStream(
+        adapter.stream(
+          makeRequest({
+            serverTools: [{ type: "web_search" }],
+          }),
+        ),
+      ),
+    ).rejects.toMatchObject({
+      name: "AIRequestError",
+      code: "UNSUPPORTED_SERVER_TOOL",
+    });
+  });
+});

@@ -1,7 +1,14 @@
 import { AIRequestError } from "../runtime/errors.js";
 import { contentBlocksToText } from "../canonical/index.js";
 
-import type { ContentBlock, InstructionBlock, ToolCallItem, ToolChoice, ToolDefinition } from "../types/index.js";
+import type {
+  ContentBlock,
+  InstructionBlock,
+  ServerToolDefinition,
+  ToolCallItem,
+  ToolChoice,
+  ToolDefinition,
+} from "../types/index.js";
 
 export class NormalizedRequestMapper {
   constructor(readonly kind: string) {}
@@ -10,6 +17,16 @@ export class NormalizedRequestMapper {
     return typeof instructions === "string"
       ? instructions
       : contentBlocksToText(this.ensureTextBlocks(instructions, "instructions"));
+  }
+
+  /** 不支持 serverTools 的 adapter 在 buildRequest 入口调用。 */
+  assertNoServerTools(serverTools: ServerToolDefinition[] | undefined): void {
+    if (serverTools && serverTools.length > 0) {
+      throw new AIRequestError(
+        `${this.kind} does not support serverTools; use ResponsesAdapter for web_search, code_execution, and mcp`,
+        "UNSUPPORTED_SERVER_TOOL",
+      );
+    }
   }
 
   ensureTextBlocks(blocks: ContentBlock[], field: string): ContentBlock[] {

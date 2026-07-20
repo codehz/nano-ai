@@ -192,6 +192,8 @@ export class ChatCompletionsAdapter extends AdapterBase {
   // ── buildRequest ──────────────────────────────────────────
 
   protected buildRequest(request: NormalizedRequest): ChatRequest {
+    mapper.assertNoServerTools(request.serverTools);
+
     const messages: ChatMessage[] = [];
 
     // handle instructions → system message

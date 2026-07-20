@@ -172,6 +172,8 @@ export class GeminiAdapter extends AdapterBase {
   // ── buildRequest ──────────────────────────────────────────
 
   protected buildRequest(request: NormalizedRequest): GeminiGenerateContentRequest {
+    mapper.assertNoServerTools(request.serverTools);
+
     const contents: GeminiContent[] = [];
     let systemInstruction: GeminiGenerateContentRequest["systemInstruction"];
 

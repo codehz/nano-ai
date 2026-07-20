@@ -1003,3 +1003,25 @@ describe("MessagesAdapter - integration", () => {
     expect(result.replay).toBeDefined();
   });
 });
+
+describe("MessagesAdapter - serverTools guard", () => {
+  it("should reject serverTools with UNSUPPORTED_SERVER_TOOL", async () => {
+    const adapter = new MessagesAdapter({
+      apiKey: "test-key",
+      fetch: mockFetch(sseResponse("event: message_stop\ndata: {}\n\n")),
+    });
+
+    await expect(
+      collectStream(
+        adapter.stream(
+          makeRequest({
+            serverTools: [{ type: "web_search" }],
+          }),
+        ),
+      ),
+    ).rejects.toMatchObject({
+      name: "AIRequestError",
+      code: "UNSUPPORTED_SERVER_TOOL",
+    });
+  });
+});

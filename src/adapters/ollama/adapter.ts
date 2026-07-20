@@ -137,6 +137,8 @@ export class OllamaAdapter extends AdapterBase {
   // ── buildRequest ──────────────────────────────────────────
 
   protected buildRequest(request: NormalizedRequest): OllamaChatRequest {
+    mapper.assertNoServerTools(request.serverTools);
+
     const messages: OllamaMessage[] = [];
     /** Local-only name → call id queue for best-effort tool_result association (not sent to Ollama). */
     const callIdsByName = new Map<string, string[]>();

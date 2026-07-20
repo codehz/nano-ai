@@ -90,12 +90,56 @@ export type ResponsesInputItem =
   | ResponsesReasoningInput
   | ResponsesItemReference;
 
-export type ResponsesTool = {
+export type ResponsesFunctionTool = {
   type: "function";
   name: string;
   description?: string;
   parameters: Record<string, unknown>;
   strict?: boolean | null;
 };
+
+export type ResponsesWebSearchTool = {
+  type: "web_search";
+  filters?: {
+    allowed_domains?: string[];
+    blocked_domains?: string[];
+  };
+  user_location?: {
+    type: "approximate";
+    country?: string;
+    city?: string;
+    region?: string;
+    timezone?: string;
+  };
+  search_context_size?: "low" | "medium" | "high";
+};
+
+export type ResponsesCodeInterpreterTool = {
+  type: "code_interpreter";
+  container:
+    | string
+    | {
+        type: "auto";
+        memory_limit?: "1g" | "4g" | "16g" | "64g";
+        file_ids?: string[];
+      };
+};
+
+export type ResponsesMcpTool = {
+  type: "mcp";
+  server_label: string;
+  server_url: string;
+  server_description?: string;
+  authorization?: string;
+  allowed_tools?: string[];
+  require_approval: "never";
+};
+
+/** Responses API tools 联合：客户端 function + 内置 server tools */
+export type ResponsesTool =
+  | ResponsesFunctionTool
+  | ResponsesWebSearchTool
+  | ResponsesCodeInterpreterTool
+  | ResponsesMcpTool;
 
 

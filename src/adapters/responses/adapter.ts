@@ -38,6 +38,7 @@ import type {
   FetchFn,
   ContentBlock,
   ReasoningItem,
+  ServerToolDefinition,
   StopReason,
 } from "../../types/index.js";
 import type { EventFactory } from "../../stream/event-factory.js";
@@ -54,10 +55,78 @@ import type {
   ResponsesReasoningInput,
   ResponsesItemReference,
   ResponsesInputItem,
-  ResponsesTool
+  ResponsesTool,
+  ResponsesWebSearchTool,
+  ResponsesCodeInterpreterTool,
+  ResponsesMcpTool,
 } from "./types.js";
 
 const mapper = new NormalizedRequestMapper("responses");
+
+/** 将 canonical serverTools 映射为 Responses API tools 数组项。 */
+function mapServerTools(serverTools: ServerToolDefinition[] | undefined): ResponsesTool[] {
+  if (!serverTools || serverTools.length === 0) return [];
+
+  return serverTools.map((tool): ResponsesTool => {
+    switch (tool.type) {
+      case "web_search": {
+        const mapped: ResponsesWebSearchTool = { type: "web_search" };
+        if (tool.allowedDomains || tool.blockedDomains) {
+          mapped.filters = {
+            ...(tool.allowedDomains ? { allowed_domains: tool.allowedDomains } : {}),
+            ...(tool.blockedDomains ? { blocked_domains: tool.blockedDomains } : {}),
+          };
+        }
+        if (tool.userLocation) {
+          mapped.user_location = {
+            type: "approximate",
+            ...(tool.userLocation.country !== undefined ? { country: tool.userLocation.country } : {}),
+            ...(tool.userLocation.city !== undefined ? { city: tool.userLocation.city } : {}),
+            ...(tool.userLocation.region !== undefined ? { region: tool.userLocation.region } : {}),
+            ...(tool.userLocation.timezone !== undefined ? { timezone: tool.userLocation.timezone } : {}),
+          };
+        }
+        if (tool.searchContextSize !== undefined) {
+          mapped.search_context_size = tool.searchContextSize;
+        }
+        return mapped;
+      }
+      case "code_execution": {
+        const container = tool.container;
+        const mapped: ResponsesCodeInterpreterTool = {
+          type: "code_interpreter",
+          container: container
+            ? {
+                type: "auto",
+                ...(container.memoryLimit !== undefined ? { memory_limit: container.memoryLimit } : {}),
+                ...(container.fileIds !== undefined ? { file_ids: container.fileIds } : {}),
+              }
+            : { type: "auto" },
+        };
+        return mapped;
+      }
+      case "mcp": {
+        const mapped: ResponsesMcpTool = {
+          type: "mcp",
+          server_label: tool.serverLabel,
+          server_url: tool.serverUrl,
+          require_approval: "never",
+        };
+        if (tool.serverDescription !== undefined) mapped.server_description = tool.serverDescription;
+        if (tool.authorization !== undefined) mapped.authorization = tool.authorization;
+        if (tool.allowedTools !== undefined) mapped.allowed_tools = tool.allowedTools;
+        return mapped;
+      }
+      default: {
+        const exhaustive: never = tool;
+        throw new AIRequestError(
+          `Unsupported server tool type: ${(exhaustive as ServerToolDefinition).type}`,
+          "UNSUPPORTED_SERVER_TOOL",
+        );
+      }
+    }
+  });
+}
 
 // ── SSE 事件类型 ──────────────────────────────────────────────
 
@@ -375,15 +444,21 @@ export class ResponsesAdapter extends AdapterBase {
       body.instructions = mapper.mapInstructions(request.instructions);
     }
 
-    body.tools = mapper.mapToolsIfPresent(
-      request.tools,
-      (t): ResponsesTool => ({
-        type: "function",
-        name: t.name,
-        description: t.description,
-        parameters: t.inputSchema,
-      }),
-    );
+    const functionTools =
+      mapper.mapToolsIfPresent(
+        request.tools,
+        (t): ResponsesTool => ({
+          type: "function",
+          name: t.name,
+          description: t.description,
+          parameters: t.inputSchema,
+        }),
+      ) ?? [];
+    const serverTools = mapServerTools(request.serverTools);
+    const tools = [...functionTools, ...serverTools];
+    if (tools.length > 0) {
+      body.tools = tools;
+    }
 
     body.tool_choice = mapper.mapToolChoice<Exclude<ResponsesAPIRequest["tool_choice"], undefined>>(
       request.toolChoice,

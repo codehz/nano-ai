@@ -808,3 +808,24 @@ describe("OllamaAdapter - properties", () => {
     expect(adapter.isSyntheticStream).toBe(false);
   });
 });
+
+describe("OllamaAdapter - serverTools guard", () => {
+  it("should reject serverTools with UNSUPPORTED_SERVER_TOOL", async () => {
+    const adapter = new OllamaAdapter({
+      fetch: mockFetch(ndjsonResponse('{"done":true}\n')),
+    });
+
+    await expect(
+      collectStream(
+        adapter.stream(
+          makeRequest({
+            serverTools: [{ type: "web_search" }],
+          }),
+        ),
+      ),
+    ).rejects.toMatchObject({
+      name: "AIRequestError",
+      code: "UNSUPPORTED_SERVER_TOOL",
+    });
+  });
+});
