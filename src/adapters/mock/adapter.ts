@@ -31,7 +31,6 @@ import type {
   MockHandlerContext,
   MockHistoryRecord,
   MockProviderRequest,
-  MockStep,
 } from "./types.js";
 import {
   attachSyntheticId,

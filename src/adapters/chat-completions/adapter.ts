@@ -51,7 +51,6 @@ import {
   type ChatTool,
   type ChatChunk,
   type ChatChunkChoice,
-  type ChatChunkToolCall,
   type PendingToolCall,
   type ReasoningFieldName,
 } from "./types.js";

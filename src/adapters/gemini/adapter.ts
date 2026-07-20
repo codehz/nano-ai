@@ -56,11 +56,9 @@ import type {
   GeminiAdapterOptions,
   GeminiPart,
   GeminiContent,
-  GeminiFunctionDeclaration,
   GeminiTool,
   GeminiFunctionCallingConfig,
   GeminiGenerateContentRequest,
-  GeminiUsageMetadata,
   GeminiStreamChunk
 } from "./types.js";
 

@@ -57,12 +57,7 @@ import type { EventFactory } from "../../stream/event-factory.js";
 import type {
   ResponsesAdapterOptions,
   ResponsesAPIRequest,
-  ResponsesEasyMessage,
-  ResponsesInputContentPart,
-  ResponsesFunctionCall,
-  ResponsesFunctionCallOutput,
   ResponsesReasoningInput,
-  ResponsesItemReference,
   ResponsesInputItem,
   ResponsesTool,
   ResponsesWebSearchTool,
