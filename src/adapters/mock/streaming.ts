@@ -3,13 +3,19 @@
  */
 
 import { AIRequestError } from "../../runtime/errors.js";
-import { messageItem, reasoningItem, textBlock } from "../../canonical/index.js";
+import {
+  messageItem,
+  reasoningItem,
+  serverToolCallItem,
+  textBlock,
+} from "../../canonical/index.js";
 import type {
   AIStreamEvent,
   ContentBlock,
   MessageItem,
   NormalizedRequest,
   OutputItem,
+  ServerToolCallItem,
   ToolCallItem,
 } from "../../types/index.js";
 import type { EventFactory } from "../../stream/event-factory.js";
@@ -18,6 +24,7 @@ import type {
   MockHandlerContext,
   MockMessageStep,
   MockReasoningStep,
+  MockServerToolCallStep,
   MockStaticHandler,
   MockStep,
   MockTextStreamOptions,
@@ -48,6 +55,7 @@ export function applyDefaultStreaming(step: MockStep, defaults: ResolvedMockText
     case "message":
     case "reasoning":
     case "tool_call":
+    case "server_tool_call":
     case "output":
       if (step.stream !== undefined) {
         return step;
@@ -74,6 +82,7 @@ export function createMessageFromStep(
   return {
     ...messageItem(normalizeBlocks(step.content), {
       id: step.id ?? `mock-msg-${request.requestId}-${turnIndex}-${stepIndex}`,
+      ...(step.citations ? { citations: step.citations } : {}),
     }),
     role: "assistant",
   };
@@ -99,6 +108,16 @@ export function createToolCallFromStep(step: MockToolCallStep): ToolCallItem {
     name: step.name,
     argumentsText: step.argumentsText,
   };
+}
+
+export function createServerToolCallFromStep(step: MockServerToolCallStep): ServerToolCallItem {
+  return serverToolCallItem(step.id, step.tool, {
+    name: step.name,
+    argumentsText: step.argumentsText,
+    serverLabel: step.serverLabel,
+    status: step.status ?? "completed",
+    providerPayload: step.providerPayload,
+  });
 }
 
 export function normalizeBlocks(content: string | ContentBlock[]): ContentBlock[] {
@@ -180,7 +199,7 @@ export async function* emitMessage(
     }
   }
 
-  yield factory.messageCompleted(item.id);
+  yield factory.messageCompleted(item.id, item.citations ? { citations: item.citations } : undefined);
 }
 
 export async function* emitReasoning(
@@ -229,6 +248,34 @@ export async function* emitToolCall(
   }
 
   yield factory.toolCallCompleted(item.id);
+}
+
+export async function* emitServerToolCall(
+  factory: EventFactory,
+  item: ServerToolCallItem,
+  streamArguments: boolean,
+  stream?: ResolvedMockTextStreamOptions,
+): AsyncIterable<AIStreamEvent> {
+  yield factory.serverToolStarted(item.id, item.tool, {
+    name: item.name,
+    serverLabel: item.serverLabel,
+  });
+
+  if (streamArguments && item.argumentsText) {
+    let chunkIndex = 0;
+    for (const chunk of chunkText(item.argumentsText, stream)) {
+      await delayForChunk(stream, chunkIndex, chunk.length);
+      yield factory.serverToolDelta(item.id, { argumentsText: chunk });
+      chunkIndex += 1;
+    }
+  } else if (item.argumentsText) {
+    yield factory.serverToolDelta(item.id, { argumentsText: item.argumentsText });
+  }
+
+  yield factory.serverToolCompleted(item.id, {
+    status: item.status === "failed" ? "failed" : "completed",
+    providerPayload: item.providerPayload,
+  });
 }
 
 export function resolveStepStreamOptions(

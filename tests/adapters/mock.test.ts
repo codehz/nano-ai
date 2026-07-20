@@ -367,4 +367,83 @@ describe("MockAdapter", () => {
 
     expect(round2.text).toBe("round two");
   });
+
+  it("should stream server tools, discovery, results and message citations", async () => {
+    const adapter = new MockAdapter({
+      handler: async function* (request, context) {
+        assertMockRequest(
+          request,
+          {
+            serverTools: "present",
+            items: [{ type: "message", role: "user", textIncludes: "search" }],
+          },
+          context,
+        );
+
+        yield {
+          type: "server_tool_call",
+          id: "st-search-1",
+          tool: "web_search",
+          name: "search",
+          argumentsText: '{"query":"Hangzhou weather"}',
+          streamArguments: false,
+        };
+        yield {
+          type: "server_tool_result",
+          item: {
+            type: "server_tool_result",
+            callId: "st-search-1",
+            tool: "web_search",
+            outcome: "success",
+            content: [jsonBlock({ hits: 1 })],
+          },
+        };
+        yield {
+          type: "server_tool_discovery",
+          item: {
+            type: "server_tool_discovery",
+            id: "disc-1",
+            tool: "mcp",
+            serverLabel: "dmcp",
+            tools: [{ name: "roll" }],
+          },
+        };
+        yield {
+          type: "message",
+          content: "Hangzhou is sunny.",
+          citations: [{ type: "url", url: "https://example.com", title: "Weather" }],
+        };
+      },
+    });
+
+    const result = await collectStream(
+      adapter.stream({
+        model: "mock-model",
+        requestId: "mock-server-tools",
+        input: [{ type: "message", role: "user", content: [textBlock("search weather")] }],
+        serverTools: [{ type: "web_search" }],
+      }),
+    );
+
+    expect(result.serverToolCalls).toHaveLength(1);
+    expect(result.serverToolCalls[0]).toMatchObject({
+      id: "st-search-1",
+      tool: "web_search",
+      argumentsText: '{"query":"Hangzhou weather"}',
+    });
+    expect(result.serverToolResults).toHaveLength(1);
+    expect(result.output.map((item) => item.type)).toEqual([
+      "server_tool_call",
+      "server_tool_result",
+      "server_tool_discovery",
+      "message",
+    ]);
+    const message = result.output.find((item) => item.type === "message");
+    expect(message && message.type === "message" ? message.citations : undefined).toEqual([
+      { type: "url", url: "https://example.com", title: "Weather" },
+    ]);
+    expect(result.stopReason).toBe("end_turn");
+    expect(result.text).toBe("Hangzhou is sunny.");
+  });
+
 });

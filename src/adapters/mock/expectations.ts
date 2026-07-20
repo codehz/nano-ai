@@ -45,6 +45,14 @@ export function assertMockRequest(
     throw new AIRequestError(`${prefix}: expected tools to be absent`, "MOCK_EXPECTATION_FAILED");
   }
 
+  if (expectation.serverTools === "present" && (!request.serverTools || request.serverTools.length === 0)) {
+    throw new AIRequestError(`${prefix}: expected serverTools to be present`, "MOCK_EXPECTATION_FAILED");
+  }
+
+  if (expectation.serverTools === "absent" && request.serverTools && request.serverTools.length > 0) {
+    throw new AIRequestError(`${prefix}: expected serverTools to be absent`, "MOCK_EXPECTATION_FAILED");
+  }
+
   if (expectation.toolChoice === "present" && request.toolChoice === undefined) {
     throw new AIRequestError(`${prefix}: expected toolChoice to be present`, "MOCK_EXPECTATION_FAILED");
   }

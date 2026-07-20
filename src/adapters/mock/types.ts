@@ -5,6 +5,7 @@
 import type {
   AuxiliaryInfo,
   BillingInfo,
+  Citation,
   ContentBlock,
   InputItem,
   MessageItem,
@@ -12,6 +13,9 @@ import type {
   OutputItem,
   ReasoningLevel,
   ReplayItem,
+  ServerToolCallItem,
+  ServerToolDiscoveryItem,
+  ServerToolResultItem,
   StopReason,
   ToolCallItem,
   ToolResultItem,
@@ -25,7 +29,7 @@ export type MockInputExpectation = {
   name?: string;
   toolName?: string;
   callId?: string;
-  outcome?: ToolResultItem["outcome"];
+  outcome?: ToolResultItem["outcome"] | ServerToolResultItem["outcome"];
   visibility?: Extract<InputItem, { type: "reasoning" }>["visibility"];
   source?: Extract<InputItem, { type: "opaque" }>["source"];
   purpose?: Extract<InputItem, { type: "opaque" }>["purpose"];
@@ -39,6 +43,7 @@ export type MockRequestExpectation = {
   requireReplayFromPreviousTurn?: boolean;
   requireToolResultsForPendingCalls?: boolean;
   tools?: "ignore" | "present" | "absent";
+  serverTools?: "ignore" | "present" | "absent";
   toolChoice?: "ignore" | "present" | "absent";
   items?: MockInputExpectation[];
 };
@@ -93,7 +98,31 @@ export type MockMessageStep = {
   type: "message";
   id?: string;
   content: string | ContentBlock[];
+  citations?: Citation[];
   stream?: MockTextStreamOptions | false;
+};
+
+export type MockServerToolCallStep = {
+  type: "server_tool_call";
+  id: string;
+  tool: ServerToolCallItem["tool"];
+  name?: string;
+  argumentsText?: string;
+  serverLabel?: string;
+  status?: ServerToolCallItem["status"];
+  providerPayload?: unknown;
+  streamArguments?: boolean;
+  stream?: MockTextStreamOptions | false;
+};
+
+export type MockServerToolResultStep = {
+  type: "server_tool_result";
+  item: ServerToolResultItem;
+};
+
+export type MockServerToolDiscoveryStep = {
+  type: "server_tool_discovery";
+  item: ServerToolDiscoveryItem;
 };
 
 export type MockReasoningStep = {
@@ -154,6 +183,9 @@ export type MockStep =
   | MockMessageStep
   | MockReasoningStep
   | MockToolCallStep
+  | MockServerToolCallStep
+  | MockServerToolResultStep
+  | MockServerToolDiscoveryStep
   | MockOutputStep
   | MockCompleteStep
   | MockErrorStep

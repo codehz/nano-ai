@@ -38,10 +38,12 @@ import {
   assertSupportedOutputItem,
   createMessageFromStep,
   createReasoningFromStep,
+  createServerToolCallFromStep,
   createToolCallFromStep,
   emitMessage,
   emitOutputItem,
   emitReasoning,
+  emitServerToolCall,
   emitToolCall,
   resolveStepStreamOptions,
 } from "./streaming.js";
@@ -135,6 +137,27 @@ export class MockAdapter extends AdapterBase {
               resolveStepStreamOptions(undefined, step.stream, "tool_call"),
             );
             output.push(item);
+            break;
+          }
+          case "server_tool_call": {
+            const item = createServerToolCallFromStep(step);
+            yield* emitServerToolCall(
+              factory,
+              item,
+              step.streamArguments ?? true,
+              resolveStepStreamOptions(undefined, step.stream, "server_tool_call"),
+            );
+            output.push(item);
+            break;
+          }
+          case "server_tool_result": {
+            yield factory.serverToolResultCompleted(step.item);
+            output.push(step.item);
+            break;
+          }
+          case "server_tool_discovery": {
+            yield factory.serverToolDiscoveryCompleted(step.item);
+            output.push(step.item);
             break;
           }
           case "output": {
