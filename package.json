@@ -27,6 +27,7 @@
     "example:basic": "bun run examples/basic.ts",
     "example:multi-turn": "bun run examples/multi-turn.ts",
     "example:tool-loop": "bun run examples/tool-loop.ts",
+    "example:server-tools": "bun run examples/server-tools.ts",
     "prepack": "tsdown"
   },
   "devDependencies": {

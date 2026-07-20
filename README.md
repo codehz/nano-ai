@@ -55,14 +55,17 @@ for await (const event of stream) {
 type AIRequest = {
   instructions?: string | InstructionBlock[]; // 系统级指令
   input: InputItem[]; // 输入 items
-  tools?: ToolDefinition[]; // 工具声明
-  toolChoice?: ToolChoice; // 工具选择策略
+  tools?: ToolDefinition[]; // 客户端函数工具（由调用方执行）
+  serverTools?: ServerToolDefinition[]; // Provider 托管工具（web_search / code_execution / mcp）
+  toolChoice?: ToolChoice; // 客户端工具选择策略
   temperature?: number; // 温度 (0–2)
   maxOutputTokens?: number; // 最大输出 token
   reasoningLevel?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max"; // 可移植思考力度
   include?: { usage?; billing?; providerMetadata? };
 };
 ```
+
+`tools` 与 `serverTools` 可在同一请求中共存。客户端 `tool_call` / 手动 tool-loop 语义不变；服务端工具由 provider 在请求内执行，**不会**把 `stopReason` 设为 `tool_call`。
 
 `reasoningLevel` 是 portable 枚举，由各 adapter 映射到 provider 原生字段；未设置时不写相关 wire 字段。adapter 无法映射的 level（如 Ollama 的 `minimal` / `xhigh` / `max`）会抛 `AIRequestError`（`UNSUPPORTED_REASONING_LEVEL`）。需要 budget / summary 等特化参数时，仍可用构造期 `extraBody` 覆盖同名顶层键。
 
@@ -77,13 +80,16 @@ type AIRequest = {
 
 `input` 是 item 数组，每个 item 可以是：
 
-| Item 类型     | 用途                                |
-| ------------- | ----------------------------------- |
-| `message`     | 用户 / 助手消息                     |
-| `reasoning`   | 思维链（输入侧 replay）             |
-| `tool_call`   | 模型发起的工具调用（输入侧 replay） |
-| `tool_result` | 工具执行结果                        |
-| `opaque`      | Provider 私有续接材料               |
+| Item 类型                 | 用途                                          |
+| ------------------------- | --------------------------------------------- |
+| `message`                 | 用户 / 助手消息（可带 `citations`）           |
+| `reasoning`               | 思维链（输入侧 replay）                       |
+| `tool_call`               | 客户端工具调用（输入侧 replay）               |
+| `tool_result`             | 客户端工具执行结果                            |
+| `server_tool_call`        | Provider 托管工具调用                         |
+| `server_tool_result`      | Provider 托管工具结果                         |
+| `server_tool_discovery`   | MCP 等远端工具发现列表                        |
+| `opaque`                  | Provider 私有续接材料                         |
 
 ### 统一事件流
 
@@ -95,15 +101,18 @@ response.started → (item.started → item.delta* → item.completed)* → resp
 
 事件类型：
 
-| 事件                                  | 含义                                        |
-| ------------------------------------- | ------------------------------------------- |
-| `response.started`                    | 响应开始                                    |
-| `message.{started,delta,completed}`   | 消息输出                                    |
-| `reasoning.{started,delta,completed}` | 思维链                                      |
-| `tool_call.{started,delta,completed}` | 工具调用                                    |
-| `response.warning`                    | 非致命警告                                  |
-| `response.auxiliary`                  | usage / billing 辅助信息                    |
-| `response.completed`                  | 响应结束，携带 replay、终止原因及最终元数据 |
+| 事件                                           | 含义                                        |
+| ---------------------------------------------- | ------------------------------------------- |
+| `response.started`                             | 响应开始                                    |
+| `message.{started,delta,completed}`            | 消息输出（`completed` 可带 `citations`）    |
+| `reasoning.{started,delta,completed}`          | 思维链                                      |
+| `tool_call.{started,delta,completed}`          | 客户端工具调用                              |
+| `server_tool.{started,delta,completed}`        | 服务端工具调用                              |
+| `server_tool_result.completed`                 | 服务端工具结果（原子）                      |
+| `server_tool_discovery.completed`              | MCP 工具发现（原子）                        |
+| `response.warning`                             | 非致命警告                                  |
+| `response.auxiliary`                           | usage / billing 辅助信息                    |
+| `response.completed`                           | 响应结束，携带 replay、终止原因及最终元数据 |
 
 ### 统一终结结果
 
@@ -121,18 +130,20 @@ console.log(response.replay); // 续接材料
 
 `AIResponse` 包含：
 
-| 字段         | 类型             | 说明                      |
-| ------------ | ---------------- | ------------------------- |
-| `output`     | `OutputItem[]`   | 当前轮输出                |
-| `replay`     | `ReplayItem[]`   | 续接材料（下次请求带回）  |
-| `text`       | `string`         | 全部文本拼接              |
-| `toolCalls`  | `ToolCallItem[]` | 工具调用                  |
-| `stopReason` | `StopReason?`    | 终止原因（可选）          |
-| `usage`      | `Usage?`         | token 统计（可选）        |
-| `billing`    | `BillingInfo?`   | 计费信息（可选）          |
-| `auxiliary`  | `AuxiliaryInfo?` | Provider 辅助信息（可选） |
-| `warnings`   | `string[]?`      | 非致命警告（可选）        |
-| `backend`    | `BackendTrace`   | 调用链路元数据            |
+| 字段                 | 类型                     | 说明                      |
+| -------------------- | ------------------------ | ------------------------- |
+| `output`             | `OutputItem[]`           | 当前轮输出                |
+| `replay`             | `ReplayItem[]`           | 续接材料（下次请求带回）  |
+| `text`               | `string`                 | 全部文本拼接              |
+| `toolCalls`          | `ToolCallItem[]`         | 客户端工具调用            |
+| `serverToolCalls`    | `ServerToolCallItem[]`   | 服务端工具调用            |
+| `serverToolResults`  | `ServerToolResultItem[]` | 服务端工具结果            |
+| `stopReason`         | `StopReason?`            | 终止原因（可选）          |
+| `usage`              | `Usage?`                 | token 统计（可选）        |
+| `billing`            | `BillingInfo?`           | 计费信息（可选）          |
+| `auxiliary`          | `AuxiliaryInfo?`         | Provider 辅助信息（可选） |
+| `warnings`           | `string[]?`              | 非致命警告（可选）        |
+| `backend`            | `BackendTrace`           | 调用链路元数据            |
 
 流式 `message.delta` / `reasoning.delta` 保持后端分片粒度；完成态 `output` 中的
 `message` / `reasoning` 会合并相邻 `text` content blocks（直接拼接且不添加分隔符），
@@ -253,9 +264,10 @@ const handler = withMockStreaming(
 
 - handler 会拿到 `request` 和 `context`
 - `context` 内建 `previousReplay`、`pendingToolCalls`、`history`
-- handler 可脚本化发出 `message` / `reasoning` / `tool_call`
+- handler 可脚本化发出 `message` / `reasoning` / `tool_call` / `server_tool_*`
+- message step 可附带 `citations`
 - 可注入 `warning`、`content_filter`、transport interruption、provider-style error
-- 可用 `assertMockRequest()` 验证调用方是否把上一轮 `replay` 和当前 `tool_result` 正确带回
+- 可用 `assertMockRequest()` 验证 `replay` / `tool_result` / `serverTools` 等期望
 
 ```ts
 import { assertMockRequest, createAIClient, MockAdapter } from "@codehz/ai";
@@ -345,6 +357,64 @@ const r2 = await collectStream(client.stream({ input: transcript }));
 ```
 
 详细示例见 [examples/multi-turn.ts](./examples/multi-turn.ts)。
+
+## 服务端工具（`serverTools`）
+
+Provider 托管工具（不进客户端 tool loop）。首版由 `ResponsesAdapter` 落地：
+
+| Canonical `serverTools` | Responses wire | 说明 |
+| ----------------------- | -------------- | ---- |
+| `web_search` | `type: "web_search"` | 域名过滤、`userLocation`、`searchContextSize` |
+| `code_execution` | `type: "code_interpreter"` | 仅 auto container（`memoryLimit` / `fileIds`） |
+| `mcp` | `type: "mcp"` | 远程 MCP；**仅** `requireApproval: "never"` |
+
+```ts
+const stream = client.stream({
+  input: [{ type: "message", role: "user", content: [{ type: "text", text: "杭州今天天气？" }] }],
+  serverTools: [
+    {
+      type: "web_search",
+      allowedDomains: ["example.com"],
+      searchContextSize: "low",
+    },
+    {
+      type: "code_execution",
+      container: { type: "auto", memoryLimit: "4g" },
+    },
+    {
+      type: "mcp",
+      serverLabel: "dmcp",
+      serverUrl: "https://dmcp-server.example/mcp",
+      requireApproval: "never",
+      // authorization 每请求由调用方重传；不会写入 opaque 回放
+      authorization: process.env.MCP_TOKEN,
+    },
+  ],
+});
+
+const result = await collectStream(stream);
+console.log(result.serverToolCalls);
+console.log(result.serverToolResults);
+// 消息 citations（url / container_file）挂在 MessageItem.citations
+```
+
+支持矩阵：
+
+| Adapter | `serverTools` |
+| --- | --- |
+| `ResponsesAdapter` | 请求映射 + SSE 解析 |
+| `MockAdapter` | 可脚本化产出 `server_tool_*` 事件与 citations |
+| `ChatCompletions` / `Messages` / `Ollama` / `Gemini` | 传入非空 `serverTools` → `AIRequestError`（`UNSUPPORTED_SERVER_TOOL`） |
+
+范围说明（刻意不做）：
+
+- 客户端自动 tool-loop（仍由调用方编排）
+- computer_use / shell 托管
+- Chat Completions 搜索专用模型
+- MCP approval 交互回路（出现 `mcp_approval_request` 会 `response.warning`）
+- Containers REST 管理 API
+
+多轮续写推荐用 Responses 的 `previous_response_id` opaque replay，无需把 server tool result 当客户端 `tool_result` 回传。Mock 演示见 [examples/server-tools.ts](./examples/server-tools.ts)。
 
 ## 手动工具循环
 
