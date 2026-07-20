@@ -256,6 +256,65 @@ describe("validateRequest", () => {
     const issues = validateRequest(validRequest({ reasoningLevel: "turbo" as "low" }));
     expect(issues.some((i) => i.code === "REASONING_LEVEL_INVALID")).toBe(true);
   });
+
+  it("should accept valid serverTools", () => {
+    expect(
+      validateRequest(
+        validRequest({
+          serverTools: [
+            { type: "web_search", searchContextSize: "low", allowedDomains: ["example.com"] },
+            { type: "code_execution", container: { type: "auto", memoryLimit: "4g" } },
+            {
+              type: "mcp",
+              serverLabel: "dmcp",
+              serverUrl: "https://example.com/mcp",
+              requireApproval: "never",
+            },
+          ],
+        }),
+      ),
+    ).toHaveLength(0);
+  });
+
+  it("should reject web_search with both domain filters", () => {
+    const issues = validateRequest(
+      validRequest({
+        serverTools: [
+          {
+            type: "web_search",
+            allowedDomains: ["a.com"],
+            blockedDomains: ["b.com"],
+          },
+        ],
+      }),
+    );
+    expect(issues.some((i) => i.code === "SERVER_TOOL_WEB_SEARCH_DOMAINS_CONFLICT")).toBe(true);
+  });
+
+  it("should reject mcp requireApproval other than never", () => {
+    const issues = validateRequest(
+      validRequest({
+        serverTools: [
+          {
+            type: "mcp",
+            serverLabel: "dmcp",
+            serverUrl: "https://example.com/mcp",
+            requireApproval: "always" as "never",
+          },
+        ],
+      }),
+    );
+    expect(issues.some((i) => i.code === "SERVER_TOOL_MCP_APPROVAL_UNSUPPORTED")).toBe(true);
+  });
+
+  it("should reject unknown server tool type", () => {
+    const issues = validateRequest(
+      validRequest({
+        serverTools: [{ type: "file_search" } as never],
+      }),
+    );
+    expect(issues.some((i) => i.code === "SERVER_TOOL_TYPE_UNSUPPORTED")).toBe(true);
+  });
 });
 
 // ── assertValidRequest ────────────────────────────────────────

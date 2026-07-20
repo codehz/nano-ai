@@ -7,6 +7,9 @@ import type {
   MessageItem,
   OpaqueItem,
   ReasoningItem,
+  ServerToolCallItem,
+  ServerToolDiscoveryItem,
+  ServerToolResultItem,
   ToolCallItem,
   ToolResultItem,
 } from "../types/index.js";
@@ -72,5 +75,51 @@ export function opaqueItem(
     source,
     purpose,
     payload,
+  };
+}
+
+export function serverToolCallItem(
+  id: string,
+  tool: ServerToolCallItem["tool"],
+  overrides?: Partial<Omit<ServerToolCallItem, "type" | "id" | "tool">>,
+): ServerToolCallItem {
+  return {
+    type: "server_tool_call",
+    id,
+    tool,
+    ...overrides,
+  };
+}
+
+export function serverToolResultItem(
+  callId: string,
+  tool: string,
+  outcome: ServerToolResultItem["outcome"],
+  content: ContentBlock[],
+  overrides?: Partial<Omit<ServerToolResultItem, "type" | "callId" | "tool" | "outcome" | "content">>,
+): ServerToolResultItem {
+  return {
+    type: "server_tool_result",
+    callId,
+    tool,
+    outcome,
+    content,
+    ...overrides,
+  };
+}
+
+export function serverToolDiscoveryItem(
+  id: string,
+  serverLabel: string,
+  tools: ServerToolDiscoveryItem["tools"],
+  overrides?: Partial<Omit<ServerToolDiscoveryItem, "type" | "id" | "tool" | "serverLabel" | "tools">>,
+): ServerToolDiscoveryItem {
+  return {
+    type: "server_tool_discovery",
+    id,
+    tool: "mcp",
+    serverLabel,
+    tools,
+    ...overrides,
   };
 }

@@ -19,7 +19,13 @@ import type {
   ToolCallStartedEvent,
   ToolCallDeltaEvent,
   ToolCallCompletedEvent,
+  ServerToolStartedEvent,
+  ServerToolDeltaEvent,
+  ServerToolCompletedEvent,
+  ServerToolResultCompletedEvent,
+  ServerToolDiscoveryCompletedEvent,
   ContentBlock,
+  Citation,
   Usage,
   BillingInfo,
   AuxiliaryInfo,
@@ -29,6 +35,8 @@ import type {
   OpaqueItem,
   ReasoningItem,
   AdapterKind,
+  ServerToolResultItem,
+  ServerToolDiscoveryItem,
 } from "../types/index.js";
 
 export type EventFactoryBackend = {
@@ -105,8 +113,13 @@ export function createEventFactory(state: EventFactoryState) {
       return { ...base(), type: "message.delta", itemId, delta };
     },
 
-    messageCompleted(itemId: string): MessageCompletedEvent {
-      return { ...base(), type: "message.completed", itemId };
+    messageCompleted(itemId: string, options?: { citations?: Citation[] }): MessageCompletedEvent {
+      return {
+        ...base(),
+        type: "message.completed",
+        itemId,
+        ...(options?.citations ? { citations: options.citations } : {}),
+      };
     },
 
     // ── 思维链流事件 ────────────────────────────────────────
@@ -123,7 +136,7 @@ export function createEventFactory(state: EventFactoryState) {
       return { ...base(), type: "reasoning.completed", itemId };
     },
 
-    // ── 工具调用流事件 ──────────────────────────────────────
+    // ── 客户端工具调用流事件 ────────────────────────────────
 
     toolCallStarted(id: string, name: string): ToolCallStartedEvent {
       return { ...base(), type: "tool_call.started", item: { id, name } };
@@ -135,6 +148,50 @@ export function createEventFactory(state: EventFactoryState) {
 
     toolCallCompleted(itemId: string): ToolCallCompletedEvent {
       return { ...base(), type: "tool_call.completed", itemId };
+    },
+
+    // ── 服务端工具流事件 ────────────────────────────────────
+
+    serverToolStarted(
+      id: string,
+      tool: string,
+      options?: { name?: string; serverLabel?: string },
+    ): ServerToolStartedEvent {
+      return {
+        ...base(),
+        type: "server_tool.started",
+        item: {
+          id,
+          tool,
+          ...(options?.name !== undefined ? { name: options.name } : {}),
+          ...(options?.serverLabel !== undefined ? { serverLabel: options.serverLabel } : {}),
+        },
+      };
+    },
+
+    serverToolDelta(itemId: string, delta: { argumentsText?: string }): ServerToolDeltaEvent {
+      return { ...base(), type: "server_tool.delta", itemId, delta };
+    },
+
+    serverToolCompleted(
+      itemId: string,
+      options?: { status?: "completed" | "failed"; providerPayload?: unknown },
+    ): ServerToolCompletedEvent {
+      return {
+        ...base(),
+        type: "server_tool.completed",
+        itemId,
+        ...(options?.status ? { status: options.status } : {}),
+        ...(options?.providerPayload !== undefined ? { providerPayload: options.providerPayload } : {}),
+      };
+    },
+
+    serverToolResultCompleted(item: ServerToolResultItem): ServerToolResultCompletedEvent {
+      return { ...base(), type: "server_tool_result.completed", item };
+    },
+
+    serverToolDiscoveryCompleted(item: ServerToolDiscoveryItem): ServerToolDiscoveryCompletedEvent {
+      return { ...base(), type: "server_tool_discovery.completed", item };
     },
 
     /** 返回当前已发出的 sequence 计数（用于断言） */

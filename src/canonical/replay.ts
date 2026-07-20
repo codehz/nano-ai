@@ -15,6 +15,9 @@ export function replayFromOutput(output: readonly OutputItem[]): ReplayItem[] {
       case "message":
       case "reasoning":
       case "tool_call":
+      case "server_tool_call":
+      case "server_tool_result":
+      case "server_tool_discovery":
         return item as InputItem;
       case "opaque":
         return item;

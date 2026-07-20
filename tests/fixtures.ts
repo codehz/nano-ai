@@ -151,6 +151,8 @@ export function sampleResponse(overrides?: Partial<AIResponse>): AIResponse {
     replay: [sampleItems.assistantReply()],
     text: "Hi there!",
     toolCalls: [],
+    serverToolCalls: [],
+    serverToolResults: [],
     stopReason: "end_turn",
     backend: { adapter: "responses", isSyntheticStream: false },
     ...overrides,

@@ -174,6 +174,8 @@ describe("AIResponse", () => {
       replay: [],
       text: "",
       toolCalls: [],
+      serverToolCalls: [],
+      serverToolResults: [],
       backend: {
         adapter: "responses",
         isSyntheticStream: false,

@@ -23,6 +23,8 @@ import type {
   Usage,
   BillingInfo,
   ToolCallItem,
+  ServerToolCallItem,
+  ServerToolResultItem,
   AdapterKind,
 } from "../types/index.js";
 import { createEventFactory } from "../stream/event-factory.js";
@@ -143,6 +145,10 @@ export abstract class AdapterBase implements BackendAdapter {
       replay: result.replay,
       text,
       toolCalls: result.output.filter((item): item is ToolCallItem => item.type === "tool_call"),
+      serverToolCalls: result.output.filter((item): item is ServerToolCallItem => item.type === "server_tool_call"),
+      serverToolResults: result.output.filter(
+        (item): item is ServerToolResultItem => item.type === "server_tool_result",
+      ),
       stopReason: result.stopReason,
       usage: result.usage,
       billing: result.billing,

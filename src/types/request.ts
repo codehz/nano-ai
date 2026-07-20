@@ -7,7 +7,7 @@
 import type { InstructionBlock } from "./content.js";
 import type { InputItem } from "./items.js";
 
-// ── 工具定义 ──────────────────────────────────────────────────
+// ── 客户端工具定义 ────────────────────────────────────────────
 
 export type ToolDefinition = {
   name: string;
@@ -16,6 +16,48 @@ export type ToolDefinition = {
 };
 
 export type ToolChoice = "auto" | "none" | { type: "tool"; name: string };
+
+// ── 服务端工具定义 ────────────────────────────────────────────
+
+export type WebSearchUserLocation = {
+  type: "approximate";
+  country?: string;
+  city?: string;
+  region?: string;
+  timezone?: string;
+};
+
+export type WebSearchServerTool = {
+  type: "web_search";
+  allowedDomains?: string[];
+  blockedDomains?: string[];
+  userLocation?: WebSearchUserLocation;
+  searchContextSize?: "low" | "medium" | "high";
+};
+
+export type CodeExecutionServerTool = {
+  type: "code_execution";
+  container?: {
+    type: "auto";
+    memoryLimit?: "1g" | "4g" | "16g" | "64g";
+    fileIds?: string[];
+  };
+};
+
+export type McpServerTool = {
+  type: "mcp";
+  serverLabel: string;
+  serverUrl: string;
+  serverDescription?: string;
+  /** 每请求由调用方提供；不得写入日志或 opaque 回放。 */
+  authorization?: string;
+  allowedTools?: string[];
+  /** 首版仅支持 never */
+  requireApproval: "never";
+};
+
+/** Provider 托管执行的工具声明（不进客户端 tool loop） */
+export type ServerToolDefinition = WebSearchServerTool | CodeExecutionServerTool | McpServerTool;
 
 // ── include 控制 ──────────────────────────────────────────────
 
@@ -36,6 +78,8 @@ export type AIRequest = {
   instructions?: string | InstructionBlock[];
   input: InputItem[];
   tools?: ToolDefinition[];
+  /** Provider 托管工具（web_search / code_execution / mcp 等）；与 tools 可共存 */
+  serverTools?: ServerToolDefinition[];
   toolChoice?: ToolChoice;
   include?: IncludeSettings;
   metadata?: Record<string, string>;

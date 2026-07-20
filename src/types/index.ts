@@ -14,18 +14,35 @@ export type { TextContentBlock, JsonContentBlock, InstructionBlock, ContentBlock
 
 // Item 类型体系
 export type {
+  Citation,
+  UrlCitation,
+  ContainerFileCitation,
   MessageItem,
   ReasoningItem,
   ToolCallItem,
   ToolResultItem,
   OpaqueItem,
+  ServerToolCallItem,
+  ServerToolResultItem,
+  ServerToolDiscoveryItem,
   InputItem,
   OutputItem,
   ReplayItem,
 } from "./items.js";
 
 // 请求模型
-export type { AIRequest, ToolDefinition, ToolChoice, IncludeSettings, ReasoningLevel } from "./request.js";
+export type {
+  AIRequest,
+  ToolDefinition,
+  ToolChoice,
+  IncludeSettings,
+  ReasoningLevel,
+  ServerToolDefinition,
+  WebSearchServerTool,
+  CodeExecutionServerTool,
+  McpServerTool,
+  WebSearchUserLocation,
+} from "./request.js";
 
 // 响应模型
 export type { AIResponse, StopReason, Usage, BillingInfo, AuxiliaryInfo, BackendTrace } from "./response.js";
@@ -47,6 +64,11 @@ export type {
   ToolCallStartedEvent,
   ToolCallDeltaEvent,
   ToolCallCompletedEvent,
+  ServerToolStartedEvent,
+  ServerToolDeltaEvent,
+  ServerToolCompletedEvent,
+  ServerToolResultCompletedEvent,
+  ServerToolDiscoveryCompletedEvent,
 } from "./events.js";
 
 // Adapter 协议和 client 类型

@@ -174,6 +174,20 @@ export function matchesItemExpectation(item: InputItem, expected: MockInputExpec
         (expected.outcome === undefined || item.outcome === expected.outcome) &&
         matchesText(item.content, expected.textIncludes)
       );
+    case "server_tool_call":
+      return (
+        (expected.name === undefined || item.name === expected.name) &&
+        (expected.textIncludes === undefined ||
+          (item.argumentsText !== undefined && item.argumentsText.includes(expected.textIncludes)))
+      );
+    case "server_tool_result":
+      return (
+        (expected.callId === undefined || item.callId === expected.callId) &&
+        (expected.outcome === undefined || item.outcome === expected.outcome) &&
+        matchesText(item.content, expected.textIncludes)
+      );
+    case "server_tool_discovery":
+      return expected.name === undefined || item.serverLabel === expected.name;
     case "opaque":
       return (
         (expected.source === undefined || item.source === expected.source) &&

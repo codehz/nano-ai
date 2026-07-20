@@ -13,5 +13,14 @@ export {
   blockToText,
   contentBlocksToText,
 } from "./content.js";
-export { messageItem, reasoningItem, toolCallItem, toolResultItem, opaqueItem } from "./items.js";
+export {
+  messageItem,
+  reasoningItem,
+  toolCallItem,
+  toolResultItem,
+  opaqueItem,
+  serverToolCallItem,
+  serverToolResultItem,
+  serverToolDiscoveryItem,
+} from "./items.js";
 export { replayFromOutput, extractText } from "./replay.js";

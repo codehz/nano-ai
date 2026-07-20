@@ -22,6 +22,9 @@ import type {
   AIResponse,
   MessageItem,
   ToolCallItem,
+  ServerToolCallItem,
+  ServerToolResultItem,
+  ServerToolDiscoveryItem,
   OutputItem,
   Usage,
   BillingInfo,
@@ -29,6 +32,7 @@ import type {
   BackendTrace,
   StopReason,
   ContentBlock,
+  Citation,
 } from "../types/index.js";
 import { AIStreamError } from "../runtime/errors.js";
 import { mergeAuxiliary } from "./merge-auxiliary.js";
@@ -40,6 +44,7 @@ type ActiveMessage = {
   id: string;
   role: "assistant";
   content: ContentBlock[];
+  citations?: Citation[];
 };
 
 type ActiveReasoning = {
@@ -56,7 +61,18 @@ type ActiveToolCall = {
   argumentsText: string;
 };
 
-type ActiveItem = ActiveMessage | ActiveReasoning | ActiveToolCall;
+type ActiveServerToolCall = {
+  type: "server_tool_call";
+  id: string;
+  tool: string;
+  name?: string;
+  argumentsText: string;
+  serverLabel?: string;
+  status?: "in_progress" | "completed" | "failed";
+  providerPayload?: unknown;
+};
+
+type ActiveItem = ActiveMessage | ActiveReasoning | ActiveToolCall | ActiveServerToolCall;
 
 // ── 聚合器状态 ────────────────────────────────────────────────
 
@@ -73,6 +89,8 @@ export interface AggregatorState {
   output: OutputItem[];
   textParts: string[];
   toolCalls: ToolCallItem[];
+  serverToolCalls: ServerToolCallItem[];
+  serverToolResults: ServerToolResultItem[];
   lastEventType?: AIStreamEvent["type"];
   started: boolean;
   completed: boolean;
@@ -95,6 +113,8 @@ export function createAggregatorState(): AggregatorState {
     output: [],
     textParts: [],
     toolCalls: [],
+    serverToolCalls: [],
+    serverToolResults: [],
     started: false,
     completed: false,
     activeItems: new Map(),
@@ -135,6 +155,7 @@ function finalizeMessage(active: ActiveMessage): MessageItem {
     id: active.id,
     role: active.role,
     content: coalesceContentBlocks(active.content),
+    ...(active.citations && active.citations.length > 0 ? { citations: active.citations } : {}),
   };
 }
 
@@ -153,6 +174,19 @@ function finalizeToolCall(active: ActiveToolCall): ToolCallItem {
     id: active.id,
     name: active.name,
     argumentsText: active.argumentsText,
+  };
+}
+
+function finalizeServerToolCall(active: ActiveServerToolCall): ServerToolCallItem {
+  return {
+    type: "server_tool_call",
+    id: active.id,
+    tool: active.tool,
+    ...(active.name !== undefined ? { name: active.name } : {}),
+    ...(active.argumentsText ? { argumentsText: active.argumentsText } : {}),
+    ...(active.status ? { status: active.status } : {}),
+    ...(active.serverLabel !== undefined ? { serverLabel: active.serverLabel } : {}),
+    ...(active.providerPayload !== undefined ? { providerPayload: active.providerPayload } : {}),
   };
 }
 
@@ -205,6 +239,9 @@ function handleMessageDelta(state: AggregatorState, event: AIStreamEvent & { typ
 
 function handleMessageCompleted(state: AggregatorState, event: AIStreamEvent & { type: "message.completed" }): void {
   const active = getActiveItem(state, event.itemId, "message") as ActiveMessage;
+  if (event.citations && event.citations.length > 0) {
+    active.citations = event.citations;
+  }
   state.activeItems.delete(event.itemId);
   const item = finalizeMessage(active);
   state.completedItems.set(event.itemId, item);
@@ -268,6 +305,74 @@ function handleToolCallCompleted(state: AggregatorState, event: AIStreamEvent & 
   state.toolCalls.push(item);
 }
 
+function handleServerToolStarted(
+  state: AggregatorState,
+  event: AIStreamEvent & { type: "server_tool.started" },
+): void {
+  const id = event.item.id;
+  if (state.activeItems.has(id)) {
+    throw streamProtocolError(`Item with id ${id} is already active`);
+  }
+  state.activeItems.set(id, {
+    type: "server_tool_call",
+    id,
+    tool: event.item.tool,
+    name: event.item.name,
+    argumentsText: "",
+    serverLabel: event.item.serverLabel,
+    status: "in_progress",
+  });
+  state.itemOrder.push(id);
+}
+
+function handleServerToolDelta(state: AggregatorState, event: AIStreamEvent & { type: "server_tool.delta" }): void {
+  const active = getActiveItem(state, event.itemId, "server_tool_call") as ActiveServerToolCall;
+  if (event.delta.argumentsText) {
+    active.argumentsText += event.delta.argumentsText;
+  }
+}
+
+function handleServerToolCompleted(
+  state: AggregatorState,
+  event: AIStreamEvent & { type: "server_tool.completed" },
+): void {
+  const active = getActiveItem(state, event.itemId, "server_tool_call") as ActiveServerToolCall;
+  active.status = event.status ?? "completed";
+  if (event.providerPayload !== undefined) {
+    active.providerPayload = event.providerPayload;
+  }
+  state.activeItems.delete(event.itemId);
+  const item = finalizeServerToolCall(active);
+  state.completedItems.set(event.itemId, item);
+  state.serverToolCalls.push(item);
+}
+
+function handleServerToolResultCompleted(
+  state: AggregatorState,
+  event: AIStreamEvent & { type: "server_tool_result.completed" },
+): void {
+  const item: ServerToolResultItem = { ...event.item };
+  const orderId = item.id ?? `server_tool_result:${item.callId}:${state.itemOrder.length}`;
+  if (state.completedItems.has(orderId) || state.activeItems.has(orderId)) {
+    throw streamProtocolError(`Item with id ${orderId} is already present`);
+  }
+  state.itemOrder.push(orderId);
+  state.completedItems.set(orderId, item);
+  state.serverToolResults.push(item);
+}
+
+function handleServerToolDiscoveryCompleted(
+  state: AggregatorState,
+  event: AIStreamEvent & { type: "server_tool_discovery.completed" },
+): void {
+  const item: ServerToolDiscoveryItem = { ...event.item };
+  if (state.completedItems.has(item.id) || state.activeItems.has(item.id)) {
+    throw streamProtocolError(`Item with id ${item.id} is already present`);
+  }
+  state.itemOrder.push(item.id);
+  state.completedItems.set(item.id, item);
+}
+
 function handleResponseCompleted(state: AggregatorState, event: AIStreamEvent & { type: "response.completed" }): void {
   if (state.activeItems.size > 0) {
     throw streamProtocolError("response.completed received while active items still pending");
@@ -309,6 +414,8 @@ function buildResponse(state: AggregatorState): AIResponse {
     replay: state.replayFromAdapter ?? [],
     text: state.textParts.join(""),
     toolCalls: state.toolCalls,
+    serverToolCalls: state.serverToolCalls,
+    serverToolResults: state.serverToolResults,
     stopReason: state.stopReasonFromAdapter,
     usage: state.usage,
     billing: state.billing,
@@ -372,6 +479,21 @@ export function aggregateEvent(state: AggregatorState, event: AIStreamEvent): vo
       break;
     case "tool_call.completed":
       handleToolCallCompleted(state, event);
+      break;
+    case "server_tool.started":
+      handleServerToolStarted(state, event);
+      break;
+    case "server_tool.delta":
+      handleServerToolDelta(state, event);
+      break;
+    case "server_tool.completed":
+      handleServerToolCompleted(state, event);
+      break;
+    case "server_tool_result.completed":
+      handleServerToolResultCompleted(state, event);
+      break;
+    case "server_tool_discovery.completed":
+      handleServerToolDiscoveryCompleted(state, event);
       break;
     case "response.completed":
       handleResponseCompleted(state, event);

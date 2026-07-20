@@ -4,7 +4,13 @@
  * 流结束后由聚合器产出，用于承载当前轮的规范化输出、replay 材料及辅助信息。
  */
 
-import type { OutputItem, ReplayItem, ToolCallItem } from "./items.js";
+import type {
+  OutputItem,
+  ReplayItem,
+  ServerToolCallItem,
+  ServerToolResultItem,
+  ToolCallItem,
+} from "./items.js";
 import type { AdapterKind } from "./kind.js";
 
 // ── StopReason ────────────────────────────────────────────────
@@ -60,6 +66,10 @@ export type AIResponse = {
   replay: ReplayItem[];
   text: string;
   toolCalls: ToolCallItem[];
+  /** Provider 托管工具调用列表（web_search / code_execution / mcp 等） */
+  serverToolCalls: ServerToolCallItem[];
+  /** Provider 托管工具结果列表 */
+  serverToolResults: ServerToolResultItem[];
   stopReason?: StopReason;
   usage?: Usage;
   billing?: BillingInfo;

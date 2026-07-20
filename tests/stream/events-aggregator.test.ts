@@ -69,6 +69,28 @@ describe("EventFactory", () => {
     expect(f.toolCallStarted("tc1", "get_weather").type).toBe("tool_call.started");
     expect(f.toolCallDelta("tc1", { argumentsText: "{}" }).type).toBe("tool_call.delta");
     expect(f.toolCallCompleted("tc1").type).toBe("tool_call.completed");
+
+    expect(f.serverToolStarted("st1", "web_search", { name: "search" }).type).toBe("server_tool.started");
+    expect(f.serverToolDelta("st1", { argumentsText: '{"q":' }).type).toBe("server_tool.delta");
+    expect(f.serverToolCompleted("st1").type).toBe("server_tool.completed");
+    expect(
+      f.serverToolResultCompleted({
+        type: "server_tool_result",
+        callId: "st1",
+        tool: "web_search",
+        outcome: "success",
+        content: [textBlock("ok")],
+      }).type,
+    ).toBe("server_tool_result.completed");
+    expect(
+      f.serverToolDiscoveryCompleted({
+        type: "server_tool_discovery",
+        id: "disc1",
+        tool: "mcp",
+        serverLabel: "dmcp",
+        tools: [{ name: "roll" }],
+      }).type,
+    ).toBe("server_tool_discovery.completed");
   });
 
   it("should accept synthetic backend", () => {
@@ -164,6 +186,62 @@ describe("aggregateEvents", () => {
     expect(result.toolCalls).toHaveLength(1);
     expect(result.toolCalls[0]!.name).toBe("get_weather");
     expect(result.toolCalls[0]!.argumentsText).toBe('{"city":"Hangzhou"}');
+  });
+
+  it("should aggregate server_tool events, results, discovery and citations", () => {
+    const f = makeFactory();
+    const events: AIStreamEvent[] = [
+      f.responseStarted("gpt-4"),
+      f.serverToolStarted("st1", "web_search", { name: "search" }),
+      f.serverToolDelta("st1", { argumentsText: '{"query":"Hangzhou weather"}' }),
+      f.serverToolCompleted("st1", {
+        status: "completed",
+        providerPayload: { action: { type: "search" } },
+      }),
+      f.serverToolResultCompleted({
+        type: "server_tool_result",
+        callId: "st1",
+        tool: "web_search",
+        outcome: "success",
+        content: [textBlock("results")],
+      }),
+      f.serverToolDiscoveryCompleted({
+        type: "server_tool_discovery",
+        id: "disc1",
+        tool: "mcp",
+        serverLabel: "dmcp",
+        tools: [{ name: "roll", description: "Roll dice" }],
+      }),
+      f.messageStarted("m1"),
+      f.messageDelta("m1", textBlock("Hangzhou is sunny.")),
+      f.messageCompleted("m1", {
+        citations: [{ type: "url", url: "https://example.com", title: "Weather", startIndex: 0, endIndex: 5 }],
+      }),
+      f.responseCompleted({ replay: [] }),
+    ];
+
+    const result = aggregateEvents(events);
+    expect(result.serverToolCalls).toHaveLength(1);
+    expect(result.serverToolCalls[0]).toMatchObject({
+      id: "st1",
+      tool: "web_search",
+      name: "search",
+      argumentsText: '{"query":"Hangzhou weather"}',
+      status: "completed",
+    });
+    expect(result.serverToolResults).toHaveLength(1);
+    expect(result.serverToolResults[0]!.callId).toBe("st1");
+    expect(result.output.map((item) => item.type)).toEqual([
+      "server_tool_call",
+      "server_tool_result",
+      "server_tool_discovery",
+      "message",
+    ]);
+    const message = result.output.find((item) => item.type === "message");
+    expect(message && message.type === "message" ? message.citations : undefined).toEqual([
+      { type: "url", url: "https://example.com", title: "Weather", startIndex: 0, endIndex: 5 },
+    ]);
+    expect(result.text).toBe("Hangzhou is sunny.");
   });
 
   it("should merge multiple response.auxiliary patches", () => {

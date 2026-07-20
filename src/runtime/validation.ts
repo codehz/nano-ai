@@ -123,6 +123,63 @@ function validateInputItem(item: unknown, field: string, issues: ValidationIssue
       }
       validateContentArray(item.content, `${field}.content`, issues, "REASONING_CONTENT_INVALID");
       return;
+    case "server_tool_call":
+      if (typeof item.id !== "string" || item.id.length === 0) {
+        pushIssue(issues, `${field}.id`, "SERVER_TOOL_CALL_INVALID", `${field}.id must be a non-empty string`);
+      }
+      if (typeof item.tool !== "string" || item.tool.length === 0) {
+        pushIssue(issues, `${field}.tool`, "SERVER_TOOL_CALL_INVALID", `${field}.tool must be a non-empty string`);
+      }
+      if (item.argumentsText !== undefined && typeof item.argumentsText !== "string") {
+        pushIssue(
+          issues,
+          `${field}.argumentsText`,
+          "SERVER_TOOL_CALL_INVALID",
+          `${field}.argumentsText must be a string`,
+        );
+      }
+      return;
+    case "server_tool_result":
+      if (typeof item.callId !== "string" || item.callId.length === 0) {
+        pushIssue(
+          issues,
+          `${field}.callId`,
+          "SERVER_TOOL_RESULT_INVALID",
+          `${field}.callId must be a non-empty string`,
+        );
+      }
+      if (typeof item.tool !== "string" || item.tool.length === 0) {
+        pushIssue(issues, `${field}.tool`, "SERVER_TOOL_RESULT_INVALID", `${field}.tool must be a non-empty string`);
+      }
+      if (item.outcome !== "success" && item.outcome !== "error") {
+        pushIssue(
+          issues,
+          `${field}.outcome`,
+          "SERVER_TOOL_RESULT_INVALID",
+          `${field}.outcome must be success or error`,
+        );
+      }
+      validateContentArray(item.content, `${field}.content`, issues, "SERVER_TOOL_RESULT_INVALID");
+      return;
+    case "server_tool_discovery":
+      if (typeof item.id !== "string" || item.id.length === 0) {
+        pushIssue(issues, `${field}.id`, "SERVER_TOOL_DISCOVERY_INVALID", `${field}.id must be a non-empty string`);
+      }
+      if (item.tool !== "mcp") {
+        pushIssue(issues, `${field}.tool`, "SERVER_TOOL_DISCOVERY_INVALID", `${field}.tool must be "mcp"`);
+      }
+      if (typeof item.serverLabel !== "string" || item.serverLabel.length === 0) {
+        pushIssue(
+          issues,
+          `${field}.serverLabel`,
+          "SERVER_TOOL_DISCOVERY_INVALID",
+          `${field}.serverLabel must be a non-empty string`,
+        );
+      }
+      if (!Array.isArray(item.tools)) {
+        pushIssue(issues, `${field}.tools`, "SERVER_TOOL_DISCOVERY_INVALID", `${field}.tools must be an array`);
+      }
+      return;
     case "tool_call":
       if (typeof item.id !== "string" || item.id.length === 0) {
         pushIssue(issues, `${field}.id`, "TOOL_CALL_ID_INVALID", `${field}.id must be a non-empty string`);
@@ -229,6 +286,183 @@ function validateTools(tools: unknown, issues: ValidationIssue[]): void {
 
     if (!isRecord(tool.inputSchema)) {
       pushIssue(issues, `${field}.inputSchema`, "TOOL_INPUT_SCHEMA_INVALID", `${field}.inputSchema must be an object`);
+    }
+  }
+}
+
+const SEARCH_CONTEXT_SIZES = new Set(["low", "medium", "high"]);
+const CODE_MEMORY_LIMITS = new Set(["1g", "4g", "16g", "64g"]);
+
+function validateStringArrayField(
+  value: unknown,
+  field: string,
+  code: string,
+  issues: ValidationIssue[],
+): void {
+  if (!Array.isArray(value)) {
+    pushIssue(issues, field, code, `${field} must be a string array`);
+    return;
+  }
+  for (let i = 0; i < value.length; i++) {
+    if (typeof value[i] !== "string" || value[i].length === 0) {
+      pushIssue(issues, `${field}[${i}]`, code, `${field}[${i}] must be a non-empty string`);
+    }
+  }
+}
+
+function validateServerTools(serverTools: unknown, issues: ValidationIssue[]): void {
+  if (serverTools === undefined) return;
+  if (!Array.isArray(serverTools)) {
+    pushIssue(issues, "serverTools", "SERVER_TOOLS_INVALID", "serverTools must be an array");
+    return;
+  }
+
+  for (let i = 0; i < serverTools.length; i++) {
+    const tool = serverTools[i];
+    const field = `serverTools[${i}]`;
+    if (!isRecord(tool) || typeof tool.type !== "string") {
+      pushIssue(issues, field, "SERVER_TOOL_INVALID", `${field} must be a valid ServerToolDefinition`);
+      continue;
+    }
+
+    switch (tool.type) {
+      case "web_search": {
+        if (tool.allowedDomains !== undefined && tool.blockedDomains !== undefined) {
+          pushIssue(
+            issues,
+            field,
+            "SERVER_TOOL_WEB_SEARCH_DOMAINS_CONFLICT",
+            `${field} cannot set both allowedDomains and blockedDomains`,
+          );
+        }
+        if (tool.allowedDomains !== undefined) {
+          validateStringArrayField(tool.allowedDomains, `${field}.allowedDomains`, "SERVER_TOOL_INVALID", issues);
+        }
+        if (tool.blockedDomains !== undefined) {
+          validateStringArrayField(tool.blockedDomains, `${field}.blockedDomains`, "SERVER_TOOL_INVALID", issues);
+        }
+        if (tool.searchContextSize !== undefined) {
+          if (typeof tool.searchContextSize !== "string" || !SEARCH_CONTEXT_SIZES.has(tool.searchContextSize)) {
+            pushIssue(
+              issues,
+              `${field}.searchContextSize`,
+              "SERVER_TOOL_INVALID",
+              `${field}.searchContextSize must be low, medium, or high`,
+            );
+          }
+        }
+        if (tool.userLocation !== undefined) {
+          if (!isRecord(tool.userLocation) || tool.userLocation.type !== "approximate") {
+            pushIssue(
+              issues,
+              `${field}.userLocation`,
+              "SERVER_TOOL_INVALID",
+              `${field}.userLocation must be { type: "approximate", ... }`,
+            );
+          } else {
+            for (const key of ["country", "city", "region", "timezone"] as const) {
+              const value = tool.userLocation[key];
+              if (value !== undefined && typeof value !== "string") {
+                pushIssue(
+                  issues,
+                  `${field}.userLocation.${key}`,
+                  "SERVER_TOOL_INVALID",
+                  `${field}.userLocation.${key} must be a string`,
+                );
+              }
+            }
+          }
+        }
+        break;
+      }
+      case "code_execution": {
+        if (tool.container !== undefined) {
+          if (!isRecord(tool.container) || tool.container.type !== "auto") {
+            pushIssue(
+              issues,
+              `${field}.container`,
+              "SERVER_TOOL_INVALID",
+              `${field}.container must be { type: "auto", ... }`,
+            );
+          } else {
+            if (tool.container.memoryLimit !== undefined) {
+              if (
+                typeof tool.container.memoryLimit !== "string" ||
+                !CODE_MEMORY_LIMITS.has(tool.container.memoryLimit)
+              ) {
+                pushIssue(
+                  issues,
+                  `${field}.container.memoryLimit`,
+                  "SERVER_TOOL_INVALID",
+                  `${field}.container.memoryLimit must be 1g, 4g, 16g, or 64g`,
+                );
+              }
+            }
+            if (tool.container.fileIds !== undefined) {
+              validateStringArrayField(
+                tool.container.fileIds,
+                `${field}.container.fileIds`,
+                "SERVER_TOOL_INVALID",
+                issues,
+              );
+            }
+          }
+        }
+        break;
+      }
+      case "mcp": {
+        if (typeof tool.serverLabel !== "string" || tool.serverLabel.length === 0) {
+          pushIssue(
+            issues,
+            `${field}.serverLabel`,
+            "SERVER_TOOL_INVALID",
+            `${field}.serverLabel must be a non-empty string`,
+          );
+        }
+        if (typeof tool.serverUrl !== "string" || tool.serverUrl.length === 0) {
+          pushIssue(
+            issues,
+            `${field}.serverUrl`,
+            "SERVER_TOOL_INVALID",
+            `${field}.serverUrl must be a non-empty string`,
+          );
+        }
+        if (tool.serverDescription !== undefined && typeof tool.serverDescription !== "string") {
+          pushIssue(
+            issues,
+            `${field}.serverDescription`,
+            "SERVER_TOOL_INVALID",
+            `${field}.serverDescription must be a string`,
+          );
+        }
+        if (tool.authorization !== undefined && typeof tool.authorization !== "string") {
+          pushIssue(
+            issues,
+            `${field}.authorization`,
+            "SERVER_TOOL_INVALID",
+            `${field}.authorization must be a string`,
+          );
+        }
+        if (tool.allowedTools !== undefined) {
+          validateStringArrayField(tool.allowedTools, `${field}.allowedTools`, "SERVER_TOOL_INVALID", issues);
+        }
+        if (tool.requireApproval !== "never") {
+          pushIssue(
+            issues,
+            `${field}.requireApproval`,
+            "SERVER_TOOL_MCP_APPROVAL_UNSUPPORTED",
+            `${field}.requireApproval must be "never" in this version`,
+          );
+        }
+        break;
+      }
+      default:
+        pushIssue(
+          issues,
+          `${field}.type`,
+          "SERVER_TOOL_TYPE_UNSUPPORTED",
+          `${field}.type "${tool.type}" is not supported`,
+        );
     }
   }
 }
@@ -363,6 +597,7 @@ export function validateRequest(request: AIRequest): ValidationIssue[] {
   }
 
   validateTools(request.tools, issues);
+  validateServerTools(request.serverTools, issues);
   validateToolChoice(request.toolChoice, issues);
 
   // toolChoice 与 tools 的一致性

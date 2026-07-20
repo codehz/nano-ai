@@ -8,7 +8,13 @@
 
 import type { ContentBlock } from "./content.js";
 import type { Usage, BillingInfo, AuxiliaryInfo, BackendTrace, StopReason } from "./response.js";
-import type { OpaqueItem, ReplayItem } from "./items.js";
+import type {
+  Citation,
+  OpaqueItem,
+  ReplayItem,
+  ServerToolDiscoveryItem,
+  ServerToolResultItem,
+} from "./items.js";
 import type { AdapterKind } from "./kind.js";
 
 // ── 事件基类 ──────────────────────────────────────────────────
@@ -75,6 +81,7 @@ export type MessageDeltaEvent = StreamEventBase & {
 export type MessageCompletedEvent = StreamEventBase & {
   type: "message.completed";
   itemId: string;
+  citations?: Citation[];
 };
 
 // ── 思维链流事件 ──────────────────────────────────────────────
@@ -121,6 +128,43 @@ export type ToolCallCompletedEvent = StreamEventBase & {
   itemId: string;
 };
 
+// ── 服务端工具流事件 ──────────────────────────────────────────
+
+export type ServerToolStartedEvent = StreamEventBase & {
+  type: "server_tool.started";
+  item: {
+    id: string;
+    tool: string;
+    name?: string;
+    serverLabel?: string;
+  };
+};
+
+export type ServerToolDeltaEvent = StreamEventBase & {
+  type: "server_tool.delta";
+  itemId: string;
+  delta: {
+    argumentsText?: string;
+  };
+};
+
+export type ServerToolCompletedEvent = StreamEventBase & {
+  type: "server_tool.completed";
+  itemId: string;
+  status?: "completed" | "failed";
+  providerPayload?: unknown;
+};
+
+export type ServerToolResultCompletedEvent = StreamEventBase & {
+  type: "server_tool_result.completed";
+  item: ServerToolResultItem;
+};
+
+export type ServerToolDiscoveryCompletedEvent = StreamEventBase & {
+  type: "server_tool_discovery.completed";
+  item: ServerToolDiscoveryItem;
+};
+
 // ── 统一事件联合 ──────────────────────────────────────────────
 
 export type AIStreamEvent =
@@ -136,4 +180,9 @@ export type AIStreamEvent =
   | ToolCallStartedEvent
   | ToolCallDeltaEvent
   | ToolCallCompletedEvent
+  | ServerToolStartedEvent
+  | ServerToolDeltaEvent
+  | ServerToolCompletedEvent
+  | ServerToolResultCompletedEvent
+  | ServerToolDiscoveryCompletedEvent
   | ResponseCompletedEvent;
