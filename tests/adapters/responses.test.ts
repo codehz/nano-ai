@@ -1129,3 +1129,198 @@ describe("ResponsesAdapter - integration", () => {
     expect(result.replay).toBeDefined();
   });
 });
+
+
+// ── Server tools streaming ────────────────────────────────────
+
+describe("ResponsesAdapter - server tools streaming", () => {
+  it("should map web_search_call and message url citations", async () => {
+    const sse = [
+      'event: response.output_item.added\ndata: {"item":{"id":"ws_1","type":"web_search_call","status":"in_progress","action":{"type":"search","query":"Hangzhou weather"}}}\n\n',
+      'event: response.web_search_call.searching\ndata: {"item_id":"ws_1"}\n\n',
+      'event: response.output_item.done\ndata: {"item":{"id":"ws_1","type":"web_search_call","status":"completed","action":{"type":"search","query":"Hangzhou weather","sources":[{"type":"url","url":"https://example.com"}]}}}\n\n',
+      'event: response.output_item.added\ndata: {"item":{"id":"m1","type":"message"}}\n\n',
+      'event: response.output_text.delta\ndata: {"item_id":"m1","delta":"Sunny in Hangzhou."}\n\n',
+      'event: response.output_text.annotation.added\ndata: {"item_id":"m1","annotation":{"type":"url_citation","url":"https://example.com","title":"Weather","start_index":0,"end_index":5}}\n\n',
+      'event: response.output_text.done\ndata: {"item_id":"m1","text":"Sunny in Hangzhou."}\n\n',
+      'event: response.output_item.done\ndata: {"item":{"id":"m1","type":"message","content":[{"type":"output_text","text":"Sunny in Hangzhou.","annotations":[{"type":"url_citation","url":"https://example.com","title":"Weather","start_index":0,"end_index":5}]}]}}\n\n',
+      `event: response.completed\ndata: ${JSON.stringify({
+        response: {
+          id: "resp-web",
+          model: "gpt-4o",
+          status: "completed",
+          output: [
+            {
+              id: "ws_1",
+              type: "web_search_call",
+              status: "completed",
+              action: { type: "search", query: "Hangzhou weather" },
+            },
+            { id: "m1", type: "message" },
+          ],
+        },
+      })}\n\n`,
+    ];
+
+    const adapter = new ResponsesAdapter({
+      apiKey: "test-key",
+      fetch: mockFetch(sseResponse(...sse)),
+    });
+
+    const result = await collectStream(adapter.stream(makeRequest()));
+    expect(result.serverToolCalls).toHaveLength(1);
+    expect(result.serverToolCalls[0]).toMatchObject({
+      id: "ws_1",
+      tool: "web_search",
+      name: "search",
+      argumentsText: '{"query":"Hangzhou weather"}',
+      status: "completed",
+    });
+    expect(result.serverToolResults).toHaveLength(1);
+    expect(result.serverToolResults[0]).toMatchObject({
+      callId: "ws_1",
+      tool: "web_search",
+      outcome: "success",
+    });
+    const message = result.output.find((item) => item.type === "message");
+    expect(message && message.type === "message" ? message.citations : undefined).toEqual([
+      {
+        type: "url",
+        url: "https://example.com",
+        title: "Weather",
+        startIndex: 0,
+        endIndex: 5,
+      },
+    ]);
+    expect(result.stopReason).toBe("end_turn");
+    expect(result.text).toBe("Sunny in Hangzhou.");
+    expect((result.warnings ?? []).some((w) => w.includes("UNKNOWN_PROVIDER_EVENT"))).toBe(false);
+  });
+
+  it("should map code_interpreter_call code stream and outputs", async () => {
+    const sse = [
+      'event: response.output_item.added\ndata: {"item":{"id":"ci_1","type":"code_interpreter_call","status":"in_progress","container_id":"cntr_1"}}\n\n',
+      'event: response.code_interpreter_call_code.delta\ndata: {"item_id":"ci_1","delta":"print(1+1)"}\n\n',
+      'event: response.code_interpreter_call_code.done\ndata: {"item_id":"ci_1","code":"print(1+1)"}\n\n',
+      'event: response.output_item.done\ndata: {"item":{"id":"ci_1","type":"code_interpreter_call","status":"completed","container_id":"cntr_1","code":"print(1+1)","outputs":[{"type":"logs","logs":"2\\n"}]}}\n\n',
+      'event: response.output_item.added\ndata: {"item":{"id":"m2","type":"message"}}\n\n',
+      'event: response.output_text.done\ndata: {"item_id":"m2","text":"2"}\n\n',
+      'event: response.output_text.annotation.added\ndata: {"item_id":"m2","annotation":{"type":"container_file_citation","container_id":"cntr_1","file_id":"cfile_1","filename":"plot.png","start_index":0,"end_index":1}}\n\n',
+      `event: response.completed\ndata: ${JSON.stringify({
+        response: {
+          id: "resp-code",
+          model: "gpt-4o",
+          status: "completed",
+          output: [{ id: "ci_1", type: "code_interpreter_call", status: "completed" }, { id: "m2", type: "message" }],
+        },
+      })}\n\n`,
+    ];
+
+    const adapter = new ResponsesAdapter({
+      apiKey: "test-key",
+      fetch: mockFetch(sseResponse(...sse)),
+    });
+
+    const result = await collectStream(adapter.stream(makeRequest()));
+    expect(result.serverToolCalls[0]).toMatchObject({
+      id: "ci_1",
+      tool: "code_execution",
+      name: "python",
+      argumentsText: "print(1+1)",
+      status: "completed",
+    });
+    expect(result.serverToolResults[0]).toMatchObject({
+      callId: "ci_1",
+      tool: "code_execution",
+      outcome: "success",
+    });
+    expect(result.serverToolResults[0]!.content).toEqual([{ type: "text", text: "2\n" }]);
+    expect(result.stopReason).toBe("end_turn");
+  });
+
+  it("should map mcp_list_tools discovery and mcp_call result", async () => {
+    const sse = [
+      'event: response.output_item.added\ndata: {"item":{"id":"mcpl_1","type":"mcp_list_tools","server_label":"dmcp"}}\n\n',
+      'event: response.output_item.done\ndata: {"item":{"id":"mcpl_1","type":"mcp_list_tools","server_label":"dmcp","tools":[{"name":"roll","description":"Roll dice","input_schema":{"type":"object"}}]}}\n\n',
+      'event: response.output_item.added\ndata: {"item":{"id":"mcp_1","type":"mcp_call","name":"roll","server_label":"dmcp","arguments":"{\\"diceRollExpression\\":\\"2d4+1\\"}"}}\n\n',
+      'event: response.mcp_call_arguments.delta\ndata: {"item_id":"mcp_1","delta":"{\\"diceRollExpression\\":\\"2d4+1\\"}"}\n\n',
+      'event: response.output_item.done\ndata: {"item":{"id":"mcp_1","type":"mcp_call","name":"roll","server_label":"dmcp","arguments":"{\\"diceRollExpression\\":\\"2d4+1\\"}","output":"4","error":null}}\n\n',
+      'event: response.output_item.added\ndata: {"item":{"id":"m3","type":"message"}}\n\n',
+      'event: response.output_text.done\ndata: {"item_id":"m3","text":"You rolled 4."}\n\n',
+      `event: response.completed\ndata: ${JSON.stringify({
+        response: {
+          id: "resp-mcp",
+          model: "gpt-4o",
+          status: "completed",
+          output: [
+            { id: "mcpl_1", type: "mcp_list_tools", server_label: "dmcp", tools: [] },
+            { id: "mcp_1", type: "mcp_call", name: "roll", server_label: "dmcp" },
+            { id: "m3", type: "message" },
+          ],
+        },
+      })}\n\n`,
+    ];
+
+    const adapter = new ResponsesAdapter({
+      apiKey: "test-key",
+      fetch: mockFetch(sseResponse(...sse)),
+    });
+
+    const result = await collectStream(adapter.stream(makeRequest()));
+    expect(result.output.map((item) => item.type)).toEqual([
+      "server_tool_discovery",
+      "server_tool_call",
+      "server_tool_result",
+      "message",
+    ]);
+    const discovery = result.output.find((item) => item.type === "server_tool_discovery");
+    expect(discovery).toMatchObject({
+      id: "mcpl_1",
+      tool: "mcp",
+      serverLabel: "dmcp",
+      tools: [{ name: "roll", description: "Roll dice", inputSchema: { type: "object" } }],
+    });
+    expect(result.serverToolCalls[0]).toMatchObject({
+      id: "mcp_1",
+      tool: "mcp",
+      name: "roll",
+      serverLabel: "dmcp",
+      argumentsText: '{"diceRollExpression":"2d4+1"}',
+    });
+    expect(result.serverToolResults[0]).toMatchObject({
+      callId: "mcp_1",
+      tool: "mcp",
+      outcome: "success",
+    });
+    expect(result.serverToolResults[0]!.content).toEqual([{ type: "text", text: "4" }]);
+    expect(result.stopReason).toBe("end_turn");
+  });
+
+  it("should warn on mcp_approval_request without aborting", async () => {
+    const sse = [
+      'event: response.output_item.added\ndata: {"item":{"id":"mcpr_1","type":"mcp_approval_request","name":"roll","server_label":"dmcp","arguments":"{}"}}\n\n',
+      'event: response.output_item.done\ndata: {"item":{"id":"mcpr_1","type":"mcp_approval_request","name":"roll","server_label":"dmcp","arguments":"{}"}}\n\n',
+      'event: response.output_item.added\ndata: {"item":{"id":"m4","type":"message"}}\n\n',
+      'event: response.output_text.done\ndata: {"item_id":"m4","text":"Need approval."}\n\n',
+      `event: response.completed\ndata: ${JSON.stringify({
+        response: {
+          id: "resp-approval",
+          model: "gpt-4o",
+          status: "completed",
+          output: [{ id: "mcpr_1", type: "mcp_approval_request" }, { id: "m4", type: "message" }],
+        },
+      })}\n\n`,
+    ];
+
+    const adapter = new ResponsesAdapter({
+      apiKey: "test-key",
+      fetch: mockFetch(sseResponse(...sse)),
+    });
+
+    const result = await collectStream(adapter.stream(makeRequest()));
+    expect((result.warnings ?? []).some((w) => w.includes("MCP approval"))).toBe(true);
+    expect(result.text).toBe("Need approval.");
+    expect(result.stopReason).toBe("end_turn");
+  });
+});
+
