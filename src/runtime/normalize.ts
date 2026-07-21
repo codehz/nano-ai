@@ -54,7 +54,7 @@ export function normalizeRequest(request: AIRequest, options: NormalizeOptions):
     },
   };
 
-  // 校验
+  // include 已在合并前校验；assertValidRequest 仍覆盖其余字段（含合并后的 include 形状）
   assertValidRequest(merged);
 
   return {

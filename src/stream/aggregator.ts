@@ -37,6 +37,7 @@ import type {
 } from "../types/index.js";
 import { streamWarningKey } from "../types/warning-codes.js";
 import { coalesceContentBlocks } from "../canonical/content.js";
+import { extractText } from "../canonical/replay.js";
 import { AIStreamError } from "../runtime/errors.js";
 import { mergeAuxiliary } from "./merge-auxiliary.js";
 
@@ -63,7 +64,7 @@ type ActiveToolCall = {
   type: "tool_call";
   id: string;
   name: string;
-  argumentsText: string;
+  argumentChunks: string[];
 };
 
 type ActiveServerToolCall = {
@@ -71,7 +72,7 @@ type ActiveServerToolCall = {
   id: string;
   tool: string;
   name?: string;
-  argumentsText: string;
+  argumentChunks: string[];
   serverLabel?: string;
   status?: "in_progress" | "completed" | "failed";
   providerPayload?: unknown;
@@ -91,11 +92,8 @@ export interface AggregatorState {
   auxiliary: AuxiliaryInfo;
   warnings: StreamWarning[];
   warningSet: Set<string>;
+  /** opaqueOutput 等非 item-lifecycle 输出，追加在 ordered 之后 */
   output: OutputItem[];
-  textParts: string[];
-  toolCalls: ToolCallItem[];
-  serverToolCalls: ServerToolCallItem[];
-  serverToolResults: ServerToolResultItem[];
   lastEventType?: AIStreamEvent["type"];
   started: boolean;
   completed: boolean;
@@ -116,10 +114,6 @@ export function createAggregatorState(): AggregatorState {
     warnings: [],
     warningSet: new Set(),
     output: [],
-    textParts: [],
-    toolCalls: [],
-    serverToolCalls: [],
-    serverToolResults: [],
     started: false,
     completed: false,
     activeItems: new Map(),
@@ -165,17 +159,18 @@ function finalizeToolCall(active: ActiveToolCall): ToolCallItem {
     type: "tool_call",
     id: active.id,
     name: active.name,
-    argumentsText: active.argumentsText,
+    argumentsText: active.argumentChunks.join(""),
   };
 }
 
 function finalizeServerToolCall(active: ActiveServerToolCall): ServerToolCallItem {
+  const argumentsText = active.argumentChunks.join("");
   return {
     type: "server_tool_call",
     id: active.id,
     tool: active.tool,
     ...(active.name !== undefined ? { name: active.name } : {}),
-    ...(active.argumentsText ? { argumentsText: active.argumentsText } : {}),
+    ...(argumentsText ? { argumentsText } : {}),
     ...(active.status ? { status: active.status } : {}),
     ...(active.serverLabel !== undefined ? { serverLabel: active.serverLabel } : {}),
     ...(active.providerPayload !== undefined ? { providerPayload: active.providerPayload } : {}),
@@ -237,7 +232,6 @@ function handleMessageCompleted(state: AggregatorState, event: AIStreamEvent & {
   state.activeItems.delete(event.itemId);
   const item = finalizeMessage(active);
   state.completedItems.set(event.itemId, item);
-  pushMessageText(state, item);
 }
 
 function handleReasoningStarted(state: AggregatorState, event: AIStreamEvent & { type: "reasoning.started" }): void {
@@ -277,7 +271,7 @@ function handleToolCallStarted(state: AggregatorState, event: AIStreamEvent & { 
     type: "tool_call",
     id,
     name: event.item.name,
-    argumentsText: "",
+    argumentChunks: [],
   });
   state.itemOrder.push(id);
 }
@@ -285,7 +279,7 @@ function handleToolCallStarted(state: AggregatorState, event: AIStreamEvent & { 
 function handleToolCallDelta(state: AggregatorState, event: AIStreamEvent & { type: "tool_call.delta" }): void {
   const active = getActiveItem(state, event.itemId, "tool_call") as ActiveToolCall;
   if (event.delta.argumentsText) {
-    active.argumentsText += event.delta.argumentsText;
+    active.argumentChunks.push(event.delta.argumentsText);
   }
 }
 
@@ -294,7 +288,6 @@ function handleToolCallCompleted(state: AggregatorState, event: AIStreamEvent & 
   state.activeItems.delete(event.itemId);
   const item = finalizeToolCall(active);
   state.completedItems.set(event.itemId, item);
-  state.toolCalls.push(item);
 }
 
 function handleServerToolStarted(state: AggregatorState, event: AIStreamEvent & { type: "server_tool.started" }): void {
@@ -307,7 +300,7 @@ function handleServerToolStarted(state: AggregatorState, event: AIStreamEvent & 
     id,
     tool: event.item.tool,
     name: event.item.name,
-    argumentsText: "",
+    argumentChunks: [],
     serverLabel: event.item.serverLabel,
     status: "in_progress",
   });
@@ -317,7 +310,7 @@ function handleServerToolStarted(state: AggregatorState, event: AIStreamEvent & 
 function handleServerToolDelta(state: AggregatorState, event: AIStreamEvent & { type: "server_tool.delta" }): void {
   const active = getActiveItem(state, event.itemId, "server_tool_call") as ActiveServerToolCall;
   if (event.delta.argumentsText) {
-    active.argumentsText += event.delta.argumentsText;
+    active.argumentChunks.push(event.delta.argumentsText);
   }
 }
 
@@ -333,7 +326,6 @@ function handleServerToolCompleted(
   state.activeItems.delete(event.itemId);
   const item = finalizeServerToolCall(active);
   state.completedItems.set(event.itemId, item);
-  state.serverToolCalls.push(item);
 }
 
 function handleServerToolResultCompleted(
@@ -347,7 +339,6 @@ function handleServerToolResultCompleted(
   }
   state.itemOrder.push(orderId);
   state.completedItems.set(orderId, item);
-  state.serverToolResults.push(item);
 }
 
 function handleServerToolDiscoveryCompleted(
@@ -397,14 +388,22 @@ function buildResponse(state: AggregatorState): AIResponse {
     return item;
   });
 
+  // 投影字段在 finalize 时一次派生，避免与 output 双写漂移
+  const output = [...orderedOutput, ...state.output];
+  const toolCalls = output.filter((item): item is ToolCallItem => item.type === "tool_call");
+  const serverToolCalls = output.filter((item): item is ServerToolCallItem => item.type === "server_tool_call");
+  const serverToolResults = output.filter(
+    (item): item is ServerToolResultItem => item.type === "server_tool_result",
+  );
+
   return {
     id: state.responseId,
-    output: [...orderedOutput, ...state.output],
+    output,
     replay: state.replayFromAdapter ?? [],
-    text: state.textParts.join(""),
-    toolCalls: state.toolCalls,
-    serverToolCalls: state.serverToolCalls,
-    serverToolResults: state.serverToolResults,
+    text: extractText(output),
+    toolCalls,
+    serverToolCalls,
+    serverToolResults,
     stopReason: state.stopReasonFromAdapter,
     usage: state.usage,
     billing: state.billing,
@@ -507,14 +506,6 @@ function pushWarnings(state: AggregatorState, warnings: readonly StreamWarning[]
     if (!state.warningSet.has(key)) {
       state.warningSet.add(key);
       state.warnings.push(warning);
-    }
-  }
-}
-
-function pushMessageText(state: AggregatorState, item: MessageItem): void {
-  for (const block of item.content) {
-    if (block.type === "text") {
-      state.textParts.push(block.text);
     }
   }
 }

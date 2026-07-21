@@ -46,9 +46,13 @@ export function coalesceContentBlocks(blocks: readonly ContentBlock[]): ContentB
   for (const block of blocks) {
     const previous = result[result.length - 1];
     if (block.type === "text" && previous?.type === "text") {
+      // text 合并路径需要可变副本
       previous.text += block.text;
+    } else if (block.type === "text") {
+      result.push({ type: "text", text: block.text });
     } else {
-      result.push({ ...block });
+      // 非 text 按不可变约定直接引用，避免无意义 spread
+      result.push(block);
     }
   }
   return result;

@@ -46,7 +46,7 @@ type ActiveToolCall = {
   type: "tool_call";
   id: string;
   name: string;
-  argumentsText: string;
+  argumentChunks: string[];
 };
 
 type ActiveServerToolCall = {
@@ -54,7 +54,7 @@ type ActiveServerToolCall = {
   id: string;
   tool: string;
   name?: string;
-  argumentsText: string;
+  argumentChunks: string[];
   serverLabel?: string;
   status?: "in_progress" | "completed" | "failed";
   providerPayload?: unknown;
@@ -201,14 +201,14 @@ export function createStreamingItemSession(factory: EventFactory): StreamingItem
     startToolCall(id, name) {
       assertNotCompleted(id);
       assertNotActive(id);
-      active.set(id, { type: "tool_call", id, name, argumentsText: "" });
+      active.set(id, { type: "tool_call", id, name, argumentChunks: [] });
       return factory.toolCallStarted(id, name);
     },
 
     deltaToolCall(id, delta) {
       const item = getActive(id, "tool_call");
       if (delta.argumentsText) {
-        item.argumentsText += delta.argumentsText;
+        item.argumentChunks.push(delta.argumentsText);
       }
       return factory.toolCallDelta(id, delta);
     },
@@ -216,7 +216,7 @@ export function createStreamingItemSession(factory: EventFactory): StreamingItem
     completeToolCall(id) {
       const item = getActive(id, "tool_call");
       active.delete(id);
-      completed.push(toolCallItem(item.id, item.name, item.argumentsText));
+      completed.push(toolCallItem(item.id, item.name, item.argumentChunks.join("")));
       completedIds.add(id);
       return factory.toolCallCompleted(id);
     },
@@ -229,7 +229,7 @@ export function createStreamingItemSession(factory: EventFactory): StreamingItem
         id,
         tool,
         name: options?.name,
-        argumentsText: "",
+        argumentChunks: [],
         serverLabel: options?.serverLabel,
         status: "in_progress",
       });
@@ -239,7 +239,7 @@ export function createStreamingItemSession(factory: EventFactory): StreamingItem
     deltaServerTool(id, delta) {
       const item = getActive(id, "server_tool_call");
       if (delta.argumentsText) {
-        item.argumentsText += delta.argumentsText;
+        item.argumentChunks.push(delta.argumentsText);
       }
       return factory.serverToolDelta(id, delta);
     },
@@ -251,10 +251,11 @@ export function createStreamingItemSession(factory: EventFactory): StreamingItem
         item.providerPayload = options.providerPayload;
       }
       active.delete(id);
+      const argumentsText = item.argumentChunks.join("");
       completed.push(
         serverToolCallItem(item.id, item.tool, {
           ...(item.name !== undefined ? { name: item.name } : {}),
-          ...(item.argumentsText ? { argumentsText: item.argumentsText } : {}),
+          ...(argumentsText ? { argumentsText } : {}),
           ...(item.status ? { status: item.status } : {}),
           ...(item.serverLabel !== undefined ? { serverLabel: item.serverLabel } : {}),
           ...(item.providerPayload !== undefined ? { providerPayload: item.providerPayload } : {}),
