@@ -216,14 +216,15 @@ export abstract class AdapterBase implements BackendAdapter {
 }
 
 function mergeWarnings(...groups: Array<string[] | undefined>): string[] | undefined {
+  const seen = new Set<string>();
   const merged: string[] = [];
 
   for (const group of groups) {
     if (!group) continue;
     for (const warning of group) {
-      if (!merged.includes(warning)) {
-        merged.push(warning);
-      }
+      if (seen.has(warning)) continue;
+      seen.add(warning);
+      merged.push(warning);
     }
   }
 

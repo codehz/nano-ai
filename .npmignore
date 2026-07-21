@@ -1,3 +1,5 @@
+# 发布面以 package.json "files": ["dist"] 白名单为准；本文件作额外排除兜底。
+
 .git/
 .gitignore
 .gitattributes
