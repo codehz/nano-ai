@@ -6,6 +6,7 @@
  */
 
 import type { AIRequest } from "../types/index.js";
+import { REASONING_LEVEL_SET } from "../types/request.js";
 import { AIRequestError } from "./errors.js";
 
 export type ValidationIssue = {
@@ -18,7 +19,6 @@ const MESSAGE_ROLES = new Set(["user", "assistant"]);
 const REASONING_VISIBILITIES = new Set(["full", "summary", "redacted", "opaque"]);
 const TOOL_RESULT_OUTCOMES = new Set(["success", "error", "rejected"]);
 const INCLUDE_MODES = new Set(["off", "best_effort"]);
-const REASONING_LEVELS = new Set(["none", "minimal", "low", "medium", "high", "xhigh", "max"]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -570,7 +570,7 @@ export function validateRequest(request: AIRequest): ValidationIssue[] {
 
   // reasoningLevel 枚举
   if (request.reasoningLevel !== undefined) {
-    if (typeof request.reasoningLevel !== "string" || !REASONING_LEVELS.has(request.reasoningLevel)) {
+    if (typeof request.reasoningLevel !== "string" || !REASONING_LEVEL_SET.has(request.reasoningLevel)) {
       pushIssue(
         issues,
         "reasoningLevel",

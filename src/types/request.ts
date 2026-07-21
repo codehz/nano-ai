@@ -72,6 +72,20 @@ export type IncludeSettings = {
 /** Portable reasoning / thinking effort. Mapped per-adapter to provider wire fields. */
 export type ReasoningLevel = "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 
+/** 可移植 reasoning level 枚举（单源；validation / provider 共用）。 */
+export const REASONING_LEVELS = [
+  "none",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+] as const satisfies readonly ReasoningLevel[];
+
+/** 用于校验任意字符串 membership；值域与 REASONING_LEVELS 一致。 */
+export const REASONING_LEVEL_SET: ReadonlySet<string> = new Set(REASONING_LEVELS);
+
 // ── 统一请求 ──────────────────────────────────────────────────
 
 export type AIRequest = {

@@ -43,6 +43,7 @@ export type {
   McpServerTool,
   WebSearchUserLocation,
 } from "./request.js";
+export { REASONING_LEVELS, REASONING_LEVEL_SET } from "./request.js";
 
 // 响应模型
 export type { AIResponse, StopReason, Usage, BillingInfo, AuxiliaryInfo, BackendTrace } from "./response.js";

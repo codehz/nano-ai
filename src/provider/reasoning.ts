@@ -7,10 +7,7 @@
 
 import { AIRequestError } from "../runtime/errors.js";
 import type { ReasoningLevel } from "../types/request.js";
-
-export const REASONING_LEVELS = ["none", "minimal", "low", "medium", "high", "xhigh", "max"] as const satisfies readonly ReasoningLevel[];
-
-export const REASONING_LEVEL_SET: ReadonlySet<string> = new Set(REASONING_LEVELS);
+export { REASONING_LEVELS, REASONING_LEVEL_SET } from "../types/request.js";
 
 const MESSAGES_BUDGET_RATIOS: Record<Exclude<ReasoningLevel, "none">, number> = {
   minimal: 0.02,

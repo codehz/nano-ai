@@ -117,8 +117,8 @@ export {
   extractText,
 } from "./canonical/index.js";
 
-// ── Portable reasoning level constants (no provider mappers) ─
-export { REASONING_LEVELS, REASONING_LEVEL_SET } from "./provider/reasoning.js";
+// ── Portable reasoning level constants (types 单源) ───────────
+export { REASONING_LEVELS, REASONING_LEVEL_SET } from "./types/request.js";
 
 // ── Adapters ─────────────────────────────────────────────────
 export {
