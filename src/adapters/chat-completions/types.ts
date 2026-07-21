@@ -84,9 +84,14 @@ export type ChatChunkToolCall = {
 };
 
 export type PendingToolCall = {
+  /** 真实 call id；未到 id 前用合成占位 id */
   id: string;
   name: string;
   args: string;
+  /** 是否已向 StreamingItemSession 发出 startToolCall */
+  started: boolean;
+  /** 是否已收到 provider 的真实 id */
+  hasProviderId: boolean;
 };
 
 export type ReasoningFieldName = "reasoning" | "reasoning_content";

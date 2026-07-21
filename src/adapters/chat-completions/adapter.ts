@@ -222,16 +222,8 @@ export class ChatCompletionsAdapter extends HttpAdapterBase {
         case "opaque": {
           const payload = acceptOpaqueReplay(item, "chat.completions");
           if (!payload) break;
-          if (payload.role === "assistant" && typeof payload.content === "string") {
-            mapper.rollbackTrailingAssistantMessages(messages);
-            messages.push({ role: "assistant", content: payload.content });
-          } else if (payload.replaceCanonical === true && "messages" in payload) {
-            assertChatReplayMessages(payload.messages, "messages");
-            mapper.rollbackTrailingAssistantMessages(messages);
-            for (const m of payload.messages) {
-              messages.push(m);
-            }
-          } else if ("messages" in payload) {
+          // 仅接受 messages 形；单条 role/content 已 deprecate（有效 envelope 下未识别 shape 跳过）
+          if ("messages" in payload) {
             assertChatReplayMessages(payload.messages, "messages");
             mapper.rollbackTrailingAssistantMessages(messages);
             for (const m of payload.messages) {
@@ -309,13 +301,35 @@ export class ChatCompletionsAdapter extends HttpAdapterBase {
     let hasReasoningStarted = false;
     let warnedNonZeroChoice = false;
 
-    // tool_calls 累积: tool call index → { id, name, args }
+    // tool_calls 按 index 占位；function_call 使用独立槽位，避免与 index 0 互踩
     const pendingToolCalls = new Map<number, PendingToolCall>();
+    let pendingFunctionCall: PendingToolCall | null = null;
+    /** 互斥：同一轮只接受一种 tool 形态 */
+    let toolCallMode: "none" | "tool_calls" | "function_call" = "none";
     const reasoningByField = new Map<ReasoningFieldName, string>();
+
+    const allPendingToolCalls = (): PendingToolCall[] => {
+      if (toolCallMode === "function_call" && pendingFunctionCall) {
+        return [pendingFunctionCall];
+      }
+      return [...pendingToolCalls.values()];
+    };
+
+    const ensurePendingToolCallStarted = (
+      pending: PendingToolCall,
+      events: AIStreamEvent[],
+    ): void => {
+      if (pending.started) return;
+      events.push(items.startToolCall(pending.id, pending.name));
+      if (pending.args) {
+        events.push(items.deltaToolCall(pending.id, { argumentsText: pending.args }));
+      }
+      pending.started = true;
+    };
 
     const finalizePendingTurn = (): { events: AIStreamEvent[]; assistantReplayMessage: ChatMessage | null } => {
       const events: AIStreamEvent[] = [];
-      const finalizedToolCalls = [...pendingToolCalls.values()];
+      const finalizedToolCalls = allPendingToolCalls();
       const finalizedReasoningByField = new Map(reasoningByField);
 
       if (hasReasoningStarted && items.isActive(currentReasoningId)) {
@@ -327,6 +341,7 @@ export class ChatCompletionsAdapter extends HttpAdapterBase {
       }
 
       for (const pending of finalizedToolCalls) {
+        ensurePendingToolCallStarted(pending, events);
         if (items.isActive(pending.id)) {
           events.push(items.completeToolCall(pending.id));
         }
@@ -344,6 +359,8 @@ export class ChatCompletionsAdapter extends HttpAdapterBase {
       hasMessageStarted = false;
       hasReasoningStarted = false;
       pendingToolCalls.clear();
+      pendingFunctionCall = null;
+      toolCallMode = "none";
       reasoningByField.clear();
 
       return { events, assistantReplayMessage };
@@ -442,18 +459,57 @@ export class ChatCompletionsAdapter extends HttpAdapterBase {
           if (delta.tool_calls) {
             yield* ensureMessageStarted();
 
+            if (toolCallMode === "function_call") {
+              yield factory.responseWarning(
+                "Chat Completions mixed function_call and tool_calls; keeping tool_calls and discarding function_call state",
+                WarningCode.CAPABILITY_DOWNGRADE,
+              );
+              if (pendingFunctionCall?.started && items.isActive(pendingFunctionCall.id)) {
+                // 已 start 的 legacy call 无法撤销 id；完成空壳以免协议挂起
+                yield items.completeToolCall(pendingFunctionCall.id);
+              }
+              pendingFunctionCall = null;
+            }
+            toolCallMode = "tool_calls";
+
             for (const tc of delta.tool_calls) {
               const idx = tc.index;
+              let pending = pendingToolCalls.get(idx);
+              if (!pending) {
+                pending = {
+                  id: tc.id ?? `pending-tc-${chunk.id}-${idx}`,
+                  name: tc.function?.name ?? "",
+                  args: "",
+                  started: false,
+                  hasProviderId: Boolean(tc.id),
+                };
+                pendingToolCalls.set(idx, pending);
+              } else {
+                if (tc.id && !pending.hasProviderId) {
+                  // start 前可替换占位 id
+                  if (!pending.started) {
+                    pending.id = tc.id;
+                  }
+                  pending.hasProviderId = true;
+                }
+                if (tc.function?.name) {
+                  pending.name = tc.function.name;
+                }
+              }
 
-              if (tc.id) {
-                pendingToolCalls.set(idx, { id: tc.id, name: tc.function?.name ?? "", args: "" });
-                yield items.startToolCall(tc.id, tc.function?.name ?? "");
+              if (tc.id && !pending.started) {
+                pending.id = tc.id;
+                pending.hasProviderId = true;
+                pending.started = true;
+                yield items.startToolCall(pending.id, pending.name);
+                if (pending.args) {
+                  yield items.deltaToolCall(pending.id, { argumentsText: pending.args });
+                }
               }
 
               if (tc.function?.arguments) {
-                const pending = pendingToolCalls.get(idx);
-                if (pending) {
-                  pending.args += tc.function.arguments;
+                pending.args += tc.function.arguments;
+                if (pending.started) {
                   yield items.deltaToolCall(pending.id, { argumentsText: tc.function.arguments });
                 }
               }
@@ -463,16 +519,45 @@ export class ChatCompletionsAdapter extends HttpAdapterBase {
           if (delta.function_call) {
             yield* ensureMessageStarted();
 
-            if (delta.function_call.name) {
-              const fcId = `fc-${chunk.id}-0`;
-              pendingToolCalls.set(0, { id: fcId, name: delta.function_call.name, args: "" });
-              yield items.startToolCall(fcId, delta.function_call.name);
-            }
-            if (delta.function_call.arguments) {
-              const pending = pendingToolCalls.get(0);
-              if (pending) {
-                pending.args += delta.function_call.arguments;
-                yield items.deltaToolCall(pending.id, { argumentsText: delta.function_call.arguments });
+            if (toolCallMode === "tool_calls") {
+              yield factory.responseWarning(
+                "Chat Completions mixed tool_calls and function_call; ignoring legacy function_call for this turn",
+                WarningCode.CAPABILITY_DOWNGRADE,
+              );
+            } else {
+              toolCallMode = "function_call";
+
+              if (!pendingFunctionCall) {
+                pendingFunctionCall = {
+                  id: `fc-${chunk.id}-0`,
+                  name: delta.function_call.name ?? "",
+                  args: "",
+                  started: false,
+                  hasProviderId: true,
+                };
+              }
+
+              if (delta.function_call.name) {
+                pendingFunctionCall.name = delta.function_call.name;
+              }
+
+              if (!pendingFunctionCall.started && pendingFunctionCall.name) {
+                pendingFunctionCall.started = true;
+                yield items.startToolCall(pendingFunctionCall.id, pendingFunctionCall.name);
+                if (pendingFunctionCall.args) {
+                  yield items.deltaToolCall(pendingFunctionCall.id, {
+                    argumentsText: pendingFunctionCall.args,
+                  });
+                }
+              }
+
+              if (delta.function_call.arguments) {
+                pendingFunctionCall.args += delta.function_call.arguments;
+                if (pendingFunctionCall.started) {
+                  yield items.deltaToolCall(pendingFunctionCall.id, {
+                    argumentsText: delta.function_call.arguments,
+                  });
+                }
               }
             }
           }
@@ -486,7 +571,10 @@ export class ChatCompletionsAdapter extends HttpAdapterBase {
       }
     }
 
-    if (!gate.completed && (hasMessageStarted || hasReasoningStarted || pendingToolCalls.size > 0)) {
+    if (
+      !gate.completed &&
+      (hasMessageStarted || hasReasoningStarted || pendingToolCalls.size > 0 || pendingFunctionCall !== null)
+    ) {
       yield factory.responseWarning("Stream ended without a finish_reason", WarningCode.STREAM_INCOMPLETE);
       const { events, assistantReplayMessage } = finalizePendingTurn();
       for (const event of events) yield event;

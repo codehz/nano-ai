@@ -731,10 +731,10 @@ describe("A→C opaque round-trip matrix", () => {
   });
 
   /**
-   * 正确语义：单条 assistant opaque 也应 rollback trailing assistant（与 messages 对齐）。
-   * 现状 chat 单条路径不 rollback → 预期红，归大块 C。
+   * 单条 role/content opaque 已 deprecate：有效 envelope 下未识别 shape 跳过，保留 canonical。
+   * 续接请使用 messages 形（出站 emit 亦为此形）。
    */
-  it("A→C opaque: chat-completions single-assistant opaque should not double-write trailing assistant", async () => {
+  it("A→C opaque: chat-completions deprecated single-assistant opaque is skipped", async () => {
     const { body, fetch } = captureFetch(() => sseResponse(...chatTextDoneChunks("ok")));
     await collectStream(
       new ChatCompletionsAdapter({ apiKey: "test-key", fetch }).stream(
@@ -758,7 +758,7 @@ describe("A→C opaque round-trip matrix", () => {
 
     const messages = body.current?.messages as Array<{ role: string; content?: string | null }>;
     expect(countTrailingRole(messages, "assistant")).toBe(1);
-    expect(messages).toEqual([{ role: "assistant", content: "opaque-only" }]);
+    expect(messages).toEqual([{ role: "assistant", content: "canonical" }]);
   });
 
   it("A→C opaque: messages text+tool_call round-trip without double write", async () => {
@@ -1259,6 +1259,62 @@ describe("A→E dual-track ledger", () => {
     assertDualTrack(result, "responses-message+tool");
     expect(result.toolCalls).toHaveLength(1);
     expect(result.text).toBe("Hi");
+  });
+
+  /**
+   * opaque 续接材料挂在 replay 末尾；output 不含 opaque（除非 response.completed.opaqueOutput）。
+   * 契约：replay 中 opaque 仅允许出现在所有非 opaque item 之后（恒尾置）。
+   */
+  function assertOpaqueTrailingInReplay(result: Awaited<ReturnType<typeof collectStream>>, label: string) {
+    const types = result.replay.map((item) => item.type);
+    const firstOpaque = types.indexOf("opaque");
+    if (firstOpaque === -1) return;
+    expect(
+      types.slice(firstOpaque).every((type) => type === "opaque"),
+      `${label} opaque must be trailing in replay`,
+    ).toBe(true);
+    expect(
+      result.output.every((item) => item.type !== "opaque"),
+      `${label} output must not include replay opaque envelopes`,
+    ).toBe(true);
+  }
+
+  it("A→E dual-track: opaque is trailing in replay across HTTP adapters", async () => {
+    const cases = await Promise.all([
+      collectStream(
+        new ChatCompletionsAdapter({
+          apiKey: "test-key",
+          fetch: mockFetch(() => sseResponse(...chatTextDoneChunks("Hi"))),
+        }).stream(makeRequest()),
+      ).then((result) => ({ label: "chat-completions", result })),
+      collectStream(
+        new MessagesAdapter({
+          apiKey: "test-key",
+          fetch: mockFetch(() => sseResponse(...messagesTextDoneSSE("Hi"))),
+        }).stream(makeRequest()),
+      ).then((result) => ({ label: "messages", result })),
+      collectStream(
+        new OllamaAdapter({ fetch: mockFetch(() => ndjsonResponse(ollamaTextDone("Hi"))) }).stream(makeRequest()),
+      ).then((result) => ({ label: "ollama", result })),
+      collectStream(
+        new GeminiAdapter({
+          apiKey: "test-key",
+          fetch: mockFetch(() => sseResponse(geminiTextDone("Hi"))),
+        }).stream(makeRequest()),
+      ).then((result) => ({ label: "gemini", result })),
+      collectStream(
+        new ResponsesAdapter({
+          apiKey: "test-key",
+          fetch: mockFetch(() => sseResponse(...responsesTextDoneSSE("Hi"))),
+        }).stream(makeRequest()),
+      ).then((result) => ({ label: "responses", result })),
+    ]);
+
+    for (const { label, result } of cases) {
+      assertDualTrack(result, label);
+      assertOpaqueTrailingInReplay(result, label);
+      expect(result.replay.some((item) => item.type === "opaque"), `${label} emits opaque replay`).toBe(true);
+    }
   });
 });
 

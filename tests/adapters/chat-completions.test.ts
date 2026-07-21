@@ -355,6 +355,56 @@ describe("ChatCompletionsAdapter - tool calls", () => {
     expect(result.toolCalls[0]!.argumentsText).toBe('{"q":"hello"}');
   });
 
+  it("should buffer tool_call arguments that arrive before id", async () => {
+    const chunks = [
+      'data: {"id":"chatcmpl-args-first","choices":[{"index":0,"delta":{"role":"assistant","content":null},"finish_reason":null}]}\n',
+      'data: {"id":"chatcmpl-args-first","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\\"city\\":"}}]},"finish_reason":null}]}\n',
+      'data: {"id":"chatcmpl-args-first","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_late","type":"function","function":{"name":"get_weather","arguments":"\\"HZ\\""}}]},"finish_reason":null}]}\n',
+      'data: {"id":"chatcmpl-args-first","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"}"}}]},"finish_reason":null}]}\n',
+      'data: {"id":"chatcmpl-args-first","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}\n',
+      "data: [DONE]\n",
+    ];
+
+    const result = await collectStream(
+      new ChatCompletionsAdapter({
+        apiKey: "test-key",
+        fetch: async () => sseResponse(...chunks),
+      }).stream(makeRequest()),
+    );
+
+    expect(result.toolCalls).toHaveLength(1);
+    expect(result.toolCalls[0]!).toMatchObject({
+      id: "call_late",
+      name: "get_weather",
+      argumentsText: '{"city":"HZ"}',
+    });
+  });
+
+  it("should keep tool_calls and ignore function_call when both appear", async () => {
+    const chunks = [
+      'data: {"id":"chatcmpl-mix","choices":[{"index":0,"delta":{"role":"assistant","content":null},"finish_reason":null}]}\n',
+      'data: {"id":"chatcmpl-mix","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_keep","type":"function","function":{"name":"search","arguments":"{\\"q\\":1}"}}]},"finish_reason":null}]}\n',
+      'data: {"id":"chatcmpl-mix","choices":[{"index":0,"delta":{"function_call":{"name":"legacy","arguments":"{\\"x\\":2}"}},"finish_reason":null}]}\n',
+      'data: {"id":"chatcmpl-mix","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}\n',
+      "data: [DONE]\n",
+    ];
+
+    const events: string[] = [];
+    const adapter = new ChatCompletionsAdapter({
+      apiKey: "test-key",
+      fetch: async () => sseResponse(...chunks),
+    });
+    for await (const event of adapter.stream(makeRequest())) {
+      if (event.type === "response.warning") events.push(event.code ?? event.message);
+    }
+
+    const result = await collectStream(adapter.stream(makeRequest()));
+    expect(result.toolCalls).toHaveLength(1);
+    expect(result.toolCalls[0]!.name).toBe("search");
+    expect(result.toolCalls[0]!.argumentsText).toBe('{"q":1}');
+    expect(events).toContain("CAPABILITY_DOWNGRADE");
+  });
+
   it("should include usage when present in final chunk", async () => {
     const chunks = [
       'data: {"id":"chatcmpl-u1","choices":[{"index":0,"delta":{"role":"assistant","content":"Hi"},"finish_reason":null}]}\n',
@@ -699,7 +749,7 @@ describe("ChatCompletionsAdapter - request building", () => {
     expect(messages).toEqual([{ role: "assistant", content: "答案", reasoning_content: "先思考" }]);
   });
 
-  it("should rollback trailing assistant for single-assistant opaque payload", async () => {
+  it("should ignore deprecated single-assistant opaque payload (messages form required)", async () => {
     const { captured, fetch } = captureRequest();
     const adapter = new ChatCompletionsAdapter({ apiKey: "test-key", fetch });
 
@@ -724,7 +774,8 @@ describe("ChatCompletionsAdapter - request building", () => {
     );
 
     const body = captured.current as Record<string, unknown> | null;
-    expect(body?.messages).toEqual([{ role: "assistant", content: "opaque-only" }]);
+    // 单条 role/content 形已 deprecate：有效 envelope 下未识别 shape 跳过，保留 canonical
+    expect(body?.messages).toEqual([{ role: "assistant", content: "canonical" }]);
   });
 
   it("should rollback trailing assistant for bare messages opaque payload", async () => {
