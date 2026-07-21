@@ -398,7 +398,6 @@ export class MessagesAdapter extends AdapterBase {
     let currentItemType: "message" | "reasoning" | "tool_call" | null = null;
     let currentItemId = "";
     let currentToolName = "";
-    let currentArgsText = "";
     let currentThinkingVisibility: "full" | "redacted" = "full";
     const rawReplayContent: MessagesAPIContentBlock[] = [];
 
@@ -484,7 +483,6 @@ export class MessagesAdapter extends AdapterBase {
                 currentItemType = "tool_call";
                 currentItemId = tuBlock.id;
                 currentToolName = tuBlock.name;
-                currentArgsText = "";
                 argsBuffer = "";
                 yield factory.toolCallStarted(currentItemId, currentToolName);
                 break;
@@ -535,14 +533,14 @@ export class MessagesAdapter extends AdapterBase {
               output.push(reasoningItem([textBlock(thinkingBuffer)], currentThinkingVisibility, currentItemId));
               rawReplayContent.push({ type: "thinking", thinking: thinkingBuffer });
             } else if (currentItemType === "tool_call" && currentItemId) {
-              const tcItem = toolCallItem(currentItemId, currentToolName, currentArgsText || argsBuffer);
+              const tcItem = toolCallItem(currentItemId, currentToolName, argsBuffer);
               yield factory.toolCallCompleted(currentItemId);
               output.push(tcItem);
               rawReplayContent.push({
                 type: "tool_use",
                 id: currentItemId,
                 name: currentToolName,
-                input: parseProviderToolUseInput(currentArgsText || argsBuffer),
+                input: parseProviderToolUseInput(argsBuffer),
               });
             }
 
