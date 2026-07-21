@@ -15,6 +15,17 @@ The public entrypoint is `src/index.ts`. Prefer deep imports for internal module
 
 Custom adapters should implement the public `BackendAdapter` interface only; do not depend on internal `AdapterBase` (or other `src/provider/*` scaffolding) from application code.
 
+### Opaque replay protocol
+
+HTTP adapters restore wire turns from `input` items with `type: "opaque"`:
+
+1. **Filter** — only `source === <adapterSource>` and `purpose === "replay"`; otherwise ignore.
+2. **Envelope** — `assertOpaqueReplayEnvelope` (object, ≤64KB, depth ≤8); failures throw `AIRequestError` / `INVALID_OPAQUE_REPLAY`.
+3. **Replace trailing turn** — before appending an assistant/model wire turn, rollback trailing messages of that role (`assistant` for chat/messages/ollama, `model` for gemini), then append. Single-assistant opaque payloads use the same replace semantics as `replaceCanonical: true`. Responses uses id / `previous_response_id` continuation instead of stacking assistant wire messages (canonical non-opaque input wins).
+4. **Shapes** — known invalid shapes throw `INVALID_OPAQUE_REPLAY`; unrecognized shapes after a valid envelope are skipped.
+
+Use `acceptOpaqueReplay` from `src/provider/opaque-replay.ts` at the start of each adapter's `case "opaque"`.
+
 `tests/` mirrors source layers (`types/`, `runtime/`, `stream/`, `provider/`, `adapters/`, `scenarios/`) plus shared `tests/fixtures.ts`. `examples/` contains runnable usage samples like `examples/basic.ts` and `examples/tool-loop.ts`. `dist/` is generated output from the packaging build and should not be edited by hand.
 
 ## Build, Test, and Development Commands

@@ -60,8 +60,12 @@ export class NormalizedRequestMapper {
     );
   }
 
-  rollbackTrailingAssistantMessages<T extends { role: string }>(messages: T[]): void {
-    while (messages.length > 0 && messages[messages.length - 1]?.role === "assistant") {
+  /**
+   * 回滚 wire 尾部连续同 role 的 turn（opaque replace 语义）。
+   * chat/messages/ollama 用 `"assistant"`；gemini 用 `"model"`。
+   */
+  rollbackTrailingAssistantMessages<T extends { role: string }>(messages: T[], role = "assistant"): void {
+    while (messages.length > 0 && messages[messages.length - 1]?.role === role) {
       messages.pop();
     }
   }

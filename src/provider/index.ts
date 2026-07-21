@@ -32,6 +32,7 @@ export {
   PROVIDER_ERROR_RAW_BODY_THRESHOLD,
 } from "./security.js";
 export type { OpaqueEnvelopeResult } from "./security.js";
+export { acceptOpaqueReplay } from "./opaque-replay.js";
 export {
   IncrementalStreamParser,
   splitLines,
