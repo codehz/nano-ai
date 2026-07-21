@@ -22,7 +22,6 @@ import type {
   ContentBlock,
   OutputItem,
   ReasoningItem,
-  ServerToolCallItem,
   ServerToolDiscoveryItem,
   ServerToolResultItem,
 } from "../types/index.js";

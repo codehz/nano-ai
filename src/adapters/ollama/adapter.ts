@@ -19,20 +19,19 @@ import { HttpAdapterBase } from "../../provider/http-adapter.js";
 import { AIRequestError, WarningCode } from "../../runtime/errors.js";
 import {
   textBlock,
-  messageItem,
-  toolCallItem,
   opaqueItem,
   replayFromOutput,
   mapStopReason,
   contentBlocksToText,
 } from "../../canonical/index.js";
 import { acceptOpaqueReplay } from "../../provider/opaque-replay.js";
+import { createStreamingItemSession } from "../../provider/streaming-item-session.js";
 import { usageFromOllama } from "../../provider/usage/index.js";
 import { NormalizedRequestMapper } from "../../provider/request-mapper.js";
 import { createNdjsonLineParser } from "../../provider/transport/parser.js";
 import { mapOllamaThink } from "../../provider/reasoning.js";
 
-import type { NormalizedRequest, AIStreamEvent, OutputItem, StopReason } from "../../types/index.js";
+import type { NormalizedRequest, AIStreamEvent, StopReason } from "../../types/index.js";
 import type { EventFactory } from "../../stream/event-factory.js";
 
 // ── 选项类型 ──────────────────────────────────────────────────
@@ -267,6 +266,7 @@ export class OllamaAdapter extends HttpAdapterBase {
   ): AsyncIterable<AIStreamEvent> {
     const session = this.beginJsonStream(factory, request);
     const { auxiliary, gate } = session;
+    const items = createStreamingItemSession(factory);
 
     if (request.toolChoice && request.toolChoice !== "auto") {
       yield factory.responseWarning(
@@ -300,7 +300,7 @@ export class OllamaAdapter extends HttpAdapterBase {
       (value): value is OllamaChatChunk => !!value && typeof value === "object" && "message" in value,
     );
 
-    const output: OutputItem[] = [];
+    // wire 缓冲仅用于 opaque；item 内容由 items session 维护
     let responseId: string | undefined;
     let accumulatedContent = "";
     let currentMessageId = "";
@@ -312,7 +312,7 @@ export class OllamaAdapter extends HttpAdapterBase {
       stopReason: StopReason | undefined,
       rawResponseId: string | undefined,
     ): AsyncIterable<AIStreamEvent> {
-      const replay = replayFromOutput(output);
+      const replay = [...replayFromOutput(items.completedItems())];
       if (accumulatedContent || pendingToolCalls.length > 0) {
         replay.push(
           opaqueItem("ollama", "replay", {
@@ -327,7 +327,6 @@ export class OllamaAdapter extends HttpAdapterBase {
       }
 
       yield* session.complete({
-        output,
         replay,
         stopReason,
         rawResponseId,
@@ -358,10 +357,10 @@ export class OllamaAdapter extends HttpAdapterBase {
           if (!hasMessageStarted) {
             currentMessageId = `msg-${chunk.created_at}`;
             hasMessageStarted = true;
-            yield factory.messageStarted(currentMessageId);
+            yield items.startMessage(currentMessageId);
           }
           accumulatedContent += msg.content;
-          yield factory.messageDelta(currentMessageId, textBlock(msg.content));
+          yield items.deltaMessage(currentMessageId, textBlock(msg.content));
         }
 
         if (msg.tool_calls && msg.tool_calls.length > 0) {
@@ -380,15 +379,12 @@ export class OllamaAdapter extends HttpAdapterBase {
           if (accumulatedContent === "" && pendingToolCalls.length > 0 && !hasMessageStarted) {
             currentMessageId = `msg-${chunk.created_at}`;
             hasMessageStarted = true;
-            yield factory.messageStarted(currentMessageId);
+            yield items.startMessage(currentMessageId);
           }
 
-          if (hasMessageStarted) {
-            const message = messageItem([textBlock(accumulatedContent)], { id: currentMessageId });
-            yield factory.messageCompleted(currentMessageId);
-            if (accumulatedContent) {
-              output.push(message);
-            }
+          // 已 start 的空 message 也 complete 进 session（事件权威）
+          if (hasMessageStarted && items.isActive(currentMessageId)) {
+            yield items.completeMessage(currentMessageId);
           }
 
           if (pendingToolCalls.length > 0) {
@@ -399,11 +395,9 @@ export class OllamaAdapter extends HttpAdapterBase {
           }
 
           for (const pending of pendingToolCalls) {
-            const toolCall = toolCallItem(pending.id, pending.name, pending.argumentsText);
-            yield factory.toolCallStarted(pending.id, pending.name);
-            yield factory.toolCallDelta(pending.id, { argumentsText: pending.argumentsText });
-            yield factory.toolCallCompleted(pending.id);
-            output.push(toolCall);
+            yield items.startToolCall(pending.id, pending.name);
+            yield items.deltaToolCall(pending.id, { argumentsText: pending.argumentsText });
+            yield items.completeToolCall(pending.id);
           }
 
           if (
@@ -437,12 +431,8 @@ export class OllamaAdapter extends HttpAdapterBase {
     if (!gate.completed && (hasMessageStarted || pendingToolCalls.length > 0)) {
       yield factory.responseWarning("Stream ended without a done signal", WarningCode.STREAM_INCOMPLETE);
 
-      if (hasMessageStarted) {
-        const message = messageItem([textBlock(accumulatedContent)], { id: currentMessageId });
-        yield factory.messageCompleted(currentMessageId);
-        if (accumulatedContent) {
-          output.push(message);
-        }
+      if (hasMessageStarted && items.isActive(currentMessageId)) {
+        yield items.completeMessage(currentMessageId);
       }
 
       if (pendingToolCalls.length > 0) {
@@ -453,11 +443,9 @@ export class OllamaAdapter extends HttpAdapterBase {
       }
 
       for (const pending of pendingToolCalls) {
-        const toolCall = toolCallItem(pending.id, pending.name, pending.argumentsText);
-        yield factory.toolCallStarted(pending.id, pending.name);
-        yield factory.toolCallDelta(pending.id, { argumentsText: pending.argumentsText });
-        yield factory.toolCallCompleted(pending.id);
-        output.push(toolCall);
+        yield items.startToolCall(pending.id, pending.name);
+        yield items.deltaToolCall(pending.id, { argumentsText: pending.argumentsText });
+        yield items.completeToolCall(pending.id);
       }
 
       yield* emitCompleted(undefined, responseId);

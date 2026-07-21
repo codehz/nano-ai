@@ -167,41 +167,27 @@ export class MockAdapter extends AdapterBase {
             break;
           }
           case "complete": {
-            const finalResponse = this.finalizeTurn(request, factory, mockRequest, output, step, stepCount);
-            yield factory.responseCompleted({
-              replay: finalResponse.replay,
-              stopReason: finalResponse.stopReason,
-              trace: finalResponse.backend,
-              usage: finalResponse.usage,
-              billing: finalResponse.billing,
-              auxiliary: finalResponse.auxiliary,
-              warnings: finalResponse.warnings,
-            });
+            yield factory.responseCompleted(
+              this.finalizeTurn(request, factory, mockRequest, output, step, stepCount),
+            );
             return;
           }
           case "error": {
             yield factory.responseWarning(step.message, step.code);
-            const finalResponse = this.finalizeTurn(
-              request,
-              factory,
-              mockRequest,
-              output,
-              {
-                type: "complete",
-                stopReason: step.stopReason ?? "error",
-                providerMetadata: step.providerMetadata,
-              },
-              stepCount,
+            yield factory.responseCompleted(
+              this.finalizeTurn(
+                request,
+                factory,
+                mockRequest,
+                output,
+                {
+                  type: "complete",
+                  stopReason: step.stopReason ?? "error",
+                  providerMetadata: step.providerMetadata,
+                },
+                stepCount,
+              ),
             );
-            yield factory.responseCompleted({
-              replay: finalResponse.replay,
-              stopReason: finalResponse.stopReason,
-              trace: finalResponse.backend,
-              usage: finalResponse.usage,
-              billing: finalResponse.billing,
-              auxiliary: finalResponse.auxiliary,
-              warnings: finalResponse.warnings,
-            });
             return;
           }
           case "interrupt":
@@ -212,25 +198,18 @@ export class MockAdapter extends AdapterBase {
         }
       }
 
-      const finalResponse = this.finalizeTurn(
-        request,
-        factory,
-        mockRequest,
-        output,
-        {
-          type: "complete",
-        },
-        stepCount,
+      yield factory.responseCompleted(
+        this.finalizeTurn(
+          request,
+          factory,
+          mockRequest,
+          output,
+          {
+            type: "complete",
+          },
+          stepCount,
+        ),
       );
-      yield factory.responseCompleted({
-        replay: finalResponse.replay,
-        stopReason: finalResponse.stopReason,
-        trace: finalResponse.backend,
-        usage: finalResponse.usage,
-        billing: finalResponse.billing,
-        auxiliary: finalResponse.auxiliary,
-        warnings: finalResponse.warnings,
-      });
     } finally {
       this.activeStream = false;
     }
@@ -256,10 +235,9 @@ export class MockAdapter extends AdapterBase {
       toolCalls,
     });
 
-    return this.buildResponse(
+    return this.buildCompletedPayload(
       request,
       {
-        output,
         replay,
         stopReason: completion.stopReason ?? resolveStopReason(output),
         usage: completion.usage,

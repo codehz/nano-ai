@@ -9,28 +9,27 @@
  *
  * 子类实现 buildRequest() 和 runStream()，
  * runStream 返回 AsyncIterable，事件实时发射给消费者。
+ *
+ * 大块 E（事件权威）：
+ * - 完整 AIResponse（output/text/toolCalls…）仅由 collectStream/aggregator 构建
+ * - StreamResult / response.completed 只携带 replay 与完成元数据
  */
 
 import type {
   NormalizedRequest,
   BackendAdapter,
   AIStreamEvent,
-  AIResponse,
   AuxiliaryInfo,
-  OutputItem,
   ReplayItem,
   StopReason,
   Usage,
   BillingInfo,
-  ToolCallItem,
-  ServerToolCallItem,
-  ServerToolResultItem,
+  BackendTrace,
   AdapterKind,
 } from "../types/index.js";
 import { createEventFactory } from "../stream/event-factory.js";
 import { AIMappingError, AIProviderError, AIRequestError, AIStreamError, WarningCode } from "../runtime/errors.js";
 import type { EventFactory } from "../stream/event-factory.js";
-import { extractText } from "../canonical/index.js";
 import { AdapterAuxiliaryState } from "./auxiliary.js";
 import { mergeAuxiliary } from "../stream/merge-auxiliary.js";
 
@@ -39,11 +38,10 @@ import { mergeAuxiliary } from "../stream/merge-auxiliary.js";
 export type ProviderResponse = unknown;
 
 /**
- * adapter 完成一轮处理后返回的最终结果。
- * 用于 buildResponse() 构建 AIResponse。
+ * adapter 完成一轮流处理后交给 emitStreamCompleted 的元数据。
+ * 不含 output/text/toolCalls — 那些由事件聚合得到。
  */
 export type StreamResult = {
-  output: OutputItem[];
   replay: ReplayItem[];
   stopReason?: StopReason;
   usage?: Usage;
@@ -53,6 +51,17 @@ export type StreamResult = {
   warnings?: string[];
   metadataSources?: string[];
   rawResponseId?: string;
+};
+
+/** response.completed 所需的完成元数据（无 output 账本） */
+export type StreamCompletedPayload = {
+  replay: ReplayItem[];
+  stopReason?: StopReason;
+  usage?: Usage;
+  billing?: BillingInfo;
+  auxiliary?: AuxiliaryInfo;
+  warnings?: string[] | undefined;
+  trace: Partial<BackendTrace>;
 };
 
 // ── 抽象基类 ──────────────────────────────────────────────────
@@ -88,16 +97,8 @@ export abstract class AdapterBase implements BackendAdapter {
 
       if (err instanceof AIMappingError) {
         yield factory.responseWarning(err.message, WarningCode.MAPPING_ERROR);
-        const errorResp = this.buildResponse(request, { output: [], replay: [] }, factory);
-        yield factory.responseCompleted({
-          replay: errorResp.replay,
-          stopReason: errorResp.stopReason,
-          trace: errorResp.backend,
-          usage: errorResp.usage,
-          billing: errorResp.billing,
-          auxiliary: errorResp.auxiliary,
-          warnings: errorResp.warnings,
-        });
+        const payload = this.buildCompletedPayload(request, { replay: [] }, factory);
+        yield factory.responseCompleted(payload);
         return;
       }
 
@@ -115,9 +116,9 @@ export abstract class AdapterBase implements BackendAdapter {
    * 子类负责：
    * - 调用 provider
    * - 解析每个 chunk
-   * - 通过 factory 发射 item 事件
-   * - 构建 StreamResult
-   * - 发射 factory.responseCompleted(buildResponse(…))
+   * - 通过 StreamingItemSession / factory 发射 item 事件
+   * - 组装 StreamResult（replay + 元数据）
+   * - 发射 response.completed（通常经 emitStreamCompleted）
    */
   protected abstract runStream(
     providerRequest: ProviderResponse,
@@ -128,33 +129,27 @@ export abstract class AdapterBase implements BackendAdapter {
   // ── 共享构造方法 ──────────────────────────────────────────
 
   /**
-   * 从 StreamResult 构建完整 AIResponse。
-   * 子类可在返回前自定义覆盖。
+   * 从 StreamResult 构建 response.completed 载荷（无 output/text/toolCalls）。
    */
-  protected buildResponse(request: NormalizedRequest, result: StreamResult, _factory: EventFactory): AIResponse {
-    const text = extractText(result.output);
-    const warnings = mergeWarnings(result.warnings, _factory.warnings);
+  protected buildCompletedPayload(
+    request: NormalizedRequest,
+    result: StreamResult,
+    factory: EventFactory,
+  ): StreamCompletedPayload {
+    const warnings = mergeWarnings(result.warnings, factory.warnings);
     const auxiliary = mergeAuxiliary(
       result.auxiliary,
       result.providerMetadata ? { providerMetadata: result.providerMetadata } : undefined,
     );
 
     return {
-      id: request.requestId,
-      output: result.output,
       replay: result.replay,
-      text,
-      toolCalls: result.output.filter((item): item is ToolCallItem => item.type === "tool_call"),
-      serverToolCalls: result.output.filter((item): item is ServerToolCallItem => item.type === "server_tool_call"),
-      serverToolResults: result.output.filter(
-        (item): item is ServerToolResultItem => item.type === "server_tool_result",
-      ),
       stopReason: result.stopReason,
       usage: result.usage,
       billing: result.billing,
       auxiliary,
       warnings,
-      backend: {
+      trace: {
         requestId: request.requestId,
         rawResponseId: result.rawResponseId,
         adapter: this.kind,
@@ -167,7 +162,7 @@ export abstract class AdapterBase implements BackendAdapter {
 
   /**
    * 统一 finalize auxiliary → response.completed。
-   * adapter 在调用前组装 output / replay / stopReason 等业务字段。
+   * adapter 在调用前组装 replay / stopReason 等业务字段（不含 output 账本）。
    */
   protected async *emitStreamCompleted(
     factory: EventFactory,
@@ -180,7 +175,7 @@ export abstract class AdapterBase implements BackendAdapter {
       yield event;
     }
 
-    const finalResponse = this.buildResponse(
+    const payload = this.buildCompletedPayload(
       request,
       {
         ...result,
@@ -193,15 +188,7 @@ export abstract class AdapterBase implements BackendAdapter {
       factory,
     );
 
-    yield factory.responseCompleted({
-      replay: finalResponse.replay,
-      stopReason: finalResponse.stopReason,
-      trace: finalResponse.backend,
-      usage: finalResponse.usage,
-      billing: finalResponse.billing,
-      auxiliary: finalResponse.auxiliary,
-      warnings: finalResponse.warnings,
-    });
+    yield factory.responseCompleted(payload);
   }
 
   protected createAuxiliaryState(request: NormalizedRequest): AdapterAuxiliaryState {

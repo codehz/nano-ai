@@ -15,9 +15,6 @@ import {
   textBlock,
   jsonBlock,
   imageBlock,
-  messageItem,
-  reasoningItem,
-  toolCallItem,
   opaqueItem,
   serverToolCallItem,
   serverToolResultItem,
@@ -29,13 +26,13 @@ import { usageFromOpenAIResponses } from "../../provider/usage/index.js";
 import { NormalizedRequestMapper } from "../../provider/request-mapper.js";
 import { createSseJsonParser } from "../../provider/transport/parser.js";
 import { mapResponsesReasoning } from "../../provider/reasoning.js";
+import { createStreamingItemSession } from "../../provider/streaming-item-session.js";
 
 import type {
   NormalizedRequest,
   AIStreamEvent,
   Citation,
   ContentBlock,
-  OutputItem,
   ReasoningItem,
   ServerToolCallItem,
   ServerToolDefinition,
@@ -724,7 +721,7 @@ export class ResponsesAdapter extends HttpAdapterBase {
     });
 
     const parser = createSseJsonParser<ResponsesSSEEvent>();
-    const output: OutputItem[] = [];
+    const items = createStreamingItemSession(factory);
     let completedResponse: ResponsesAPIResponse | undefined;
     let unknownEventsWarned = false;
     const messageItemsWithDelta = new Set<string>();
@@ -732,6 +729,8 @@ export class ResponsesAdapter extends HttpAdapterBase {
     const toolCallNames = new Map<string, string>();
     /** item_id → call_id（canonical ToolCallItem.id / function_call_output.call_id） */
     const toolCallIds = new Map<string, string>();
+    /** call_id → already streamed argument deltas */
+    const toolCallArgDeltas = new Set<string>();
     const reasoningStates = new Map<string, ReasoningStreamState>();
     /** message item_id → citations accumulated from annotation events / item.done */
     const messageCitations = new Map<string, Citation[]>();
@@ -756,19 +755,25 @@ export class ResponsesAdapter extends HttpAdapterBase {
     ): Generator<AIStreamEvent, void, undefined> {
       if (completedServerToolIds.has(call.id)) return;
       completedServerToolIds.add(call.id);
+
+      if (!items.isActive(call.id)) {
+        yield items.startServerTool(call.id, call.tool, {
+          ...(call.name !== undefined ? { name: call.name } : {}),
+          ...(call.serverLabel !== undefined ? { serverLabel: call.serverLabel } : {}),
+        });
+      }
+
       // 若未流式吐过 arguments，用 done 载荷补齐（避免与 delta 重复拼接）
       if (call.argumentsText && !serverToolArgDeltas.has(call.id)) {
-        yield factory.serverToolDelta(call.id, { argumentsText: call.argumentsText });
+        yield items.deltaServerTool(call.id, { argumentsText: call.argumentsText });
         serverToolArgDeltas.add(call.id);
       }
-      yield factory.serverToolCompleted(call.id, {
+      yield items.completeServerTool(call.id, {
         status: call.status === "failed" ? "failed" : "completed",
         providerPayload: call.providerPayload,
       });
-      output.push(call);
       if (result) {
-        yield factory.serverToolResultCompleted(result);
-        output.push(result);
+        yield items.completeServerToolResult(result);
       }
     };
 
@@ -793,8 +798,19 @@ export class ResponsesAdapter extends HttpAdapterBase {
       if (state.completed) return;
       state.completed = true;
       state.visibility = visibility;
-      yield factory.reasoningCompleted(itemId);
-      output.push(reasoningItem(text ? [textBlock(text)] : [], visibility, itemId));
+
+      if (!items.isActive(itemId)) {
+        const started = items.ensureReasoningStarted(itemId, visibility);
+        if (started) yield started;
+      }
+
+      if (items.isActive(itemId)) {
+        if (!state.hasDelta && text) {
+          yield items.deltaReasoning(itemId, textBlock(text));
+          state.hasDelta = true;
+        }
+        yield items.completeReasoning(itemId);
+      }
     };
 
     for await (const batch of session.batches({
@@ -816,13 +832,13 @@ export class ResponsesAdapter extends HttpAdapterBase {
           const item = (sseEvent.data as { item: { id: string; type: string; [key: string]: unknown } }).item;
           switch (item.type) {
             case "message":
-              yield factory.messageStarted(item.id);
+              yield items.startMessage(item.id);
               break;
             case "reasoning": {
               // OpenAI 公开流默认是 summary；full/opaque 在后续事件中再收紧。
               const visibility = extractReasoningFromOutputItem(item).visibility;
               ensureReasoningState(item.id, visibility);
-              yield factory.reasoningStarted(item.id, visibility);
+              yield items.startReasoning(item.id, visibility);
               break;
             }
             case "function_call": {
@@ -831,7 +847,7 @@ export class ResponsesAdapter extends HttpAdapterBase {
               const callId = typeof item.call_id === "string" && item.call_id.length > 0 ? item.call_id : item.id;
               toolCallNames.set(item.id, name);
               toolCallIds.set(item.id, callId);
-              yield factory.toolCallStarted(callId, name);
+              yield items.startToolCall(callId, name);
               break;
             }
             case "web_search_call": {
@@ -840,15 +856,15 @@ export class ResponsesAdapter extends HttpAdapterBase {
                 action && typeof action === "object" && typeof (action as { type?: unknown }).type === "string"
                   ? (action as { type: string }).type
                   : undefined;
-              yield factory.serverToolStarted(item.id, "web_search", { name });
+              yield items.startServerTool(item.id, "web_search", { name });
               break;
             }
             case "code_interpreter_call": {
-              yield factory.serverToolStarted(item.id, "code_execution", { name: "python" });
+              yield items.startServerTool(item.id, "code_execution", { name: "python" });
               break;
             }
             case "mcp_call": {
-              yield factory.serverToolStarted(item.id, "mcp", {
+              yield items.startServerTool(item.id, "mcp", {
                 name: typeof item.name === "string" ? item.name : undefined,
                 serverLabel: typeof item.server_label === "string" ? item.server_label : undefined,
               });
@@ -878,17 +894,9 @@ export class ResponsesAdapter extends HttpAdapterBase {
           }
 
           if (item.type === "message") {
+            // 晚到的 citations：text.done 可能已 complete message；事件权威下不再回写账本
             for (const citation of extractCitationsFromMessageItem(item)) {
               pushCitation(item.id, citation);
-            }
-            // 若 text.done 已完成消息，补写 citations 到本地 output（aggregator 已关闭该 item）
-            const citations = messageCitations.get(item.id);
-            if (citations && citations.length > 0) {
-              for (const out of output) {
-                if (out.type === "message" && out.id === item.id) {
-                  out.citations = citations;
-                }
-              }
             }
             continue;
           }
@@ -913,8 +921,7 @@ export class ResponsesAdapter extends HttpAdapterBase {
 
           if (item.type === "mcp_list_tools") {
             const discovery = mapMcpListToolsItem(item);
-            yield factory.serverToolDiscoveryCompleted(discovery);
-            output.push(discovery);
+            yield items.completeServerToolDiscovery(discovery);
             continue;
           }
 
@@ -931,7 +938,7 @@ export class ResponsesAdapter extends HttpAdapterBase {
 
         if (sseEvent.type === "response.output_text.delta") {
           const data = sseEvent.data as { item_id: string; delta: string };
-          yield factory.messageDelta(data.item_id, textBlock(data.delta));
+          yield items.deltaMessage(data.item_id, textBlock(data.delta));
           messageItemsWithDelta.add(data.item_id);
           continue;
         }
@@ -951,22 +958,17 @@ export class ResponsesAdapter extends HttpAdapterBase {
         if (sseEvent.type === "response.output_text.done") {
           const data = sseEvent.data as { item_id: string; text: string };
           if (!messageItemsWithDelta.has(data.item_id) && data.text) {
-            yield factory.messageDelta(data.item_id, textBlock(data.text));
+            yield items.deltaMessage(data.item_id, textBlock(data.text));
+            messageItemsWithDelta.add(data.item_id);
           }
-          if (!completedMessageIds.has(data.item_id)) {
+          if (!completedMessageIds.has(data.item_id) && items.isActive(data.item_id)) {
             completedMessageIds.add(data.item_id);
             const citations = messageCitations.get(data.item_id);
-            // 复制数组，避免后续 output_item.done 再 push 时污染已完成 message
+            // 复制数组，避免后续 annotation / item.done 再 push 时污染 snapshot
             const citationsSnapshot = citations && citations.length > 0 ? [...citations] : undefined;
-            yield factory.messageCompleted(
+            yield items.completeMessage(
               data.item_id,
               citationsSnapshot ? { citations: citationsSnapshot } : undefined,
-            );
-            output.push(
-              messageItem([textBlock(data.text)], {
-                id: data.item_id,
-                ...(citationsSnapshot ? { citations: citationsSnapshot } : {}),
-              }),
             );
           }
           continue;
@@ -979,7 +981,7 @@ export class ResponsesAdapter extends HttpAdapterBase {
           const data = sseEvent.data as { item_id: string; delta?: string };
           if (typeof data.item_id === "string" && typeof data.delta === "string" && data.delta.length > 0) {
             serverToolArgDeltas.add(data.item_id);
-            yield factory.serverToolDelta(data.item_id, { argumentsText: data.delta });
+            yield items.deltaServerTool(data.item_id, { argumentsText: data.delta });
           }
           continue;
         }
@@ -1017,7 +1019,7 @@ export class ResponsesAdapter extends HttpAdapterBase {
           if (state.visibility === "opaque") state.visibility = "summary";
           if (data.delta) {
             state.hasDelta = true;
-            yield factory.reasoningDelta(data.item_id, textBlock(data.delta));
+            yield items.deltaReasoning(data.item_id, textBlock(data.delta));
           }
           continue;
         }
@@ -1028,7 +1030,8 @@ export class ResponsesAdapter extends HttpAdapterBase {
           if (state.visibility === "opaque") state.visibility = "summary";
           if (!state.hasDelta && data.text) {
             state.doneTexts.push(data.text);
-            yield factory.reasoningDelta(data.item_id, textBlock(data.text));
+            state.hasDelta = true;
+            yield items.deltaReasoning(data.item_id, textBlock(data.text));
           } else if (data.text) {
             state.doneTexts.push(data.text);
           }
@@ -1042,7 +1045,7 @@ export class ResponsesAdapter extends HttpAdapterBase {
           state.visibility = "full";
           if (data.delta) {
             state.hasDelta = true;
-            yield factory.reasoningDelta(data.item_id, textBlock(data.delta));
+            yield items.deltaReasoning(data.item_id, textBlock(data.delta));
           }
           continue;
         }
@@ -1053,7 +1056,8 @@ export class ResponsesAdapter extends HttpAdapterBase {
           state.visibility = "full";
           if (!state.hasDelta && data.text) {
             state.doneTexts.push(data.text);
-            yield factory.reasoningDelta(data.item_id, textBlock(data.text));
+            state.hasDelta = true;
+            yield items.deltaReasoning(data.item_id, textBlock(data.text));
           } else if (data.text) {
             state.doneTexts.push(data.text);
           }
@@ -1075,7 +1079,7 @@ export class ResponsesAdapter extends HttpAdapterBase {
           state.visibility = "full";
           if (data.delta) {
             state.hasDelta = true;
-            yield factory.reasoningDelta(data.item_id, textBlock(data.delta));
+            yield items.deltaReasoning(data.item_id, textBlock(data.delta));
           }
           continue;
         }
@@ -1084,7 +1088,8 @@ export class ResponsesAdapter extends HttpAdapterBase {
           const data = sseEvent.data as { item_id: string; text: string };
           const state = ensureReasoningState(data.item_id, "full");
           if (!state.hasDelta && data.text) {
-            yield factory.reasoningDelta(data.item_id, textBlock(data.text));
+            state.hasDelta = true;
+            yield items.deltaReasoning(data.item_id, textBlock(data.text));
           }
           yield* completeReasoning(data.item_id, data.text ?? state.doneTexts.join("\n"), "full");
           continue;
@@ -1093,7 +1098,9 @@ export class ResponsesAdapter extends HttpAdapterBase {
         if (sseEvent.type === "response.function_call_arguments.delta") {
           const data = sseEvent.data as { item_id: string; delta: string };
           if (data.delta) {
-            yield factory.toolCallDelta(resolveToolCallId(data.item_id), { argumentsText: data.delta });
+            const callId = resolveToolCallId(data.item_id);
+            toolCallArgDeltas.add(callId);
+            yield items.deltaToolCall(callId, { argumentsText: data.delta });
           }
           continue;
         }
@@ -1103,9 +1110,17 @@ export class ResponsesAdapter extends HttpAdapterBase {
           const callId = resolveToolCallId(data.item_id);
           // 若 added 事件缺失，done 时仍尽量从 completed payload 之外兜底 call_id
           if (!toolCallIds.has(data.item_id)) toolCallIds.set(data.item_id, callId);
-          const tcItem = toolCallItem(callId, toolCallNames.get(data.item_id) ?? "unknown", data.arguments);
-          yield factory.toolCallCompleted(callId);
-          output.push(tcItem);
+          const name = toolCallNames.get(data.item_id) ?? "unknown";
+          if (!items.isActive(callId)) {
+            yield items.startToolCall(callId, name);
+          }
+          if (!toolCallArgDeltas.has(callId) && data.arguments) {
+            yield items.deltaToolCall(callId, { argumentsText: data.arguments });
+            toolCallArgDeltas.add(callId);
+          }
+          if (items.isActive(callId)) {
+            yield items.completeToolCall(callId);
+          }
           continue;
         }
 
@@ -1130,8 +1145,8 @@ export class ResponsesAdapter extends HttpAdapterBase {
               if (state?.completed) continue;
               const extracted = extractReasoningFromOutputItem(item);
               const text = extracted.text || (state && state.doneTexts.length > 0 ? state.doneTexts.join("\n") : "");
-              // Only complete if we already started this item (otherwise aggregator has no active item).
-              if (state || reasoningStates.has(item.id)) {
+              // Only complete if we already tracked this item (session or reasoningStates).
+              if (state || items.isActive(item.id)) {
                 yield* completeReasoning(item.id, text, extracted.visibility);
               }
             }
@@ -1164,7 +1179,7 @@ export class ResponsesAdapter extends HttpAdapterBase {
       }
     }
 
-    const replay = [...replayFromOutput(output)];
+    const replay = [...replayFromOutput(items.completedItems())];
     if (completedResponse?.id) {
       // 同时保留 id（向后兼容）与 previous_response_id（语义明确）
       replay.push(
@@ -1179,7 +1194,6 @@ export class ResponsesAdapter extends HttpAdapterBase {
 
     yield* session.complete(
       {
-        output,
         replay,
         stopReason,
         rawResponseId,

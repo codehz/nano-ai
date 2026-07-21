@@ -6,7 +6,7 @@
  */
 
 export { AdapterBase } from "./base.js";
-export type { StreamResult } from "./base.js";
+export type { StreamResult, StreamCompletedPayload } from "./base.js";
 export { HttpAdapterBase } from "./http-adapter.js";
 export type { HttpAdapterOptions, HttpAdapterDefaults } from "./http-adapter.js";
 export { AdapterAuxiliaryState, emitMalformedStreamWarning } from "./auxiliary.js";

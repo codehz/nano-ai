@@ -12,20 +12,18 @@ import { HttpAdapterBase } from "../../provider/http-adapter.js";
 import { AIRequestError, WarningCode } from "../../runtime/errors.js";
 import {
   textBlock,
-  messageItem,
-  reasoningItem,
-  toolCallItem,
   opaqueItem,
   replayFromOutput,
   mapStopReason,
 } from "../../canonical/index.js";
 import { acceptOpaqueReplay } from "../../provider/opaque-replay.js";
+import { createStreamingItemSession } from "../../provider/streaming-item-session.js";
 import { usageFromChatCompletions } from "../../provider/usage/index.js";
 import { NormalizedRequestMapper } from "../../provider/request-mapper.js";
 import { createChatCompletionsSseParser } from "../../provider/transport/parser.js";
 import { mapChatCompletionsReasoningEffort } from "../../provider/reasoning.js";
 
-import type { NormalizedRequest, AIStreamEvent, OutputItem, StopReason } from "../../types/index.js";
+import type { NormalizedRequest, AIStreamEvent, StopReason } from "../../types/index.js";
 import type { EventFactory } from "../../stream/event-factory.js";
 
 // ── 类型 ──────────────────────────────────────────────────────
@@ -289,6 +287,7 @@ export class ChatCompletionsAdapter extends HttpAdapterBase {
   ): AsyncIterable<AIStreamEvent> {
     const session = this.beginJsonStream(factory, request);
     const { auxiliary, gate } = session;
+    const items = createStreamingItemSession(factory);
 
     await session.open({
       url: `${this.baseUrl}/chat/completions`,
@@ -300,12 +299,10 @@ export class ChatCompletionsAdapter extends HttpAdapterBase {
     });
 
     const parser = createChatCompletionsSseParser<ChatChunk>();
-    const output: OutputItem[] = [];
 
-    // 累积状态 — 支持多 choice，此处只取 index 0
+    // wire 缓冲仅用于 opaque / finish 状态；item 内容账本由 items session 维护
     let responseId: string | undefined;
     let accumulatedContent = "";
-    let accumulatedReasoning = "";
     let currentMessageId = "";
     let currentReasoningId = "";
     let hasMessageStarted = false;
@@ -321,22 +318,18 @@ export class ChatCompletionsAdapter extends HttpAdapterBase {
       const finalizedToolCalls = [...pendingToolCalls.values()];
       const finalizedReasoningByField = new Map(reasoningByField);
 
-      if (hasReasoningStarted && accumulatedReasoning) {
-        const reasoning = reasoningItem([textBlock(accumulatedReasoning)], "full", currentReasoningId);
-        events.push(factory.reasoningCompleted(currentReasoningId));
-        output.push(reasoning);
+      if (hasReasoningStarted && items.isActive(currentReasoningId)) {
+        events.push(items.completeReasoning(currentReasoningId));
       }
 
-      if (hasMessageStarted) {
-        const message = messageItem([textBlock(accumulatedContent)], { id: currentMessageId });
-        events.push(factory.messageCompleted(currentMessageId));
-        output.push(message);
+      if (hasMessageStarted && items.isActive(currentMessageId)) {
+        events.push(items.completeMessage(currentMessageId));
       }
 
       for (const pending of finalizedToolCalls) {
-        const toolCall = toolCallItem(pending.id, pending.name, pending.args);
-        events.push(factory.toolCallCompleted(pending.id));
-        output.push(toolCall);
+        if (items.isActive(pending.id)) {
+          events.push(items.completeToolCall(pending.id));
+        }
       }
 
       const assistantReplayMessage = buildAssistantReplayMessage({
@@ -346,7 +339,6 @@ export class ChatCompletionsAdapter extends HttpAdapterBase {
       });
 
       accumulatedContent = "";
-      accumulatedReasoning = "";
       currentMessageId = "";
       currentReasoningId = "";
       hasMessageStarted = false;
@@ -362,7 +354,7 @@ export class ChatCompletionsAdapter extends HttpAdapterBase {
       assistantReplayMessage: ChatMessage | null,
       rawResponseId: string | undefined,
     ): AsyncIterable<AIStreamEvent> {
-      const replay = [...replayFromOutput(output)];
+      const replay = [...replayFromOutput(items.completedItems())];
       if (assistantReplayMessage) {
         replay.push(
           opaqueItem("chat.completions", "replay", {
@@ -373,7 +365,6 @@ export class ChatCompletionsAdapter extends HttpAdapterBase {
       }
 
       yield* session.complete({
-        output,
         replay,
         stopReason,
         rawResponseId,
@@ -418,80 +409,70 @@ export class ChatCompletionsAdapter extends HttpAdapterBase {
           const finishReason = choice.finish_reason;
           const reasoningDeltas = extractReasoningDeltas(delta);
 
-          const ensureMessageStarted = (): void => {
+          const ensureMessageStarted = function* (): Generator<AIStreamEvent> {
             if (hasMessageStarted) return;
             currentMessageId = `msg-${chunk.id}`;
             hasMessageStarted = true;
             accumulatedContent = "";
+            yield items.startMessage(currentMessageId);
           };
 
           if (reasoningDeltas.length > 0) {
             if (!hasReasoningStarted) {
               currentReasoningId = `reason-${chunk.id}`;
               hasReasoningStarted = true;
-              accumulatedReasoning = "";
-              yield factory.reasoningStarted(currentReasoningId, "full");
+              yield items.startReasoning(currentReasoningId, "full");
             }
 
             for (const reasoningDelta of reasoningDeltas) {
-              accumulatedReasoning += reasoningDelta.text;
               reasoningByField.set(
                 reasoningDelta.field,
                 (reasoningByField.get(reasoningDelta.field) ?? "") + reasoningDelta.text,
               );
-              yield factory.reasoningDelta(currentReasoningId, textBlock(reasoningDelta.text));
+              yield items.deltaReasoning(currentReasoningId, textBlock(reasoningDelta.text));
             }
           }
 
           if (delta.content) {
-            if (!hasMessageStarted) {
-              ensureMessageStarted();
-              yield factory.messageStarted(currentMessageId);
-            }
+            yield* ensureMessageStarted();
             accumulatedContent += delta.content;
-            yield factory.messageDelta(currentMessageId, textBlock(delta.content));
+            yield items.deltaMessage(currentMessageId, textBlock(delta.content));
           }
 
           if (delta.tool_calls) {
-            if (!hasMessageStarted) {
-              ensureMessageStarted();
-              yield factory.messageStarted(currentMessageId);
-            }
+            yield* ensureMessageStarted();
 
             for (const tc of delta.tool_calls) {
               const idx = tc.index;
 
               if (tc.id) {
                 pendingToolCalls.set(idx, { id: tc.id, name: tc.function?.name ?? "", args: "" });
-                yield factory.toolCallStarted(tc.id, tc.function?.name ?? "");
+                yield items.startToolCall(tc.id, tc.function?.name ?? "");
               }
 
               if (tc.function?.arguments) {
                 const pending = pendingToolCalls.get(idx);
                 if (pending) {
                   pending.args += tc.function.arguments;
-                  yield factory.toolCallDelta(pending.id, { argumentsText: tc.function.arguments });
+                  yield items.deltaToolCall(pending.id, { argumentsText: tc.function.arguments });
                 }
               }
             }
           }
 
           if (delta.function_call) {
-            if (!hasMessageStarted) {
-              ensureMessageStarted();
-              yield factory.messageStarted(currentMessageId);
-            }
+            yield* ensureMessageStarted();
 
             if (delta.function_call.name) {
               const fcId = `fc-${chunk.id}-0`;
               pendingToolCalls.set(0, { id: fcId, name: delta.function_call.name, args: "" });
-              yield factory.toolCallStarted(fcId, delta.function_call.name);
+              yield items.startToolCall(fcId, delta.function_call.name);
             }
             if (delta.function_call.arguments) {
               const pending = pendingToolCalls.get(0);
               if (pending) {
                 pending.args += delta.function_call.arguments;
-                yield factory.toolCallDelta(pending.id, { argumentsText: delta.function_call.arguments });
+                yield items.deltaToolCall(pending.id, { argumentsText: delta.function_call.arguments });
               }
             }
           }

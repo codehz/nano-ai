@@ -14,9 +14,6 @@ import { HttpAdapterBase } from "../../provider/http-adapter.js";
 import { AIRequestError, WarningCode } from "../../runtime/errors.js";
 import {
   textBlock,
-  messageItem,
-  reasoningItem,
-  toolCallItem,
   opaqueItem,
   replayFromOutput,
   mapStopReason,
@@ -27,8 +24,9 @@ import { usageFromAnthropicMessages } from "../../provider/usage/index.js";
 import { NormalizedRequestMapper } from "../../provider/request-mapper.js";
 import { createSseJsonParser } from "../../provider/transport/parser.js";
 import { mapMessagesThinking } from "../../provider/reasoning.js";
+import { createStreamingItemSession } from "../../provider/streaming-item-session.js";
 
-import type { NormalizedRequest, AIStreamEvent, OutputItem, ContentBlock } from "../../types/index.js";
+import type { NormalizedRequest, AIStreamEvent, ContentBlock } from "../../types/index.js";
 import type { EventFactory } from "../../stream/event-factory.js";
 
 // ── 类型 ──────────────────────────────────────────────────────
@@ -364,7 +362,7 @@ export class MessagesAdapter extends HttpAdapterBase {
     });
 
     const parser = createSseJsonParser<MessagesSSEEvent>();
-    const output: OutputItem[] = [];
+    const items = createStreamingItemSession(factory);
     let messageResponse: MessagesAPIMessageResponse | undefined;
     let currentContentBlockIndex = -1;
     let currentItemType: "message" | "reasoning" | "tool_call" | null = null;
@@ -423,7 +421,7 @@ export class MessagesAdapter extends HttpAdapterBase {
                 currentItemType = "message";
                 currentItemId = synthesizeItemId("msg", currentContentBlockIndex, rawResponseId);
                 textBuffer = "";
-                yield factory.messageStarted(currentItemId);
+                yield items.startMessage(currentItemId);
                 break;
               }
               case "thinking": {
@@ -431,7 +429,7 @@ export class MessagesAdapter extends HttpAdapterBase {
                 currentItemId = synthesizeItemId("reason", currentContentBlockIndex, rawResponseId);
                 currentThinkingVisibility = "full";
                 thinkingBuffer = "";
-                yield factory.reasoningStarted(currentItemId, "full");
+                yield items.startReasoning(currentItemId, "full");
                 break;
               }
               case "redacted_thinking": {
@@ -439,11 +437,9 @@ export class MessagesAdapter extends HttpAdapterBase {
                 currentItemId = synthesizeItemId("reason-redacted", currentContentBlockIndex, rawResponseId);
                 currentThinkingVisibility = "redacted";
                 const data = (block as unknown as { data: string }).data;
-                yield factory.reasoningStarted(currentItemId, "redacted");
-                yield factory.reasoningDelta(currentItemId, textBlock(data));
-                const redactedItem = reasoningItem([textBlock(data)], "redacted", currentItemId);
-                yield factory.reasoningCompleted(currentItemId);
-                output.push(redactedItem);
+                yield items.startReasoning(currentItemId, "redacted");
+                yield items.deltaReasoning(currentItemId, textBlock(data));
+                yield items.completeReasoning(currentItemId);
                 rawReplayContent.push({ type: "redacted_thinking", data });
                 currentItemType = null;
                 break;
@@ -454,7 +450,7 @@ export class MessagesAdapter extends HttpAdapterBase {
                 currentItemId = tuBlock.id;
                 currentToolName = tuBlock.name;
                 argsBuffer = "";
-                yield factory.toolCallStarted(currentItemId, currentToolName);
+                yield items.startToolCall(currentItemId, currentToolName);
                 break;
               }
             }
@@ -469,7 +465,7 @@ export class MessagesAdapter extends HttpAdapterBase {
                 if (currentItemType === "message" && currentItemId) {
                   const txt = (delta as unknown as { text: string }).text;
                   textBuffer += txt;
-                  yield factory.messageDelta(currentItemId, textBlock(txt));
+                  yield items.deltaMessage(currentItemId, textBlock(txt));
                 }
                 break;
               }
@@ -477,7 +473,7 @@ export class MessagesAdapter extends HttpAdapterBase {
                 if (currentItemType === "reasoning" && currentItemId) {
                   const txt = (delta as unknown as { thinking: string }).thinking;
                   thinkingBuffer += txt;
-                  yield factory.reasoningDelta(currentItemId, textBlock(txt));
+                  yield items.deltaReasoning(currentItemId, textBlock(txt));
                 }
                 break;
               }
@@ -485,7 +481,7 @@ export class MessagesAdapter extends HttpAdapterBase {
                 if (currentItemType === "tool_call" && currentItemId) {
                   const partial = (delta as unknown as { partial_json: string }).partial_json;
                   argsBuffer += partial;
-                  yield factory.toolCallDelta(currentItemId, { argumentsText: partial });
+                  yield items.deltaToolCall(currentItemId, { argumentsText: partial });
                 }
                 break;
               }
@@ -495,17 +491,13 @@ export class MessagesAdapter extends HttpAdapterBase {
 
           case "content_block_stop": {
             if (currentItemType === "message" && currentItemId) {
-              yield factory.messageCompleted(currentItemId);
-              output.push(messageItem([textBlock(textBuffer)], { id: currentItemId }));
+              yield items.completeMessage(currentItemId);
               rawReplayContent.push({ type: "text", text: textBuffer });
             } else if (currentItemType === "reasoning" && currentItemId && currentThinkingVisibility !== "redacted") {
-              yield factory.reasoningCompleted(currentItemId);
-              output.push(reasoningItem([textBlock(thinkingBuffer)], currentThinkingVisibility, currentItemId));
+              yield items.completeReasoning(currentItemId);
               rawReplayContent.push({ type: "thinking", thinking: thinkingBuffer });
             } else if (currentItemType === "tool_call" && currentItemId) {
-              const tcItem = toolCallItem(currentItemId, currentToolName, argsBuffer);
-              yield factory.toolCallCompleted(currentItemId);
-              output.push(tcItem);
+              yield items.completeToolCall(currentItemId);
               rawReplayContent.push({
                 type: "tool_use",
                 id: currentItemId,
@@ -536,7 +528,7 @@ export class MessagesAdapter extends HttpAdapterBase {
       }
     }
 
-    const replay = [...replayFromOutput(output)];
+    const replay = [...replayFromOutput(items.completedItems())];
 
     if (messageResponse) {
       const replayContent = rawReplayContent.length > 0 ? rawReplayContent : messageResponse.content;
@@ -565,7 +557,6 @@ export class MessagesAdapter extends HttpAdapterBase {
 
     yield* session.complete(
       {
-        output,
         replay,
         stopReason: stopReason ? mapStopReason(stopReason) : undefined,
         rawResponseId,

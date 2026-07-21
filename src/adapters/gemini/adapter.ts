@@ -20,15 +20,13 @@ import { HttpAdapterBase } from "../../provider/http-adapter.js";
 import { AIRequestError, WarningCode } from "../../runtime/errors.js";
 import {
   textBlock,
-  messageItem,
-  reasoningItem,
-  toolCallItem,
   opaqueItem,
   replayFromOutput,
   mapStopReason,
   contentBlocksToText,
 } from "../../canonical/index.js";
 import { acceptOpaqueReplay } from "../../provider/opaque-replay.js";
+import { createStreamingItemSession } from "../../provider/streaming-item-session.js";
 import { usageFromGemini } from "../../provider/usage/index.js";
 import { NormalizedRequestMapper } from "../../provider/request-mapper.js";
 import { createChatCompletionsSseParser } from "../../provider/transport/parser.js";
@@ -37,7 +35,6 @@ import { mapGeminiThinking } from "../../provider/reasoning.js";
 import type {
   NormalizedRequest,
   AIStreamEvent,
-  OutputItem,
   StopReason,
   ContentBlock,
 } from "../../types/index.js";
@@ -287,6 +284,7 @@ export class GeminiAdapter extends HttpAdapterBase {
   ): AsyncIterable<AIStreamEvent> {
     const session = this.beginJsonStream(factory, request);
     const { auxiliary, gate } = session;
+    const items = createStreamingItemSession(factory);
 
     if (request.metadata) {
       yield factory.responseWarning(
@@ -306,11 +304,8 @@ export class GeminiAdapter extends HttpAdapterBase {
     });
 
     const parser = createChatCompletionsSseParser<GeminiStreamChunk>();
-    const output: OutputItem[] = [];
 
     let responseId: string | undefined;
-    let accumulatedContent = "";
-    let accumulatedReasoning = "";
     let currentMessageId = "";
     let currentReasoningId = "";
     let hasMessageStarted = false;
@@ -325,31 +320,23 @@ export class GeminiAdapter extends HttpAdapterBase {
       if (hasMessageStarted) return;
       currentMessageId = `msg-${responseId ?? request.requestId}`;
       hasMessageStarted = true;
-      accumulatedContent = "";
-      yield factory.messageStarted(currentMessageId);
+      yield items.startMessage(currentMessageId);
     };
 
     const ensureReasoningStarted = function* (): Generator<AIStreamEvent> {
       if (hasReasoningStarted) return;
       currentReasoningId = `reason-${responseId ?? request.requestId}`;
       hasReasoningStarted = true;
-      accumulatedReasoning = "";
-      yield factory.reasoningStarted(currentReasoningId, "full");
+      yield items.startReasoning(currentReasoningId, "full");
     };
 
     const finalizePendingItems = function* (): Generator<AIStreamEvent> {
-      if (hasReasoningStarted) {
-        yield factory.reasoningCompleted(currentReasoningId);
-        if (accumulatedReasoning) {
-          output.push(reasoningItem([textBlock(accumulatedReasoning)], "full", currentReasoningId));
-        }
+      if (hasReasoningStarted && items.isActive(currentReasoningId)) {
+        yield items.completeReasoning(currentReasoningId);
       }
 
-      if (hasMessageStarted) {
-        yield factory.messageCompleted(currentMessageId);
-        if (accumulatedContent) {
-          output.push(messageItem([textBlock(accumulatedContent)], { id: currentMessageId }));
-        }
+      if (hasMessageStarted && items.isActive(currentMessageId)) {
+        yield items.completeMessage(currentMessageId);
       }
 
       if (pendingToolCalls.length > 1) {
@@ -360,8 +347,9 @@ export class GeminiAdapter extends HttpAdapterBase {
       }
 
       for (const pending of pendingToolCalls) {
-        yield factory.toolCallCompleted(pending.id);
-        output.push(toolCallItem(pending.id, pending.name, pending.argumentsText));
+        if (items.isActive(pending.id)) {
+          yield items.completeToolCall(pending.id);
+        }
       }
     };
 
@@ -377,7 +365,7 @@ export class GeminiAdapter extends HttpAdapterBase {
 
       yield* finalizePendingItems();
 
-      const replay = [...replayFromOutput(output)];
+      const replay = [...replayFromOutput(items.completedItems())];
       if (replayParts.length > 0) {
         replay.push(
           opaqueItem("gemini", "replay", {
@@ -391,7 +379,6 @@ export class GeminiAdapter extends HttpAdapterBase {
       }
 
       yield* session.complete({
-        output,
         replay,
         stopReason: reason,
         rawResponseId,
@@ -450,8 +437,8 @@ export class GeminiAdapter extends HttpAdapterBase {
 
             // functionCall 前若有未完成 message/reasoning，先不 complete，等 finish
             pendingToolCalls.push({ id, name, argumentsText });
-            yield factory.toolCallStarted(id, name);
-            yield factory.toolCallDelta(id, { argumentsText });
+            yield items.startToolCall(id, name);
+            yield items.deltaToolCall(id, { argumentsText });
             continue;
           }
 
@@ -462,12 +449,10 @@ export class GeminiAdapter extends HttpAdapterBase {
 
           if (part.thought) {
             yield* ensureReasoningStarted();
-            accumulatedReasoning += part.text;
-            yield factory.reasoningDelta(currentReasoningId, textBlock(part.text));
+            yield items.deltaReasoning(currentReasoningId, textBlock(part.text));
           } else {
             yield* ensureMessageStarted();
-            accumulatedContent += part.text;
-            yield factory.messageDelta(currentMessageId, textBlock(part.text));
+            yield items.deltaMessage(currentMessageId, textBlock(part.text));
           }
         }
 

@@ -184,25 +184,16 @@ describe("AdapterBase", () => {
       yield factory.messageCompleted("m1");
 
       const output = [messageItem([textBlock("Hello world")], { id: "m1" })];
-      const resp = this.buildResponse(
+      const payload = this.buildCompletedPayload(
         request,
         {
-          output,
           replay: output,
           stopReason: "end_turn",
           usage: { inputTokens: 5, outputTokens: 2 },
         },
         factory,
       );
-      yield factory.responseCompleted({
-        replay: resp.replay,
-        stopReason: resp.stopReason,
-        usage: resp.usage,
-        billing: resp.billing,
-        auxiliary: resp.auxiliary,
-        warnings: resp.warnings,
-        trace: resp.backend,
-      });
+      yield factory.responseCompleted(payload);
     }
   }
 
@@ -349,16 +340,7 @@ describe("AdapterBase", () => {
         factory: EventFactory,
         request: NormalizedRequest,
       ): AsyncIterable<AIStreamEvent> {
-        const resp = this.buildResponse(request, { output: [], replay: [] }, factory);
-        yield factory.responseCompleted({
-          replay: resp.replay,
-          stopReason: resp.stopReason,
-          usage: resp.usage,
-          billing: resp.billing,
-          auxiliary: resp.auxiliary,
-          warnings: resp.warnings,
-          trace: resp.backend,
-        });
+        yield factory.responseCompleted(this.buildCompletedPayload(request, { replay: [] }, factory));
       }
     }
     const adapter = new EmptyAdapter();
