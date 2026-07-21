@@ -54,6 +54,10 @@ export type SyntheticStreamOptions = {
 /**
  * 将已解析的 output items 包装为完整规范事件流。
  *
+ * 大块 E（事件权威）：这是「已知 items → 事件」的合成入口，不是第二套 output 账本。
+ * 消费者完整 AIResponse 仍应由 collectStream / aggregator 从事件构建；
+ * 本函数仅按入参 `output` 发 item 事件，并在 response.completed 提供 replay 元数据。
+ *
  * 用法示例（在 adapter 的 runStream 中）：
  * ```ts
  * const result = parseNonStreamingResponse(data);
