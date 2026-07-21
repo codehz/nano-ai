@@ -1311,13 +1311,12 @@ describe("A contract error-path smoke", () => {
   });
 
   /**
-   * A→C：ollama emitCompleted 对 tool arguments 使用裸 JSON.parse。
-   * 输入路径非法 JSON 已由上条 TOOL_CALL_ARGUMENTS_INVALID 钉死；
-   * 流式侧若出现非法 argumentsText，正确语义应为 AI* 错误而非原生 SyntaxError。
-   * 正常 NDJSON fixture 经 JSON.stringify 再 parse，难以在不改生产代码时直接触发流内红路径。
+   * A→C：ollama emitCompleted 经 safeParseToolArgumentsObject 保护，
+   * 非法 argumentsText 回退 {}，不泄原生 SyntaxError。
+   * 入站 tool_call 仍走严格 parseToolArguments（上条 AIRequestError）。
    */
-  it("A→C opaque: ollama documents native JSON.parse risk on emitCompleted tool_calls", () => {
-    // 回归入口：src/adapters/ollama/adapter.ts emitCompleted 内 JSON.parse(tc.argumentsText)
+  it("A→C opaque: ollama emitCompleted safely parses tool_call argumentsText", () => {
+    // 回归入口：src/adapters/ollama/adapter.ts safeParseToolArgumentsObject
     expect(true).toBe(true);
   });
 });

@@ -699,6 +699,64 @@ describe("ChatCompletionsAdapter - request building", () => {
     expect(messages).toEqual([{ role: "assistant", content: "答案", reasoning_content: "先思考" }]);
   });
 
+  it("should rollback trailing assistant for single-assistant opaque payload", async () => {
+    const { captured, fetch } = captureRequest();
+    const adapter = new ChatCompletionsAdapter({ apiKey: "test-key", fetch });
+
+    await collectStream(
+      adapter.stream(
+        makeRequest({
+          input: [
+            {
+              type: "message" as const,
+              role: "assistant" as const,
+              content: [{ type: "text" as const, text: "canonical" }],
+            },
+            {
+              type: "opaque" as const,
+              source: "chat.completions" as const,
+              purpose: "replay" as const,
+              payload: { role: "assistant", content: "opaque-only" },
+            },
+          ],
+        }),
+      ),
+    );
+
+    const body = captured.current as Record<string, unknown> | null;
+    expect(body?.messages).toEqual([{ role: "assistant", content: "opaque-only" }]);
+  });
+
+  it("should rollback trailing assistant for bare messages opaque payload", async () => {
+    const { captured, fetch } = captureRequest();
+    const adapter = new ChatCompletionsAdapter({ apiKey: "test-key", fetch });
+
+    await collectStream(
+      adapter.stream(
+        makeRequest({
+          input: [
+            {
+              type: "message" as const,
+              role: "assistant" as const,
+              content: [{ type: "text" as const, text: "canonical" }],
+            },
+            {
+              type: "opaque" as const,
+              source: "chat.completions" as const,
+              purpose: "replay" as const,
+              payload: {
+                messages: [{ role: "assistant", content: "from-messages" }],
+              },
+            },
+          ],
+        }),
+      ),
+    );
+
+    const body = captured.current as Record<string, unknown> | null;
+    expect(body?.messages).toEqual([{ role: "assistant", content: "from-messages" }]);
+  });
+
   it("should round-trip tool_call replay into the next chat request", async () => {
     const round1Chunks = [
       'data: {"id":"chatcmpl-tool-loop","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}\n',
