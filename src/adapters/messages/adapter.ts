@@ -22,7 +22,7 @@ import {
   mapStopReason,
   contentBlocksToText,
 } from "../../canonical/index.js";
-import { assertOpaqueReplayEnvelope } from "../../provider/security.js";
+import { acceptOpaqueReplay } from "../../provider/opaque-replay.js";
 import { usageFromAnthropicMessages } from "../../provider/usage/index.js";
 import { NormalizedRequestMapper } from "../../provider/request-mapper.js";
 import { createSseJsonParser } from "../../provider/transport/parser.js";
@@ -304,10 +304,9 @@ export class MessagesAdapter extends AdapterBase {
           break;
         }
         case "opaque": {
-          // 尝试从 opaque replay item 中提取 assistant message
-          if (item.source !== "messages" || item.purpose !== "replay") break;
-          assertOpaqueReplayEnvelope(item.payload);
-          const payload = item.payload as Record<string, unknown>;
+          // assistant opaque 始终 replace 尾部（与 replaceCanonical 语义一致）
+          const payload = acceptOpaqueReplay(item, "messages");
+          if (!payload) break;
           if (payload.role === "assistant" && "content" in payload) {
             assertMessagesReplayContent(payload.content);
             mapper.rollbackTrailingAssistantMessages(messages);

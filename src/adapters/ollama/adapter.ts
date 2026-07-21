@@ -26,7 +26,7 @@ import {
   mapStopReason,
   contentBlocksToText,
 } from "../../canonical/index.js";
-import { assertOpaqueReplayEnvelope } from "../../provider/security.js";
+import { acceptOpaqueReplay } from "../../provider/opaque-replay.js";
 import { usageFromOllama } from "../../provider/usage/index.js";
 import { NormalizedRequestMapper } from "../../provider/request-mapper.js";
 import { createNdjsonLineParser } from "../../provider/transport/parser.js";
@@ -99,6 +99,19 @@ function toWireOllamaToolCalls(toolCalls: OllamaReplayToolCall[]): OllamaToolCal
       arguments: tc.function.arguments,
     },
   }));
+}
+
+/** opaque emit 用：非法 JSON 回退 {}，不泄原生 SyntaxError。 */
+function safeParseToolArgumentsObject(text: string): Record<string, unknown> {
+  try {
+    const parsed: unknown = JSON.parse(text);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>;
+    }
+  } catch {
+    // fall through
+  }
+  return {};
 }
 
 // ── Adapter ───────────────────────────────────────────────────
@@ -187,9 +200,8 @@ export class OllamaAdapter extends AdapterBase {
         }
         case "opaque": {
           // Best-effort restore from opaque replay (local ids stripped before wire)
-          if (item.source !== "ollama" || item.purpose !== "replay") break;
-          assertOpaqueReplayEnvelope(item.payload);
-          const payload = item.payload as Record<string, unknown>;
+          const payload = acceptOpaqueReplay(item, "ollama");
+          if (!payload) break;
           if (payload.role === "assistant" && typeof payload.content === "string") {
             mapper.rollbackTrailingAssistantMessages(messages);
             let replayToolCalls: OllamaReplayToolCall[] | undefined;
@@ -333,7 +345,7 @@ export class OllamaAdapter extends AdapterBase {
             content: accumulatedContent,
             tool_calls: pendingToolCalls.map((tc) => ({
               id: tc.id,
-              function: { name: tc.name, arguments: JSON.parse(tc.argumentsText) as Record<string, unknown> },
+              function: { name: tc.name, arguments: safeParseToolArgumentsObject(tc.argumentsText) },
             })),
           }),
         );

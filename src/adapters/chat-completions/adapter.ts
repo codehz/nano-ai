@@ -19,7 +19,7 @@ import {
   replayFromOutput,
   mapStopReason,
 } from "../../canonical/index.js";
-import { assertOpaqueReplayEnvelope } from "../../provider/security.js";
+import { acceptOpaqueReplay } from "../../provider/opaque-replay.js";
 import { usageFromChatCompletions } from "../../provider/usage/index.js";
 import { NormalizedRequestMapper } from "../../provider/request-mapper.js";
 import { createChatCompletionsSseParser } from "../../provider/transport/parser.js";
@@ -239,11 +239,10 @@ export class ChatCompletionsAdapter extends AdapterBase {
           break;
         }
         case "opaque": {
-          // Try to restore from opaque replay
-          if (item.source !== "chat.completions" || item.purpose !== "replay") break;
-          assertOpaqueReplayEnvelope(item.payload);
-          const payload = item.payload as Record<string, unknown>;
+          const payload = acceptOpaqueReplay(item, "chat.completions");
+          if (!payload) break;
           if (payload.role === "assistant" && typeof payload.content === "string") {
+            mapper.rollbackTrailingAssistantMessages(messages);
             messages.push({ role: "assistant", content: payload.content });
           } else if (payload.replaceCanonical === true && "messages" in payload) {
             assertChatReplayMessages(payload.messages, "messages");
@@ -253,6 +252,7 @@ export class ChatCompletionsAdapter extends AdapterBase {
             }
           } else if ("messages" in payload) {
             assertChatReplayMessages(payload.messages, "messages");
+            mapper.rollbackTrailingAssistantMessages(messages);
             for (const m of payload.messages) {
               messages.push(m);
             }

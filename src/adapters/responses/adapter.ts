@@ -24,7 +24,7 @@ import {
   serverToolDiscoveryItem,
   replayFromOutput,
 } from "../../canonical/index.js";
-import { assertOpaqueReplayEnvelope } from "../../provider/security.js";
+import { acceptOpaqueReplay } from "../../provider/opaque-replay.js";
 import { usageFromOpenAIResponses } from "../../provider/usage/index.js";
 import { NormalizedRequestMapper } from "../../provider/request-mapper.js";
 import { createSseJsonParser } from "../../provider/transport/parser.js";
@@ -643,10 +643,9 @@ export class ResponsesAdapter extends AdapterBase {
         }
         case "opaque": {
           // Canonical replay 优先；否则用 previous_response_id 做服务端续写。
-          // 注意：response id 不能塞进 item_reference（那是 item id）。
-          if (item.source !== "responses" || item.purpose !== "replay") break;
-          assertOpaqueReplayEnvelope(item.payload);
-          const payload = item.payload as Record<string, unknown>;
+          // 注意：response id 不能塞进 item_reference（那是 item id）；不叠 wire assistant。
+          const payload = acceptOpaqueReplay(item, "responses");
+          if (!payload) break;
 
           // 显式字段校验：id / previous_response_id / item_id 若存在必须是合法 string
           for (const key of ["id", "previous_response_id", "item_id"] as const) {

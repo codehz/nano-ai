@@ -28,7 +28,7 @@ import {
   mapStopReason,
   contentBlocksToText,
 } from "../../canonical/index.js";
-import { assertOpaqueReplayEnvelope } from "../../provider/security.js";
+import { acceptOpaqueReplay } from "../../provider/opaque-replay.js";
 import { usageFromGemini } from "../../provider/usage/index.js";
 import { NormalizedRequestMapper } from "../../provider/request-mapper.js";
 import { createChatCompletionsSseParser } from "../../provider/transport/parser.js";
@@ -231,20 +231,14 @@ export class GeminiAdapter extends AdapterBase {
           break;
         }
         case "opaque": {
-          if (item.source !== "gemini" || item.purpose !== "replay") break;
-          assertOpaqueReplayEnvelope(item.payload);
-          const payload = item.payload as Record<string, unknown>;
+          const payload = acceptOpaqueReplay(item, "gemini");
+          if (!payload) break;
           if (payload.replaceCanonical === true && "content" in payload) {
             assertGeminiReplayContent(payload.content, "content");
-            // 回放完整 model turn：去掉尾部 model，避免与 canonical assistant 重复
-            while (contents.length > 0 && contents[contents.length - 1]?.role === "model") {
-              contents.pop();
-            }
+            mapper.rollbackTrailingAssistantMessages(contents, "model");
             contents.push(cloneContent(payload.content));
           } else if (isGeminiContent(payload)) {
-            while (contents.length > 0 && contents[contents.length - 1]?.role === "model") {
-              contents.pop();
-            }
+            mapper.rollbackTrailingAssistantMessages(contents, "model");
             contents.push(cloneContent(payload));
           }
           break;
