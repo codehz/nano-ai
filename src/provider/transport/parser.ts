@@ -150,8 +150,11 @@ export function createSseJsonParser<T extends SseJsonEvent = SseJsonEvent>(): In
   return new IncrementalStreamParser(splitSSEFrames, (frame) => parseSseJsonFrame(frame) as StreamParseResult<T>);
 }
 
-/** OpenAI Chat Completions 简化 SSE：仅 `data: ...` 行，忽略 `[DONE]`。 */
-export function parseChatCompletionsDataLine(item: string): StreamParseResult<unknown> {
+/**
+ * 简化 SSE：仅 `data: ...` 行，忽略 `[DONE]`。
+ * 供 Chat Completions / Gemini alt=sse 等 data-line 形态共用。
+ */
+export function parseDataLineSse(item: string): StreamParseResult<unknown> {
   const trimmed = item.trim();
   if (!trimmed.startsWith("data: ")) return { status: "ignored" };
   const data = trimmed.slice(6).trim();
@@ -163,8 +166,21 @@ export function parseChatCompletionsDataLine(item: string): StreamParseResult<un
   }
 }
 
+/** Chat Completions 别名；逻辑与 `parseDataLineSse` 相同。 */
+export const parseChatCompletionsDataLine = parseDataLineSse;
+
+export function createDataLineSseParser<T>(): IncrementalStreamParser<T> {
+  return new IncrementalStreamParser(splitLines, (item) => parseDataLineSse(item) as StreamParseResult<T>);
+}
+
+/** Chat Completions data-line SSE parser. */
 export function createChatCompletionsSseParser<T>(): IncrementalStreamParser<T> {
-  return new IncrementalStreamParser(splitLines, (item) => parseChatCompletionsDataLine(item) as StreamParseResult<T>);
+  return createDataLineSseParser<T>();
+}
+
+/** Gemini streamGenerateContent `alt=sse` data-line parser. */
+export function createGeminiSseParser<T>(): IncrementalStreamParser<T> {
+  return createDataLineSseParser<T>();
 }
 
 /** NDJSON 行解析（Ollama 等）：空行忽略，JSON 失败为 malformed。 */

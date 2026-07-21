@@ -29,7 +29,7 @@ import { acceptOpaqueReplay } from "../../provider/opaque-replay.js";
 import { createStreamingItemSession } from "../../provider/streaming-item-session.js";
 import { usageFromGemini } from "../../provider/usage/index.js";
 import { NormalizedRequestMapper } from "../../provider/request-mapper.js";
-import { createChatCompletionsSseParser } from "../../provider/transport/parser.js";
+import { createGeminiSseParser } from "../../provider/transport/parser.js";
 import { mapGeminiThinking } from "../../provider/reasoning.js";
 
 import type {
@@ -303,7 +303,7 @@ export class GeminiAdapter extends HttpAdapterBase {
       body: providerRequest,
     });
 
-    const parser = createChatCompletionsSseParser<GeminiStreamChunk>();
+    const parser = createGeminiSseParser<GeminiStreamChunk>();
 
     let responseId: string | undefined;
     let currentMessageId = "";

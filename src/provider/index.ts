@@ -41,8 +41,11 @@ export {
   splitSSEFrames,
   parseSseJsonFrame,
   createSseJsonParser,
+  parseDataLineSse,
   parseChatCompletionsDataLine,
+  createDataLineSseParser,
   createChatCompletionsSseParser,
+  createGeminiSseParser,
   createNdjsonLineParser,
 } from "./transport/parser.js";
 export type { StreamSplitResult, StreamParseResult, SseJsonEvent } from "./transport/parser.js";
