@@ -2,17 +2,11 @@
  * ResponsesAdapter wire / options 类型
  */
 
-import type { FetchFn } from "../../types/index.js";
+import type { HttpAdapterOptions } from "../../provider/http-adapter.js";
 
-export type ResponsesAdapterOptions = {
+/** apiKey 必填；默认 baseUrl https://api.openai.com/v1 */
+export type ResponsesAdapterOptions = HttpAdapterOptions & {
   apiKey: string;
-  baseUrl?: string;
-  /** 可注入自定义 fetch 实现（用于测试／代理） */
-  fetch?: FetchFn;
-  /** 额外请求头；后写覆盖内置 Authorization / Content-Type */
-  headers?: Record<string, string>;
-  /** 额外 body 顶层字段；浅层合并，同名键可覆盖 */
-  extraBody?: Record<string, unknown>;
 };
 
 // ── Responses API 请求类型（对齐 OpenAI Responses schema）────

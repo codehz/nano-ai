@@ -10,7 +10,7 @@
  * - 能力降级 warning
  */
 
-import { AdapterBase } from "../../provider/base.js";
+import { HttpAdapterBase } from "../../provider/http-adapter.js";
 import { AIRequestError, WarningCode } from "../../runtime/errors.js";
 import {
   textBlock,
@@ -31,10 +31,9 @@ import {
   iterateProviderStreamBatches,
   createCompletionGate,
 } from "../../provider/transport/open-stream.js";
-import { mergeProviderHeaders, applyExtraBody } from "../../provider/request-options.js";
 import { mapMessagesThinking } from "../../provider/reasoning.js";
 
-import type { NormalizedRequest, AIStreamEvent, OutputItem, FetchFn, ContentBlock } from "../../types/index.js";
+import type { NormalizedRequest, AIStreamEvent, OutputItem, ContentBlock } from "../../types/index.js";
 import type { EventFactory } from "../../stream/event-factory.js";
 
 // ── 类型 ──────────────────────────────────────────────────────
@@ -206,25 +205,15 @@ function buildStreamMetadata(options: {
 
 // ── Adapter ───────────────────────────────────────────────────
 
-export class MessagesAdapter extends AdapterBase {
+export class MessagesAdapter extends HttpAdapterBase {
   readonly kind = "messages" as const;
   readonly isSyntheticStream = false;
 
-  private apiKey: string;
   private apiVersion: string;
-  private baseUrl: string;
-  private fetchFn: FetchFn;
-  private headers: Record<string, string> | undefined;
-  private extraBody: Record<string, unknown> | undefined;
 
   constructor(options: MessagesAdapterOptions) {
-    super();
-    this.apiKey = options.apiKey;
+    super(options, { baseUrl: "https://api.anthropic.com/v1" });
     this.apiVersion = options.apiVersion ?? "2023-06-01";
-    this.baseUrl = options.baseUrl ?? "https://api.anthropic.com/v1";
-    this.fetchFn = options.fetch ?? globalThis.fetch;
-    this.headers = options.headers;
-    this.extraBody = options.extraBody;
   }
 
   // ── buildRequest ──────────────────────────────────────────
@@ -349,7 +338,7 @@ export class MessagesAdapter extends AdapterBase {
       body.thinking = mapMessagesThinking(request.reasoningLevel, body.max_tokens);
     }
 
-    return applyExtraBody(body, this.extraBody);
+    return this.withExtraBody(body);
   }
 
   // ── runStream ─────────────────────────────────────────────
@@ -372,14 +361,11 @@ export class MessagesAdapter extends AdapterBase {
     const { reader, headers } = await openProviderJsonStream({
       fetchFn: this.fetchFn,
       url: `${this.baseUrl}/messages`,
-      headers: mergeProviderHeaders(
-        {
-          "Content-Type": "application/json",
-          "x-api-key": this.apiKey,
-          "anthropic-version": this.apiVersion,
-        },
-        this.headers,
-      ),
+      headers: this.mergeHeaders({
+        "Content-Type": "application/json",
+        "x-api-key": this.apiKey ?? "",
+        "anthropic-version": this.apiVersion,
+      }),
       body: providerRequest,
       signal: request.signal,
     });

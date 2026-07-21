@@ -2,20 +2,12 @@
  * OllamaAdapter wire / options 类型
  */
 
-import type { FetchFn } from "../../types/index.js";
+import type { HttpAdapterOptions } from "../../provider/http-adapter.js";
 
-export type OllamaAdapterOptions = {
-  /** Ollama 服务地址，默认 http://localhost:11434 */
-  baseUrl?: string;
-  /** 可选 API key（用于需要认证的代理场景） */
-  apiKey?: string;
-  /** 可注入自定义 fetch 实现 */
-  fetch?: FetchFn;
-  /** 额外请求头；后写覆盖内置 Content-Type / Authorization */
-  headers?: Record<string, string>;
-  /** 额外 body 顶层字段；浅层合并，同名键可覆盖 */
-  extraBody?: Record<string, unknown>;
-};
+/**
+ * apiKey 可选（代理鉴权）；默认 baseUrl http://localhost:11434
+ */
+export type OllamaAdapterOptions = HttpAdapterOptions;
 
 // ── Ollama Chat API 类型 ──────────────────────────────────────
 

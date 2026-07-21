@@ -16,7 +16,7 @@
  * - tool_call 不保证逐 token 流式
  */
 
-import { AdapterBase } from "../../provider/base.js";
+import { HttpAdapterBase } from "../../provider/http-adapter.js";
 import { AIRequestError, WarningCode } from "../../runtime/errors.js";
 import {
   textBlock,
@@ -37,14 +37,12 @@ import {
   iterateProviderStreamBatches,
   createCompletionGate,
 } from "../../provider/transport/open-stream.js";
-import { mergeProviderHeaders, applyExtraBody } from "../../provider/request-options.js";
 import { mapGeminiThinking } from "../../provider/reasoning.js";
 
 import type {
   NormalizedRequest,
   AIStreamEvent,
   OutputItem,
-  FetchFn,
   StopReason,
   ContentBlock,
 } from "../../types/index.js";
@@ -148,23 +146,12 @@ function mergeModelParts(base: GeminiPart[], incoming: GeminiPart[]): GeminiPart
 
 // ── Adapter ───────────────────────────────────────────────────
 
-export class GeminiAdapter extends AdapterBase {
+export class GeminiAdapter extends HttpAdapterBase {
   readonly kind = "gemini" as const;
   readonly isSyntheticStream = false;
 
-  private apiKey: string;
-  private baseUrl: string;
-  private fetchFn: FetchFn;
-  private headers: Record<string, string> | undefined;
-  private extraBody: Record<string, unknown> | undefined;
-
   constructor(options: GeminiAdapterOptions) {
-    super();
-    this.apiKey = options.apiKey;
-    this.baseUrl = options.baseUrl ?? "https://generativelanguage.googleapis.com/v1beta";
-    this.fetchFn = options.fetch ?? globalThis.fetch;
-    this.headers = options.headers;
-    this.extraBody = options.extraBody;
+    super(options, { baseUrl: "https://generativelanguage.googleapis.com/v1beta" });
   }
 
   // ── buildRequest ──────────────────────────────────────────
@@ -293,7 +280,7 @@ export class GeminiAdapter extends AdapterBase {
       body.generationConfig = generationConfig;
     }
 
-    return applyExtraBody(body, this.extraBody);
+    return this.withExtraBody(body);
   }
 
   // ── runStream ─────────────────────────────────────────────
@@ -317,13 +304,10 @@ export class GeminiAdapter extends AdapterBase {
     const { reader } = await openProviderJsonStream({
       fetchFn: this.fetchFn,
       url: `${this.baseUrl}/models/${modelPath}:streamGenerateContent?alt=sse`,
-      headers: mergeProviderHeaders(
-        {
-          "Content-Type": "application/json",
-          "x-goog-api-key": this.apiKey,
-        },
-        this.headers,
-      ),
+      headers: this.mergeHeaders({
+        "Content-Type": "application/json",
+        "x-goog-api-key": this.apiKey ?? "",
+      }),
       body: providerRequest,
       signal: request.signal,
     });

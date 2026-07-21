@@ -2,17 +2,11 @@
  * GeminiAdapter wire / options 类型
  */
 
-import type { FetchFn } from "../../types/index.js";
+import type { HttpAdapterOptions } from "../../provider/http-adapter.js";
 
-export type GeminiAdapterOptions = {
+/** apiKey 必填；默认 baseUrl https://generativelanguage.googleapis.com/v1beta */
+export type GeminiAdapterOptions = HttpAdapterOptions & {
   apiKey: string;
-  /** 默认 https://generativelanguage.googleapis.com/v1beta */
-  baseUrl?: string;
-  fetch?: FetchFn;
-  /** 额外请求头；后写覆盖内置 x-goog-api-key / Content-Type */
-  headers?: Record<string, string>;
-  /** 额外 body 顶层字段；浅层合并，同名键可覆盖 */
-  extraBody?: Record<string, unknown>;
 };
 
 // ── Gemini wire 类型 ──────────────────────────────────────────

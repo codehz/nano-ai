@@ -8,7 +8,7 @@
  * - replay fidelity 依赖 provider 是否暴露可回放的 assistant turn 字段
  */
 
-import { AdapterBase } from "../../provider/base.js";
+import { HttpAdapterBase } from "../../provider/http-adapter.js";
 import { AIRequestError, WarningCode } from "../../runtime/errors.js";
 import {
   textBlock,
@@ -28,10 +28,9 @@ import {
   iterateProviderStreamBatches,
   createCompletionGate,
 } from "../../provider/transport/open-stream.js";
-import { mergeProviderHeaders, applyExtraBody } from "../../provider/request-options.js";
 import { mapChatCompletionsReasoningEffort } from "../../provider/reasoning.js";
 
-import type { NormalizedRequest, AIStreamEvent, OutputItem, FetchFn, StopReason } from "../../types/index.js";
+import type { NormalizedRequest, AIStreamEvent, OutputItem, StopReason } from "../../types/index.js";
 import type { EventFactory } from "../../stream/event-factory.js";
 
 // ── 类型 ──────────────────────────────────────────────────────
@@ -163,23 +162,12 @@ function buildAssistantReplayMessage(params: {
 
 // ── Adapter ───────────────────────────────────────────────────
 
-export class ChatCompletionsAdapter extends AdapterBase {
+export class ChatCompletionsAdapter extends HttpAdapterBase {
   readonly kind = "chat-completions" as const;
   readonly isSyntheticStream = false;
 
-  private apiKey: string;
-  private baseUrl: string;
-  private fetchFn: FetchFn;
-  private headers: Record<string, string> | undefined;
-  private extraBody: Record<string, unknown> | undefined;
-
   constructor(options: ChatCompletionsAdapterOptions) {
-    super();
-    this.apiKey = options.apiKey;
-    this.baseUrl = options.baseUrl ?? "https://api.openai.com/v1";
-    this.fetchFn = options.fetch ?? globalThis.fetch;
-    this.headers = options.headers;
-    this.extraBody = options.extraBody;
+    super(options, { baseUrl: "https://api.openai.com/v1" });
   }
 
   // ── buildRequest ──────────────────────────────────────────
@@ -294,7 +282,7 @@ export class ChatCompletionsAdapter extends AdapterBase {
       body.reasoning_effort = mapChatCompletionsReasoningEffort(request.reasoningLevel);
     }
 
-    return applyExtraBody(body, this.extraBody);
+    return this.withExtraBody(body);
   }
 
   // ── runStream ─────────────────────────────────────────────
@@ -310,13 +298,10 @@ export class ChatCompletionsAdapter extends AdapterBase {
     const { reader } = await openProviderJsonStream({
       fetchFn: this.fetchFn,
       url: `${this.baseUrl}/chat/completions`,
-      headers: mergeProviderHeaders(
-        {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${this.apiKey}`,
-        },
-        this.headers,
-      ),
+      headers: this.mergeHeaders({
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${this.apiKey}`,
+      }),
       body: providerRequest,
       signal: request.signal,
     });

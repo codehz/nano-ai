@@ -15,7 +15,7 @@
  * - replay 保真度低（无 opaque continuation 机制）
  */
 
-import { AdapterBase } from "../../provider/base.js";
+import { HttpAdapterBase } from "../../provider/http-adapter.js";
 import { AIRequestError, WarningCode } from "../../runtime/errors.js";
 import {
   textBlock,
@@ -35,10 +35,9 @@ import {
   iterateProviderStreamBatches,
   createCompletionGate,
 } from "../../provider/transport/open-stream.js";
-import { mergeProviderHeaders, applyExtraBody } from "../../provider/request-options.js";
 import { mapOllamaThink } from "../../provider/reasoning.js";
 
-import type { NormalizedRequest, AIStreamEvent, OutputItem, FetchFn, StopReason } from "../../types/index.js";
+import type { NormalizedRequest, AIStreamEvent, OutputItem, StopReason } from "../../types/index.js";
 import type { EventFactory } from "../../stream/event-factory.js";
 
 // ── 选项类型 ──────────────────────────────────────────────────
@@ -116,23 +115,12 @@ function safeParseToolArgumentsObject(text: string): Record<string, unknown> {
 
 // ── Adapter ───────────────────────────────────────────────────
 
-export class OllamaAdapter extends AdapterBase {
+export class OllamaAdapter extends HttpAdapterBase {
   readonly kind = "ollama" as const;
   readonly isSyntheticStream = false;
 
-  private baseUrl: string;
-  private apiKey: string | undefined;
-  private fetchFn: FetchFn;
-  private headers: Record<string, string> | undefined;
-  private extraBody: Record<string, unknown> | undefined;
-
   constructor(options: OllamaAdapterOptions = {}) {
-    super();
-    this.baseUrl = options.baseUrl ?? "http://localhost:11434";
-    this.apiKey = options.apiKey;
-    this.fetchFn = options.fetch ?? globalThis.fetch;
-    this.headers = options.headers;
-    this.extraBody = options.extraBody;
+    super(options, { baseUrl: "http://localhost:11434" });
   }
 
   // ── buildRequest ──────────────────────────────────────────
@@ -272,7 +260,7 @@ export class OllamaAdapter extends AdapterBase {
       body.think = mapOllamaThink(request.reasoningLevel);
     }
 
-    return applyExtraBody(body, this.extraBody);
+    return this.withExtraBody(body);
   }
 
   // ── runStream ─────────────────────────────────────────────
@@ -310,7 +298,7 @@ export class OllamaAdapter extends AdapterBase {
     const { reader } = await openProviderJsonStream({
       fetchFn: this.fetchFn,
       url: `${this.baseUrl}/api/chat`,
-      headers: mergeProviderHeaders(headers, this.headers),
+      headers: this.mergeHeaders(headers),
       body: providerRequest,
       signal: request.signal,
     });

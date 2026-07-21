@@ -9,7 +9,7 @@
  * 支持消息流 / reasoning 流 / tool_call 流及高保真 replay。
  */
 
-import { AdapterBase } from "../../provider/base.js";
+import { HttpAdapterBase } from "../../provider/http-adapter.js";
 import { AIRequestError, WarningCode } from "../../runtime/errors.js";
 import {
   textBlock,
@@ -33,7 +33,6 @@ import {
   iterateProviderStreamBatches,
   createCompletionGate,
 } from "../../provider/transport/open-stream.js";
-import { mergeProviderHeaders, applyExtraBody } from "../../provider/request-options.js";
 import { mapResponsesReasoning } from "../../provider/reasoning.js";
 
 import type {
@@ -41,7 +40,6 @@ import type {
   AIStreamEvent,
   Citation,
   ContentBlock,
-  FetchFn,
   OutputItem,
   ReasoningItem,
   ServerToolCallItem,
@@ -580,23 +578,12 @@ function extractOpaqueContinuationId(payload: Record<string, unknown>): {
 
 // ── Adapter ───────────────────────────────────────────────────
 
-export class ResponsesAdapter extends AdapterBase {
+export class ResponsesAdapter extends HttpAdapterBase {
   readonly kind = "responses" as const;
   readonly isSyntheticStream = false;
 
-  private apiKey: string;
-  private baseUrl: string;
-  private fetchFn: FetchFn;
-  private headers: Record<string, string> | undefined;
-  private extraBody: Record<string, unknown> | undefined;
-
   constructor(options: ResponsesAdapterOptions) {
-    super();
-    this.apiKey = options.apiKey;
-    this.baseUrl = options.baseUrl ?? "https://api.openai.com/v1";
-    this.fetchFn = options.fetch ?? globalThis.fetch;
-    this.headers = options.headers;
-    this.extraBody = options.extraBody;
+    super(options, { baseUrl: "https://api.openai.com/v1" });
   }
 
   // ── buildRequest ──────────────────────────────────────────
@@ -719,7 +706,7 @@ export class ResponsesAdapter extends AdapterBase {
       body.reasoning = mapResponsesReasoning(request.reasoningLevel);
     }
 
-    return applyExtraBody(body, this.extraBody);
+    return this.withExtraBody(body);
   }
 
   // ── runStream ─────────────────────────────────────────────
@@ -735,13 +722,10 @@ export class ResponsesAdapter extends AdapterBase {
     const { reader } = await openProviderJsonStream({
       fetchFn: this.fetchFn,
       url: `${this.baseUrl}/responses`,
-      headers: mergeProviderHeaders(
-        {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${this.apiKey}`,
-        },
-        this.headers,
-      ),
+      headers: this.mergeHeaders({
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${this.apiKey}`,
+      }),
       body: providerRequest,
       signal: request.signal,
     });
