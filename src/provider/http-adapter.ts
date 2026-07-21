@@ -4,13 +4,19 @@
  * 收敛五家真实后端 adapter 的：
  * - apiKey / baseUrl / fetch / headers / extraBody 字段赋值
  * - 默认 baseUrl 解析
+ * - beginJsonStream：open → batches → complete session
  *
  * 应用代码应只实现 BackendAdapter；勿依赖本内部基类。
  */
 
 import { AdapterBase } from "./base.js";
 import { applyExtraBody, mergeProviderHeaders } from "./request-options.js";
-import type { FetchFn } from "../types/index.js";
+import {
+  createProviderJsonStreamSession,
+  type ProviderJsonStreamSession,
+} from "./transport/run-json-stream.js";
+import type { FetchFn, NormalizedRequest } from "../types/index.js";
+import type { EventFactory } from "../stream/event-factory.js";
 
 /** 真实 HTTP adapter 的公共构造选项；apiKey 由各 adapter 收紧或保持可选。 */
 export type HttpAdapterOptions = {
@@ -29,8 +35,7 @@ export type HttpAdapterDefaults = {
 };
 
 /**
- * HTTP adapter 薄基类：统一字段与默认值。
- * stream session 脚手架见 beginJsonStream（阶段 2 接入）。
+ * HTTP adapter 薄基类：统一字段、默认值与 JSON 流 session。
  */
 export abstract class HttpAdapterBase extends AdapterBase {
   protected apiKey: string | undefined;
@@ -56,5 +61,20 @@ export abstract class HttpAdapterBase extends AdapterBase {
   /** 将构造期 extraBody 浅层合并进已构建 body。 */
   protected withExtraBody<T extends object>(body: T): T {
     return applyExtraBody(body, this.extraBody);
+  }
+
+  /**
+   * 开启 JSON provider 流 session（auxiliary + gate + open/batches/complete）。
+   * 不自动 complete；调用方在业务 finish 点 `yield* session.complete(...)`。
+   */
+  protected beginJsonStream(factory: EventFactory, request: NormalizedRequest): ProviderJsonStreamSession {
+    const auxiliary = this.createAuxiliaryState(request);
+    return createProviderJsonStreamSession({
+      fetchFn: this.fetchFn,
+      factory,
+      request,
+      auxiliary,
+      emitCompleted: (aux, result) => this.emitStreamCompleted(factory, request, aux, result),
+    });
   }
 }

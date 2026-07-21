@@ -53,6 +53,14 @@ export type {
   ProviderStreamBatch,
   ProviderStreamBatchOptions,
 } from "./transport/open-stream.js";
+export { createProviderJsonStreamSession } from "./transport/run-json-stream.js";
+export type {
+  ProviderJsonStreamSession,
+  ProviderJsonStreamSessionHost,
+  ProviderJsonStreamOpenOptions,
+  ProviderJsonStreamBatchOptions,
+  ProviderJsonStreamCompleteOptions,
+} from "./transport/run-json-stream.js";
 export { mergeProviderHeaders, applyExtraBody } from "./request-options.js";
 export {
   REASONING_LEVELS,
