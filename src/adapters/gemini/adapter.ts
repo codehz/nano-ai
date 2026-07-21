@@ -317,17 +317,21 @@ export class GeminiAdapter extends HttpAdapterBase {
     let sawPromptBlock = false;
 
     const ensureMessageStarted = function* (): Generator<AIStreamEvent> {
-      if (hasMessageStarted) return;
-      currentMessageId = `msg-${responseId ?? request.requestId}`;
-      hasMessageStarted = true;
-      yield items.startMessage(currentMessageId);
+      if (!currentMessageId) currentMessageId = `msg-${responseId ?? request.requestId}`;
+      const started = items.ensureMessageStarted(currentMessageId);
+      if (started) {
+        hasMessageStarted = true;
+        yield started;
+      }
     };
 
     const ensureReasoningStarted = function* (): Generator<AIStreamEvent> {
-      if (hasReasoningStarted) return;
-      currentReasoningId = `reason-${responseId ?? request.requestId}`;
-      hasReasoningStarted = true;
-      yield items.startReasoning(currentReasoningId, "full");
+      if (!currentReasoningId) currentReasoningId = `reason-${responseId ?? request.requestId}`;
+      const started = items.ensureReasoningStarted(currentReasoningId, "full");
+      if (started) {
+        hasReasoningStarted = true;
+        yield started;
+      }
     };
 
     const finalizePendingItems = function* (): Generator<AIStreamEvent> {
@@ -474,7 +478,7 @@ export class GeminiAdapter extends HttpAdapterBase {
         }
         yield* emitCompleted(stopReason, responseId);
       } else {
-        // 空流：仍需 completed 以保持契约
+        // 契约差异：Gemini 空流也 emit completed；chat/ollama 仅在有 pending item 时 incomplete complete
         yield* emitCompleted(undefined, responseId);
       }
     }

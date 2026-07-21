@@ -308,6 +308,40 @@ export class OllamaAdapter extends HttpAdapterBase {
     let pendingToolCalls: Array<{ id: string; name: string; argumentsText: string }> = [];
     let toolCallIndex = 0;
 
+    const ensureMessageStarted = function* (idSeed: string): Generator<AIStreamEvent> {
+      if (!currentMessageId) currentMessageId = `msg-${idSeed}`;
+      const started = items.ensureMessageStarted(currentMessageId);
+      if (started) {
+        hasMessageStarted = true;
+        yield started;
+      }
+    };
+
+    /** done / incomplete 共用：flush message + batched tool_calls */
+    const flushPendingItems = function* (idSeed: string): Generator<AIStreamEvent> {
+      if (accumulatedContent === "" && pendingToolCalls.length > 0 && !hasMessageStarted) {
+        yield* ensureMessageStarted(idSeed);
+      }
+
+      // 已 start 的空 message 也 complete 进 session（事件权威）
+      if (hasMessageStarted && items.isActive(currentMessageId)) {
+        yield items.completeMessage(currentMessageId);
+      }
+
+      if (pendingToolCalls.length > 0) {
+        yield factory.responseWarning(
+          `Ollama delivered ${pendingToolCalls.length} tool call(s) as a batch; tool_call streaming is not supported`,
+          WarningCode.TOOL_CALL_BATCHED,
+        );
+      }
+
+      for (const pending of pendingToolCalls) {
+        yield items.startToolCall(pending.id, pending.name);
+        yield items.deltaToolCall(pending.id, { argumentsText: pending.argumentsText });
+        yield items.completeToolCall(pending.id);
+      }
+    };
+
     const emitCompleted = async function* (
       stopReason: StopReason | undefined,
       rawResponseId: string | undefined,
@@ -354,11 +388,7 @@ export class OllamaAdapter extends HttpAdapterBase {
         const msg = chunk.message;
 
         if (msg.content) {
-          if (!hasMessageStarted) {
-            currentMessageId = `msg-${chunk.created_at}`;
-            hasMessageStarted = true;
-            yield items.startMessage(currentMessageId);
-          }
+          yield* ensureMessageStarted(chunk.created_at);
           accumulatedContent += msg.content;
           yield items.deltaMessage(currentMessageId, textBlock(msg.content));
         }
@@ -376,29 +406,7 @@ export class OllamaAdapter extends HttpAdapterBase {
         }
 
         if (chunk.done) {
-          if (accumulatedContent === "" && pendingToolCalls.length > 0 && !hasMessageStarted) {
-            currentMessageId = `msg-${chunk.created_at}`;
-            hasMessageStarted = true;
-            yield items.startMessage(currentMessageId);
-          }
-
-          // 已 start 的空 message 也 complete 进 session（事件权威）
-          if (hasMessageStarted && items.isActive(currentMessageId)) {
-            yield items.completeMessage(currentMessageId);
-          }
-
-          if (pendingToolCalls.length > 0) {
-            yield factory.responseWarning(
-              `Ollama delivered ${pendingToolCalls.length} tool call(s) as a batch; tool_call streaming is not supported`,
-              WarningCode.TOOL_CALL_BATCHED,
-            );
-          }
-
-          for (const pending of pendingToolCalls) {
-            yield items.startToolCall(pending.id, pending.name);
-            yield items.deltaToolCall(pending.id, { argumentsText: pending.argumentsText });
-            yield items.completeToolCall(pending.id);
-          }
+          yield* flushPendingItems(chunk.created_at);
 
           if (
             request.include?.usage !== "off" &&
@@ -430,24 +438,7 @@ export class OllamaAdapter extends HttpAdapterBase {
 
     if (!gate.completed && (hasMessageStarted || pendingToolCalls.length > 0)) {
       yield factory.responseWarning("Stream ended without a done signal", WarningCode.STREAM_INCOMPLETE);
-
-      if (hasMessageStarted && items.isActive(currentMessageId)) {
-        yield items.completeMessage(currentMessageId);
-      }
-
-      if (pendingToolCalls.length > 0) {
-        yield factory.responseWarning(
-          `Ollama delivered ${pendingToolCalls.length} tool call(s) as a batch; tool_call streaming is not supported`,
-          WarningCode.TOOL_CALL_BATCHED,
-        );
-      }
-
-      for (const pending of pendingToolCalls) {
-        yield items.startToolCall(pending.id, pending.name);
-        yield items.deltaToolCall(pending.id, { argumentsText: pending.argumentsText });
-        yield items.completeToolCall(pending.id);
-      }
-
+      yield* flushPendingItems(responseId ?? request.requestId);
       yield* emitCompleted(undefined, responseId);
     }
   }

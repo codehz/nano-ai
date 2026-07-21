@@ -402,7 +402,11 @@ export class MessagesAdapter extends HttpAdapterBase {
 
           case "error": {
             const err = sseEvent.data.error;
-            yield factory.responseWarning(err.message, err.type);
+            // provider 自定义 err.type 不进入 WarningCode；统一记 PROVIDER_FAILURE，原文保留在 message
+            yield factory.responseWarning(
+              err.type ? `${err.type}: ${err.message}` : err.message,
+              WarningCode.PROVIDER_FAILURE,
+            );
             continue;
           }
 

@@ -870,8 +870,19 @@ describe("MessagesAdapter - error handling", () => {
 
     const adapter = new MessagesAdapter({
       apiKey: "test-key",
-      fetch: mockFetch(sseResponse(...sse)),
+      fetch: async () => sseResponse(...sse),
     });
+
+    const warningEvents: Array<{ message: string; code?: string }> = [];
+    for await (const event of adapter.stream(makeRequest())) {
+      if (event.type === "response.warning") {
+        warningEvents.push({ message: event.message, code: event.code });
+      }
+    }
+
+    expect(warningEvents.some((w) => w.message.includes("Overloaded") && w.code === "PROVIDER_FAILURE")).toBe(
+      true,
+    );
 
     const result = await collectStream(adapter.stream(makeRequest()));
     expect(result.warnings).toBeDefined();
@@ -905,10 +916,10 @@ describe("MessagesAdapter - error handling", () => {
       collectStream(adapter.stream(makeRequest({ requestId: "request-b" }))),
     ]);
 
-    expect(resultA.warnings).toContain("warning-from-a");
-    expect(resultA.warnings).not.toContain("warning-from-b");
-    expect(resultB.warnings).toContain("warning-from-b");
-    expect(resultB.warnings).not.toContain("warning-from-a");
+    expect(resultA.warnings?.some((w) => w.includes("warning-from-a"))).toBe(true);
+    expect(resultA.warnings?.some((w) => w.includes("warning-from-b"))).toBe(false);
+    expect(resultB.warnings?.some((w) => w.includes("warning-from-b"))).toBe(true);
+    expect(resultB.warnings?.some((w) => w.includes("warning-from-a"))).toBe(false);
     expect(resultA.backend.warnings).toEqual(resultA.warnings);
     expect(resultB.backend.warnings).toEqual(resultB.warnings);
   });

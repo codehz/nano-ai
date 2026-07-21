@@ -427,19 +427,25 @@ export class ChatCompletionsAdapter extends HttpAdapterBase {
           const reasoningDeltas = extractReasoningDeltas(delta);
 
           const ensureMessageStarted = function* (): Generator<AIStreamEvent> {
-            if (hasMessageStarted) return;
-            currentMessageId = `msg-${chunk.id}`;
-            hasMessageStarted = true;
-            accumulatedContent = "";
-            yield items.startMessage(currentMessageId);
+            if (!currentMessageId) currentMessageId = `msg-${chunk.id}`;
+            const started = items.ensureMessageStarted(currentMessageId);
+            if (started) {
+              hasMessageStarted = true;
+              yield started;
+            }
+          };
+
+          const ensureReasoningStarted = function* (): Generator<AIStreamEvent> {
+            if (!currentReasoningId) currentReasoningId = `reason-${chunk.id}`;
+            const started = items.ensureReasoningStarted(currentReasoningId, "full");
+            if (started) {
+              hasReasoningStarted = true;
+              yield started;
+            }
           };
 
           if (reasoningDeltas.length > 0) {
-            if (!hasReasoningStarted) {
-              currentReasoningId = `reason-${chunk.id}`;
-              hasReasoningStarted = true;
-              yield items.startReasoning(currentReasoningId, "full");
-            }
+            yield* ensureReasoningStarted();
 
             for (const reasoningDelta of reasoningDeltas) {
               reasoningByField.set(
