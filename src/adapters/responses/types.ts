@@ -135,3 +135,58 @@ export type ResponsesTool =
   | ResponsesWebSearchTool
   | ResponsesCodeInterpreterTool
   | ResponsesMcpTool;
+
+// ── Responses API 响应 / SSE 类型 ──────────────────────────────
+
+export type ResponsesAPIOutputItem = {
+  id: string;
+  type: "message" | "reasoning" | "function_call" | string;
+  role?: string;
+  content?: Array<{ type: string; text?: string; [key: string]: unknown }>;
+  summary?: Array<{ type: string; text?: string; [key: string]: unknown }>;
+  encrypted_content?: string | null;
+  name?: string;
+  arguments?: string;
+  call_id?: string;
+  status?: string;
+  [key: string]: unknown;
+};
+
+export type ResponsesAPIResponse = {
+  id: string;
+  model: string;
+  output: ResponsesAPIOutputItem[];
+  status?: "completed" | "failed" | "in_progress" | "cancelled" | "queued" | "incomplete" | string;
+  incomplete_details?: { reason?: string | null } | null;
+  error?: { message?: string; code?: string } | null;
+  failure?: { message?: string; code?: string } | null;
+  usage?: {
+    input_tokens: number;
+    output_tokens: number;
+    total_tokens: number;
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+};
+
+/** SSE 事件联合；末位 catch-all 兼容未知 type。 */
+export type ResponsesSSEEvent =
+  | { type: "response.output_item.added"; data: { item: { id: string; type: string; [key: string]: unknown } } }
+  | { type: "response.output_item.done"; data: { item: { id: string; type: string; [key: string]: unknown } } }
+  | { type: "response.output_text.delta"; data: { item_id: string; delta: string } }
+  | { type: "response.output_text.done"; data: { item_id: string; text: string } }
+  | { type: "response.reasoning.delta"; data: { item_id: string; delta: string } }
+  | { type: "response.reasoning.done"; data: { item_id: string; text: string } }
+  | { type: "response.reasoning_summary_part.added"; data: { item_id: string; summary_index: number; part?: unknown } }
+  | { type: "response.reasoning_summary_part.done"; data: { item_id: string; summary_index: number; part?: unknown } }
+  | { type: "response.reasoning_summary_text.delta"; data: { item_id: string; delta: string; summary_index?: number } }
+  | { type: "response.reasoning_summary_text.done"; data: { item_id: string; text: string; summary_index?: number } }
+  | { type: "response.reasoning_text.delta"; data: { item_id: string; delta: string; content_index?: number } }
+  | { type: "response.reasoning_text.done"; data: { item_id: string; text: string; content_index?: number } }
+  | { type: "response.function_call_arguments.delta"; data: { item_id: string; delta: string } }
+  | { type: "response.function_call_arguments.done"; data: { item_id: string; arguments: string } }
+  | { type: "response.completed"; data: { response: ResponsesAPIResponse } }
+  | { type: "response.failed"; data: { response: ResponsesAPIResponse } }
+  | { type: "response.incomplete"; data: { response: ResponsesAPIResponse } }
+  | { type: "error"; data: { message: string; code?: string } }
+  | { type: string; data: Record<string, unknown> };

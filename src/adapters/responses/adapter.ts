@@ -10,7 +10,7 @@
  */
 
 import { HttpAdapterBase } from "../../provider/http-adapter.js";
-import { AIRequestError, WarningCode } from "../../runtime/errors.js";
+import { WarningCode } from "../../runtime/errors.js";
 import {
   textBlock,
   jsonBlock,
@@ -21,12 +21,11 @@ import {
   serverToolDiscoveryItem,
   replayFromOutput,
 } from "../../canonical/index.js";
-import { acceptOpaqueReplay } from "../../provider/opaque-replay.js";
 import { usageFromOpenAIResponses } from "../../provider/usage/index.js";
-import { NormalizedRequestMapper } from "../../provider/request-mapper.js";
 import { createSseJsonParser } from "../../provider/transport/parser.js";
-import { mapResponsesReasoning } from "../../provider/reasoning.js";
 import { createStreamingItemSession } from "../../provider/streaming-item-session.js";
+import { buildResponsesRequest } from "./map-request.js";
+import { inferResponsesStopReason } from "./infer-stop-reason.js";
 
 import type {
   NormalizedRequest,
@@ -35,115 +34,19 @@ import type {
   ContentBlock,
   ReasoningItem,
   ServerToolCallItem,
-  ServerToolDefinition,
   ServerToolDiscoveryItem,
   ServerToolResultItem,
-  StopReason,
 } from "../../types/index.js";
 import type { EventFactory } from "../../stream/event-factory.js";
-
-// ── 类型 ──────────────────────────────────────────────────────
 
 import type {
   ResponsesAdapterOptions,
   ResponsesAPIRequest,
-  ResponsesReasoningInput,
-  ResponsesInputItem,
-  ResponsesTool,
-  ResponsesWebSearchTool,
-  ResponsesCodeInterpreterTool,
-  ResponsesMcpTool,
+  ResponsesAPIResponse,
+  ResponsesSSEEvent,
 } from "./types.js";
 
-const mapper = new NormalizedRequestMapper("responses");
-
-/** 将 canonical serverTools 映射为 Responses API tools 数组项。 */
-function mapServerTools(serverTools: ServerToolDefinition[] | undefined): ResponsesTool[] {
-  if (!serverTools || serverTools.length === 0) return [];
-
-  return serverTools.map((tool): ResponsesTool => {
-    switch (tool.type) {
-      case "web_search": {
-        const mapped: ResponsesWebSearchTool = { type: "web_search" };
-        if (tool.allowedDomains || tool.blockedDomains) {
-          mapped.filters = {
-            ...(tool.allowedDomains ? { allowed_domains: tool.allowedDomains } : {}),
-            ...(tool.blockedDomains ? { blocked_domains: tool.blockedDomains } : {}),
-          };
-        }
-        if (tool.userLocation) {
-          mapped.user_location = {
-            type: "approximate",
-            ...(tool.userLocation.country !== undefined ? { country: tool.userLocation.country } : {}),
-            ...(tool.userLocation.city !== undefined ? { city: tool.userLocation.city } : {}),
-            ...(tool.userLocation.region !== undefined ? { region: tool.userLocation.region } : {}),
-            ...(tool.userLocation.timezone !== undefined ? { timezone: tool.userLocation.timezone } : {}),
-          };
-        }
-        if (tool.searchContextSize !== undefined) {
-          mapped.search_context_size = tool.searchContextSize;
-        }
-        return mapped;
-      }
-      case "code_execution": {
-        const container = tool.container;
-        const mapped: ResponsesCodeInterpreterTool = {
-          type: "code_interpreter",
-          container: container
-            ? {
-                type: "auto",
-                ...(container.memoryLimit !== undefined ? { memory_limit: container.memoryLimit } : {}),
-                ...(container.fileIds !== undefined ? { file_ids: container.fileIds } : {}),
-              }
-            : { type: "auto" },
-        };
-        return mapped;
-      }
-      case "mcp": {
-        const mapped: ResponsesMcpTool = {
-          type: "mcp",
-          server_label: tool.serverLabel,
-          server_url: tool.serverUrl,
-          require_approval: "never",
-        };
-        if (tool.serverDescription !== undefined) mapped.server_description = tool.serverDescription;
-        if (tool.authorization !== undefined) mapped.authorization = tool.authorization;
-        if (tool.allowedTools !== undefined) mapped.allowed_tools = tool.allowedTools;
-        return mapped;
-      }
-      default: {
-        const exhaustive: never = tool;
-        throw new AIRequestError(
-          `Unsupported server tool type: ${(exhaustive as ServerToolDefinition).type}`,
-          "UNSUPPORTED_SERVER_TOOL",
-        );
-      }
-    }
-  });
-}
-
-// ── SSE 事件类型 ──────────────────────────────────────────────
-
-type ResponsesSSEEvent =
-  | { type: "response.output_item.added"; data: { item: { id: string; type: string; [key: string]: unknown } } }
-  | { type: "response.output_item.done"; data: { item: { id: string; type: string; [key: string]: unknown } } }
-  | { type: "response.output_text.delta"; data: { item_id: string; delta: string } }
-  | { type: "response.output_text.done"; data: { item_id: string; text: string } }
-  | { type: "response.reasoning.delta"; data: { item_id: string; delta: string } }
-  | { type: "response.reasoning.done"; data: { item_id: string; text: string } }
-  | { type: "response.reasoning_summary_part.added"; data: { item_id: string; summary_index: number; part?: unknown } }
-  | { type: "response.reasoning_summary_part.done"; data: { item_id: string; summary_index: number; part?: unknown } }
-  | { type: "response.reasoning_summary_text.delta"; data: { item_id: string; delta: string; summary_index?: number } }
-  | { type: "response.reasoning_summary_text.done"; data: { item_id: string; text: string; summary_index?: number } }
-  | { type: "response.reasoning_text.delta"; data: { item_id: string; delta: string; content_index?: number } }
-  | { type: "response.reasoning_text.done"; data: { item_id: string; text: string; content_index?: number } }
-  | { type: "response.function_call_arguments.delta"; data: { item_id: string; delta: string } }
-  | { type: "response.function_call_arguments.done"; data: { item_id: string; arguments: string } }
-  | { type: "response.completed"; data: { response: ResponsesAPIResponse } }
-  | { type: "response.failed"; data: { response: ResponsesAPIResponse } }
-  | { type: "response.incomplete"; data: { response: ResponsesAPIResponse } }
-  | { type: "error"; data: { message: string; code?: string } }
-  | { type: string; data: Record<string, unknown> };
+// ── SSE 已知类型与 item 映射（阶段 2 将迁入 map-items）────────
 
 /** 已处理或可安全忽略的 Responses SSE 类型（未知类型会 warning 一次）。 */
 const KNOWN_RESPONSES_SSE_TYPES = new Set([
@@ -474,98 +377,8 @@ function extractReasoningFromOutputItem(item: Record<string, unknown>): {
   return { text: "", visibility: "summary" };
 }
 
-type ResponsesAPIResponse = {
-  id: string;
-  model: string;
-  output: ResponsesAPIOutputItem[];
-  status?: "completed" | "failed" | "in_progress" | "cancelled" | "queued" | "incomplete" | string;
-  incomplete_details?: { reason?: string | null } | null;
-  error?: { message?: string; code?: string } | null;
-  failure?: { message?: string; code?: string } | null;
-  usage?: {
-    input_tokens: number;
-    output_tokens: number;
-    total_tokens: number;
-    [key: string]: unknown;
-  };
-  [key: string]: unknown;
-};
-
-type ResponsesAPIOutputItem = {
-  id: string;
-  type: "message" | "reasoning" | "function_call" | string;
-  role?: string;
-  content?: Array<{ type: string; text?: string; [key: string]: unknown }>;
-  summary?: Array<{ type: string; text?: string; [key: string]: unknown }>;
-  encrypted_content?: string | null;
-  name?: string;
-  arguments?: string;
-  call_id?: string;
-  status?: string;
-  [key: string]: unknown;
-};
-
-function isReplayCanonicalInput(item: ResponsesInputItem): boolean {
-  return (
-    (item.type === "message" && item.role === "assistant") || item.type === "reasoning" || item.type === "function_call"
-  );
-}
-
-function hasReplayCanonicalInput(input: ResponsesInputItem[]): boolean {
-  return input.some(isReplayCanonicalInput);
-}
-
 function extractFailureMessage(response: ResponsesAPIResponse): string {
   return response.error?.message ?? response.failure?.message ?? "unknown";
-}
-
-function readNonEmptyString(value: unknown, maxLen = 256): string | undefined {
-  if (typeof value !== "string" || value.length === 0 || value.length > maxLen) return undefined;
-  return value;
-}
-
-/** 将 canonical text/json blocks 压成 EasyInputMessage 的 string content。 */
-function messageContentAsString(blocks: ContentBlock[], field: string): string {
-  return mapper.textFromBlocks(blocks, field);
-}
-
-function mapReasoningInput(item: ReasoningItem, index: number): ResponsesReasoningInput {
-  const text = mapper.textFromBlocks(
-    mapper.ensureReasoningBlocks(item.content, "reasoning content"),
-    "reasoning content",
-  );
-  const id = item.id && item.id.length > 0 ? item.id : `reasoning_replay_${index}`;
-
-  if (item.visibility === "full") {
-    return {
-      type: "reasoning",
-      id,
-      summary: [],
-      content: text ? [{ type: "reasoning_text", text }] : undefined,
-    };
-  }
-
-  // summary / redacted / opaque：公开可回传的是 summary_text
-  return {
-    type: "reasoning",
-    id,
-    summary: text ? [{ type: "summary_text", text }] : [],
-  };
-}
-
-function extractOpaqueContinuationId(payload: Record<string, unknown>): {
-  previousResponseId?: string;
-  itemReferenceId?: string;
-} {
-  // 优先显式 previous_response_id；历史 payload 用 id 存 response 续写句柄
-  const previousResponseId =
-    readNonEmptyString(payload.previous_response_id) ??
-    (typeof payload.item_id === "string" ? undefined : readNonEmptyString(payload.id));
-
-  // 仅在显式给出 item_id 时使用 item_reference（引用的是 item，不是 response）
-  const itemReferenceId = readNonEmptyString(payload.item_id);
-
-  return { previousResponseId, itemReferenceId };
 }
 
 // ── Adapter ───────────────────────────────────────────────────
@@ -581,124 +394,7 @@ export class ResponsesAdapter extends HttpAdapterBase {
   // ── buildRequest ──────────────────────────────────────────
 
   protected buildRequest(request: NormalizedRequest): ResponsesAPIRequest {
-    const input: ResponsesInputItem[] = [];
-    let previousResponseId: string | undefined;
-    let reasoningIndex = 0;
-
-    for (const item of request.input) {
-      switch (item.type) {
-        case "message": {
-          // EasyInputMessage：string content 对 user/assistant 都合法，且最不易触发 ModelInput 反序列化失败。
-          // 切勿发送 { type: "text" } —— 官方 content part 是 input_text / output_text。
-          input.push({
-            type: "message",
-            role: item.role,
-            content: messageContentAsString(item.content, `input message (${item.role}) content`),
-          });
-          break;
-        }
-        case "reasoning": {
-          input.push(mapReasoningInput(item, reasoningIndex++));
-          break;
-        }
-        case "tool_call": {
-          // call_id 必填；canonical ToolCallItem.id 即 call_id（流里会优先取 call_id）
-          input.push({
-            type: "function_call",
-            call_id: item.id,
-            name: item.name,
-            arguments: item.argumentsText,
-          });
-          break;
-        }
-        case "tool_result": {
-          const output = mapper.textFromBlocks(item.content, `tool_result ${item.callId} content`);
-          input.push({
-            type: "function_call_output",
-            call_id: item.callId,
-            output,
-          });
-          break;
-        }
-        case "opaque": {
-          // Canonical replay 优先；否则用 previous_response_id 做服务端续写。
-          // 注意：response id 不能塞进 item_reference（那是 item id）；不叠 wire assistant。
-          const payload = acceptOpaqueReplay(item, "responses");
-          if (!payload) break;
-
-          // 显式字段校验：id / previous_response_id / item_id 若存在必须是合法 string
-          for (const key of ["id", "previous_response_id", "item_id"] as const) {
-            if (
-              key in payload &&
-              (typeof payload[key] !== "string" || payload[key].length === 0 || payload[key].length > 256)
-            ) {
-              throw new AIRequestError(
-                `Invalid opaque replay payload: ${key} must be a non-empty string (max 256)`,
-                "INVALID_OPAQUE_REPLAY",
-              );
-            }
-          }
-
-          const { previousResponseId: prevId, itemReferenceId } = extractOpaqueContinuationId(payload);
-          if (!hasReplayCanonicalInput(input)) {
-            if (prevId && !previousResponseId) {
-              previousResponseId = prevId;
-            } else if (itemReferenceId) {
-              input.push({ type: "item_reference", id: itemReferenceId });
-            }
-          }
-          break;
-        }
-      }
-    }
-
-    const body: ResponsesAPIRequest = {
-      model: request.model,
-      input,
-      stream: true,
-    };
-
-    if (previousResponseId) {
-      body.previous_response_id = previousResponseId;
-    }
-
-    if (request.instructions) {
-      body.instructions = mapper.mapInstructions(request.instructions);
-    }
-
-    const functionTools =
-      mapper.mapToolsIfPresent(
-        request.tools,
-        (t): ResponsesTool => ({
-          type: "function",
-          name: t.name,
-          description: t.description,
-          parameters: t.inputSchema,
-        }),
-      ) ?? [];
-    const serverTools = mapServerTools(request.serverTools);
-    const tools = [...functionTools, ...serverTools];
-    if (tools.length > 0) {
-      body.tools = tools;
-    }
-
-    body.tool_choice = mapper.mapToolChoice<Exclude<ResponsesAPIRequest["tool_choice"], undefined>>(
-      request.toolChoice,
-      {
-        auto: "auto",
-        none: "none",
-        tool: (name) => ({ type: "function" as const, name }),
-      },
-    );
-
-    if (request.temperature !== undefined) body.temperature = request.temperature;
-    if (request.maxOutputTokens !== undefined) body.max_output_tokens = request.maxOutputTokens;
-    if (request.metadata) body.metadata = request.metadata;
-    if (request.reasoningLevel !== undefined) {
-      body.reasoning = mapResponsesReasoning(request.reasoningLevel);
-    }
-
-    return this.withExtraBody(body);
+    return this.withExtraBody(buildResponsesRequest(request));
   }
 
   // ── runStream ─────────────────────────────────────────────
@@ -1190,7 +886,7 @@ export class ResponsesAdapter extends HttpAdapterBase {
       );
     }
 
-    const stopReason = completedResponse ? this.inferStopReason(completedResponse) : undefined;
+    const stopReason = completedResponse ? inferResponsesStopReason(completedResponse) : undefined;
 
     yield* session.complete(
       {
@@ -1200,32 +896,5 @@ export class ResponsesAdapter extends HttpAdapterBase {
       },
       { onDuplicate: "silent" },
     );
-  }
-
-  // ── 辅助方法 ──────────────────────────────────────────────
-
-  private inferStopReason(response: ResponsesAPIResponse): StopReason {
-    if (response.status === "failed") return "error";
-
-    if (response.status === "incomplete") {
-      const reason = response.incomplete_details?.reason;
-      if (reason === "content_filter") return "content_filter";
-      if (reason === "max_output_tokens") return "max_output_tokens";
-      return "max_output_tokens";
-    }
-
-    const output = response.output;
-    if (!output || output.length === 0) {
-      return response.status === "completed" ? "end_turn" : "unknown";
-    }
-
-    const hasFunctionCall = output.some((item) => item.type === "function_call");
-    if (hasFunctionCall) return "tool_call";
-
-    const lastItem = output[output.length - 1];
-    if (lastItem?.status === "failed") return "error";
-    if (lastItem?.status === "incomplete") return "max_output_tokens";
-
-    return "end_turn";
   }
 }
