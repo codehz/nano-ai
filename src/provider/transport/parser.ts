@@ -6,7 +6,8 @@ export type StreamSplitResult = {
 export type StreamParseResult<T> = { status: "parsed"; value: T } | { status: "ignored" } | { status: "malformed" };
 
 export class IncrementalStreamParser<T> {
-  private buffer = "";
+  /** Pending decoded fragments; compacted to at most one rest string after each consume. */
+  private chunks: string[] = [];
   private readonly decoder = new TextDecoder();
 
   constructor(
@@ -15,22 +16,30 @@ export class IncrementalStreamParser<T> {
   ) {}
 
   feed(value: Uint8Array): { items: T[]; malformed: number } {
-    this.buffer += this.decoder.decode(value, { stream: true });
+    this.chunks.push(this.decoder.decode(value, { stream: true }));
     return this.consume(false);
   }
 
   flush(): { items: T[]; malformed: number } {
-    this.buffer += this.decoder.decode();
+    const tail = this.decoder.decode();
+    if (tail.length > 0) this.chunks.push(tail);
     return this.consume(true);
   }
 
   getRemaining(): string {
-    return this.buffer;
+    return this.materializeBuffer();
+  }
+
+  private materializeBuffer(): string {
+    if (this.chunks.length === 0) return "";
+    if (this.chunks.length === 1) return this.chunks[0] ?? "";
+    return this.chunks.join("");
   }
 
   private consume(allowEOF: boolean): { items: T[]; malformed: number } {
-    const split = this.split(this.buffer, allowEOF);
-    this.buffer = split.rest;
+    const buffer = this.materializeBuffer();
+    const split = this.split(buffer, allowEOF);
+    this.chunks = split.rest.length > 0 ? [split.rest] : [];
     const items: T[] = [];
     let malformed = 0;
 
@@ -63,24 +72,56 @@ export function splitLines(buffer: string, allowEOF: boolean): StreamSplitResult
   return { items, rest: buffer.slice(cursor) };
 }
 
+/**
+ * Split SSE frames on blank-line boundaries without rewriting the whole buffer.
+ * Accepts LF, CRLF, and mixed empty-line terminators; normalizes only extracted frames.
+ */
 export function splitSSEFrames(buffer: string, allowEOF: boolean): StreamSplitResult {
-  const normalized = buffer.replaceAll("\r\n", "\n");
   const items: string[] = [];
   let cursor = 0;
 
-  while (true) {
-    const frameEnd = normalized.indexOf("\n\n", cursor);
-    if (frameEnd === -1) break;
-    items.push(normalized.slice(cursor, frameEnd));
-    cursor = frameEnd + 2;
+  while (cursor < buffer.length) {
+    const boundary = findSseFrameBoundary(buffer, cursor);
+    if (boundary === null) break;
+    items.push(normalizeSseFrame(buffer.slice(cursor, boundary.start)));
+    cursor = boundary.end;
   }
 
-  if (allowEOF && cursor < normalized.length) {
-    items.push(normalized.slice(cursor));
-    cursor = normalized.length;
+  if (allowEOF && cursor < buffer.length) {
+    items.push(normalizeSseFrame(buffer.slice(cursor)));
+    cursor = buffer.length;
   }
 
-  return { items, rest: normalized.slice(cursor) };
+  return { items, rest: buffer.slice(cursor) };
+}
+
+/** Locate blank-line frame end: `\n\n`, `\r\n\r\n`, `\r\n\n`, or `\n\r\n`. */
+function findSseFrameBoundary(buffer: string, from: number): { start: number; end: number } | null {
+  for (let i = from; i < buffer.length; i++) {
+    const c = buffer[i];
+    if (c === "\n") {
+      if (i + 1 < buffer.length && buffer[i + 1] === "\n") {
+        return { start: i, end: i + 2 };
+      }
+      if (i + 2 < buffer.length && buffer[i + 1] === "\r" && buffer[i + 2] === "\n") {
+        return { start: i, end: i + 3 };
+      }
+    } else if (c === "\r") {
+      if (i + 1 < buffer.length && buffer[i + 1] === "\n") {
+        if (i + 2 < buffer.length && buffer[i + 2] === "\n") {
+          return { start: i, end: i + 3 };
+        }
+        if (i + 3 < buffer.length && buffer[i + 2] === "\r" && buffer[i + 3] === "\n") {
+          return { start: i, end: i + 4 };
+        }
+      }
+    }
+  }
+  return null;
+}
+
+function normalizeSseFrame(frame: string): string {
+  return frame.includes("\r") ? frame.replaceAll("\r\n", "\n") : frame;
 }
 
 // ── 常用 parse 工厂 ───────────────────────────────────────────
