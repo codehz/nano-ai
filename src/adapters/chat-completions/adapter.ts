@@ -31,13 +31,7 @@ import {
 import { mergeProviderHeaders, applyExtraBody } from "../../provider/request-options.js";
 import { mapChatCompletionsReasoningEffort } from "../../provider/reasoning.js";
 
-import type {
-  NormalizedRequest,
-  AIStreamEvent,
-  OutputItem,
-  FetchFn,
-  StopReason,
-} from "../../types/index.js";
+import type { NormalizedRequest, AIStreamEvent, OutputItem, FetchFn, StopReason } from "../../types/index.js";
 import type { EventFactory } from "../../stream/event-factory.js";
 
 // ── 类型 ──────────────────────────────────────────────────────

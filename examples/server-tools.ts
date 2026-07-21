@@ -9,14 +9,7 @@
  * 运行：bun run example:server-tools
  */
 
-import {
-  MockAdapter,
-  assertMockRequest,
-  collectStream,
-  createAIClient,
-  jsonBlock,
-  textBlock,
-} from "../src/index.js";
+import { MockAdapter, assertMockRequest, collectStream, createAIClient, jsonBlock, textBlock } from "../src/index.js";
 
 const adapter = new MockAdapter({
   handler: async function* (request, context) {
@@ -93,10 +86,7 @@ async function main() {
     result.output.map((item) => item.type),
   );
   const message = result.output.find((item) => item.type === "message");
-  console.log(
-    "citations:",
-    message && message.type === "message" ? message.citations : undefined,
-  );
+  console.log("citations:", message && message.type === "message" ? message.citations : undefined);
 }
 
 main().catch((error) => {

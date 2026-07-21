@@ -75,27 +75,27 @@ type AIRequest = {
 
 `reasoningLevel` 是 portable 枚举，由各 adapter 映射到 provider 原生字段；未设置时不写相关 wire 字段。adapter 无法映射的 level（如 Ollama 的 `minimal` / `xhigh` / `max`）会抛 `AIRequestError`（`UNSUPPORTED_REASONING_LEVEL`）。需要 budget / summary 等特化参数时，仍可用构造期 `extraBody` 覆盖同名顶层键。
 
-| Adapter | 映射 |
-| --- | --- |
-| `ResponsesAdapter` | `reasoning: { effort }` |
-| `ChatCompletionsAdapter` | 顶层 `reasoning_effort` |
-| `MessagesAdapter` | `thinking: { type: "disabled" }` 或 `{ type: "enabled", budget_tokens }`（由 `maxOutputTokens` 按比例推导，默认 4096） |
-| `OllamaAdapter` | `think: false \| "low" \| "medium" \| "high"` |
-| `GeminiAdapter` | `generationConfig.thinkingConfig`（`none` 关闭 thoughts；`minimal`/`low`/`medium`/`high` → `thinkingLevel`；`xhigh`/`max` 不支持） |
-| `MockAdapter` | 透传到 `MockHandlerContext.reasoningLevel` |
+| Adapter                  | 映射                                                                                                                               |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `ResponsesAdapter`       | `reasoning: { effort }`                                                                                                            |
+| `ChatCompletionsAdapter` | 顶层 `reasoning_effort`                                                                                                            |
+| `MessagesAdapter`        | `thinking: { type: "disabled" }` 或 `{ type: "enabled", budget_tokens }`（由 `maxOutputTokens` 按比例推导，默认 4096）             |
+| `OllamaAdapter`          | `think: false \| "low" \| "medium" \| "high"`                                                                                      |
+| `GeminiAdapter`          | `generationConfig.thinkingConfig`（`none` 关闭 thoughts；`minimal`/`low`/`medium`/`high` → `thinkingLevel`；`xhigh`/`max` 不支持） |
+| `MockAdapter`            | 透传到 `MockHandlerContext.reasoningLevel`                                                                                         |
 
 `input` 是 item 数组，每个 item 可以是：
 
-| Item 类型                 | 用途                                          |
-| ------------------------- | --------------------------------------------- |
-| `message`                 | 用户 / 助手消息（可带 `citations`）           |
-| `reasoning`               | 思维链（输入侧 replay）                       |
-| `tool_call`               | 客户端工具调用（输入侧 replay）               |
-| `tool_result`             | 客户端工具执行结果                            |
-| `server_tool_call`        | Provider 托管工具调用                         |
-| `server_tool_result`      | Provider 托管工具结果                         |
-| `server_tool_discovery`   | MCP 等远端工具发现列表                        |
-| `opaque`                  | Provider 私有续接材料                         |
+| Item 类型               | 用途                                |
+| ----------------------- | ----------------------------------- |
+| `message`               | 用户 / 助手消息（可带 `citations`） |
+| `reasoning`             | 思维链（输入侧 replay）             |
+| `tool_call`             | 客户端工具调用（输入侧 replay）     |
+| `tool_result`           | 客户端工具执行结果                  |
+| `server_tool_call`      | Provider 托管工具调用               |
+| `server_tool_result`    | Provider 托管工具结果               |
+| `server_tool_discovery` | MCP 等远端工具发现列表              |
+| `opaque`                | Provider 私有续接材料               |
 
 ### 统一事件流
 
@@ -107,18 +107,18 @@ response.started → (item.started → item.delta* → item.completed)* → resp
 
 事件类型：
 
-| 事件                                           | 含义                                        |
-| ---------------------------------------------- | ------------------------------------------- |
-| `response.started`                             | 响应开始                                    |
-| `message.{started,delta,completed}`            | 消息输出（`completed` 可带 `citations`）    |
-| `reasoning.{started,delta,completed}`          | 思维链                                      |
-| `tool_call.{started,delta,completed}`          | 客户端工具调用                              |
-| `server_tool.{started,delta,completed}`        | 服务端工具调用                              |
-| `server_tool_result.completed`                 | 服务端工具结果（原子）                      |
-| `server_tool_discovery.completed`              | MCP 工具发现（原子）                        |
-| `response.warning`                             | 非致命警告                                  |
-| `response.auxiliary`                           | usage / billing 辅助信息                    |
-| `response.completed`                           | 响应结束，携带 replay、终止原因及最终元数据 |
+| 事件                                    | 含义                                        |
+| --------------------------------------- | ------------------------------------------- |
+| `response.started`                      | 响应开始                                    |
+| `message.{started,delta,completed}`     | 消息输出（`completed` 可带 `citations`）    |
+| `reasoning.{started,delta,completed}`   | 思维链                                      |
+| `tool_call.{started,delta,completed}`   | 客户端工具调用                              |
+| `server_tool.{started,delta,completed}` | 服务端工具调用                              |
+| `server_tool_result.completed`          | 服务端工具结果（原子）                      |
+| `server_tool_discovery.completed`       | MCP 工具发现（原子）                        |
+| `response.warning`                      | 非致命警告                                  |
+| `response.auxiliary`                    | usage / billing 辅助信息                    |
+| `response.completed`                    | 响应结束，携带 replay、终止原因及最终元数据 |
 
 ### 统一终结结果
 
@@ -136,20 +136,20 @@ console.log(response.replay); // 续接材料
 
 `AIResponse` 包含：
 
-| 字段                 | 类型                     | 说明                      |
-| -------------------- | ------------------------ | ------------------------- |
-| `output`             | `OutputItem[]`           | 当前轮输出                |
-| `replay`             | `ReplayItem[]`           | 续接材料（下次请求带回）  |
-| `text`               | `string`                 | 全部文本拼接              |
-| `toolCalls`          | `ToolCallItem[]`         | 客户端工具调用            |
-| `serverToolCalls`    | `ServerToolCallItem[]`   | 服务端工具调用            |
-| `serverToolResults`  | `ServerToolResultItem[]` | 服务端工具结果            |
-| `stopReason`         | `StopReason?`            | 终止原因（可选）          |
-| `usage`              | `Usage?`                 | token 统计（可选）        |
-| `billing`            | `BillingInfo?`           | 计费信息（可选）          |
-| `auxiliary`          | `AuxiliaryInfo?`         | Provider 辅助信息（可选） |
-| `warnings`           | `string[]?`              | 非致命警告（可选）        |
-| `backend`            | `BackendTrace`           | 调用链路元数据            |
+| 字段                | 类型                     | 说明                      |
+| ------------------- | ------------------------ | ------------------------- |
+| `output`            | `OutputItem[]`           | 当前轮输出                |
+| `replay`            | `ReplayItem[]`           | 续接材料（下次请求带回）  |
+| `text`              | `string`                 | 全部文本拼接              |
+| `toolCalls`         | `ToolCallItem[]`         | 客户端工具调用            |
+| `serverToolCalls`   | `ServerToolCallItem[]`   | 服务端工具调用            |
+| `serverToolResults` | `ServerToolResultItem[]` | 服务端工具结果            |
+| `stopReason`        | `StopReason?`            | 终止原因（可选）          |
+| `usage`             | `Usage?`                 | token 统计（可选）        |
+| `billing`           | `BillingInfo?`           | 计费信息（可选）          |
+| `auxiliary`         | `AuxiliaryInfo?`         | Provider 辅助信息（可选） |
+| `warnings`          | `string[]?`              | 非致命警告（可选）        |
+| `backend`           | `BackendTrace`           | 调用链路元数据            |
 
 流式 `message.delta` / `reasoning.delta` 保持后端分片粒度；完成态 `output` 中的
 `message` / `reasoning` 会合并相邻 `text` content blocks（直接拼接且不添加分隔符），
@@ -157,14 +157,14 @@ console.log(response.replay); // 续接材料
 
 ## 后端 Adapter
 
-| Adapter                 | 类                       | 说明                              |
-| ----------------------- | ------------------------ | --------------------------------- |
-| OpenAI Responses API    | `ResponsesAdapter`       | OpenAI Responses 端点             |
-| Anthropic Messages API  | `MessagesAdapter`        | Anthropic Messages 端点           |
-| OpenAI Chat Completions | `ChatCompletionsAdapter` | Chat Completions 端点             |
-| Ollama Chat API         | `OllamaAdapter`          | 本地或自托管 Ollama               |
-| Google Gemini API       | `GeminiAdapter`          | Gemini `streamGenerateContent`    |
-| Scripted Test Backend   | `MockAdapter`            | 脚本化测试夹具                    |
+| Adapter                 | 类                       | 说明                           |
+| ----------------------- | ------------------------ | ------------------------------ |
+| OpenAI Responses API    | `ResponsesAdapter`       | OpenAI Responses 端点          |
+| Anthropic Messages API  | `MessagesAdapter`        | Anthropic Messages 端点        |
+| OpenAI Chat Completions | `ChatCompletionsAdapter` | Chat Completions 端点          |
+| Ollama Chat API         | `OllamaAdapter`          | 本地或自托管 Ollama            |
+| Google Gemini API       | `GeminiAdapter`          | Gemini `streamGenerateContent` |
+| Scripted Test Backend   | `MockAdapter`            | 脚本化测试夹具                 |
 
 ```ts
 import {
@@ -368,11 +368,11 @@ const r2 = await collectStream(client.stream({ input: transcript }));
 
 Provider 托管工具（不进客户端 tool loop）。首版由 `ResponsesAdapter` 落地：
 
-| Canonical `serverTools` | Responses wire | 说明 |
-| ----------------------- | -------------- | ---- |
-| `web_search` | `type: "web_search"` | 域名过滤、`userLocation`、`searchContextSize` |
-| `code_execution` | `type: "code_interpreter"` | 仅 auto container（`memoryLimit` / `fileIds`） |
-| `mcp` | `type: "mcp"` | 远程 MCP；**仅** `requireApproval: "never"` |
+| Canonical `serverTools` | Responses wire             | 说明                                           |
+| ----------------------- | -------------------------- | ---------------------------------------------- |
+| `web_search`            | `type: "web_search"`       | 域名过滤、`userLocation`、`searchContextSize`  |
+| `code_execution`        | `type: "code_interpreter"` | 仅 auto container（`memoryLimit` / `fileIds`） |
+| `mcp`                   | `type: "mcp"`              | 远程 MCP；**仅** `requireApproval: "never"`    |
 
 ```ts
 const stream = client.stream({
@@ -406,10 +406,10 @@ console.log(result.serverToolResults);
 
 支持矩阵：
 
-| Adapter | `serverTools` |
-| --- | --- |
-| `ResponsesAdapter` | 请求映射 + SSE 解析 |
-| `MockAdapter` | 可脚本化产出 `server_tool_*` 事件与 citations |
+| Adapter                                              | `serverTools`                                                          |
+| ---------------------------------------------------- | ---------------------------------------------------------------------- |
+| `ResponsesAdapter`                                   | 请求映射 + SSE 解析                                                    |
+| `MockAdapter`                                        | 可脚本化产出 `server_tool_*` 事件与 citations                          |
 | `ChatCompletions` / `Messages` / `Ollama` / `Gemini` | 传入非空 `serverTools` → `AIRequestError`（`UNSUPPORTED_SERVER_TOOL`） |
 
 范围说明（刻意不做）：

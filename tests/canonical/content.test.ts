@@ -5,14 +5,7 @@
 
 import { describe, expect, it } from "bun:test";
 
-import {
-  blockToText,
-  contentBlocksToText,
-  imageBlock,
-  jsonBlock,
-  opaqueBlock,
-  textBlock,
-} from "../../src/index.js";
+import { blockToText, contentBlocksToText, imageBlock, jsonBlock, opaqueBlock, textBlock } from "../../src/index.js";
 
 describe("content block constructors", () => {
   it("textBlock should create a text block", () => {

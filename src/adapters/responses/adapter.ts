@@ -275,11 +275,10 @@ function mapWebSearchCallItem(item: Record<string, unknown>): {
   result?: ServerToolResultItem;
 } {
   const action = item.action;
-  const status =
-    item.status === "failed" ? "failed" : item.status === "completed" ? "completed" : "in_progress";
+  const status = item.status === "failed" ? "failed" : item.status === "completed" ? "completed" : "in_progress";
   const name =
     action && typeof action === "object" && typeof (action as { type?: unknown }).type === "string"
-      ? ((action as { type: string }).type)
+      ? (action as { type: string }).type
       : undefined;
   const call = serverToolCallItem(item.id as string, "web_search", {
     name,
@@ -292,9 +291,7 @@ function mapWebSearchCallItem(item: Record<string, unknown>): {
   });
 
   const sources =
-    action &&
-    typeof action === "object" &&
-    Array.isArray((action as { sources?: unknown }).sources)
+    action && typeof action === "object" && Array.isArray((action as { sources?: unknown }).sources)
       ? (action as { sources: unknown[] }).sources
       : undefined;
   if (!sources || sources.length === 0) {
@@ -334,8 +331,7 @@ function mapCodeInterpreterCallItem(item: Record<string, unknown>): {
   call: ServerToolCallItem;
   result?: ServerToolResultItem;
 } {
-  const status =
-    item.status === "failed" ? "failed" : item.status === "completed" ? "completed" : "in_progress";
+  const status = item.status === "failed" ? "failed" : item.status === "completed" ? "completed" : "in_progress";
   const code = typeof item.code === "string" ? item.code : undefined;
   const call = serverToolCallItem(item.id as string, "code_execution", {
     name: "python",
@@ -387,11 +383,7 @@ function mapMcpCallItem(item: Record<string, unknown>): {
   }
   if (failed) {
     content.push(
-      textBlock(
-        typeof item.error === "string"
-          ? item.error
-          : JSON.stringify(item.error ?? "mcp call failed"),
-      ),
+      textBlock(typeof item.error === "string" ? item.error : JSON.stringify(item.error ?? "mcp call failed")),
     );
   }
 
@@ -543,10 +535,7 @@ function readNonEmptyString(value: unknown, maxLen = 256): string | undefined {
 }
 
 /** 将 canonical text/json blocks 压成 EasyInputMessage 的 string content。 */
-function messageContentAsString(
-  blocks: ContentBlock[],
-  field: string,
-): string {
+function messageContentAsString(blocks: ContentBlock[], field: string): string {
   return mapper.textFromBlocks(blocks, field);
 }
 
@@ -661,7 +650,10 @@ export class ResponsesAdapter extends AdapterBase {
 
           // 显式字段校验：id / previous_response_id / item_id 若存在必须是合法 string
           for (const key of ["id", "previous_response_id", "item_id"] as const) {
-            if (key in payload && (typeof payload[key] !== "string" || payload[key].length === 0 || payload[key].length > 256)) {
+            if (
+              key in payload &&
+              (typeof payload[key] !== "string" || payload[key].length === 0 || payload[key].length > 256)
+            ) {
               throw new AIRequestError(
                 `Invalid opaque replay payload: ${key} must be a non-empty string (max 256)`,
                 "INVALID_OPAQUE_REPLAY",
@@ -804,7 +796,10 @@ export class ResponsesAdapter extends AdapterBase {
       }
     };
 
-    const ensureReasoningState = (itemId: string, visibility: ReasoningVisibility = "summary"): ReasoningStreamState => {
+    const ensureReasoningState = (
+      itemId: string,
+      visibility: ReasoningVisibility = "summary",
+    ): ReasoningStreamState => {
       let state = reasoningStates.get(itemId);
       if (!state) {
         state = createReasoningState(visibility);
@@ -859,8 +854,7 @@ export class ResponsesAdapter extends AdapterBase {
             case "function_call": {
               const name = typeof item.name === "string" ? item.name : "unknown";
               // Responses 用 call_id 关联 function_call_output；item.id 是 fc_* item id
-              const callId =
-                typeof item.call_id === "string" && item.call_id.length > 0 ? item.call_id : item.id;
+              const callId = typeof item.call_id === "string" && item.call_id.length > 0 ? item.call_id : item.id;
               toolCallNames.set(item.id, name);
               toolCallIds.set(item.id, callId);
               yield factory.toolCallStarted(callId, name);
@@ -904,9 +898,7 @@ export class ResponsesAdapter extends AdapterBase {
           if (item.type === "reasoning") {
             const extracted = extractReasoningFromOutputItem(item);
             const state = ensureReasoningState(item.id, extracted.visibility);
-            const text =
-              extracted.text ||
-              (state.doneTexts.length > 0 ? state.doneTexts.join("\n") : "");
+            const text = extracted.text || (state.doneTexts.length > 0 ? state.doneTexts.join("\n") : "");
             yield* completeReasoning(item.id, text, extracted.visibility || state.visibility);
             continue;
           }
@@ -1163,9 +1155,7 @@ export class ResponsesAdapter extends AdapterBase {
               const state = reasoningStates.get(item.id);
               if (state?.completed) continue;
               const extracted = extractReasoningFromOutputItem(item);
-              const text =
-                extracted.text ||
-                (state && state.doneTexts.length > 0 ? state.doneTexts.join("\n") : "");
+              const text = extracted.text || (state && state.doneTexts.length > 0 ? state.doneTexts.join("\n") : "");
               // Only complete if we already started this item (otherwise aggregator has no active item).
               if (state || reasoningStates.has(item.id)) {
                 yield* completeReasoning(item.id, text, extracted.visibility);

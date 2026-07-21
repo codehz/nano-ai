@@ -5,7 +5,13 @@
  */
 
 import { describe, it, expect } from "bun:test";
-import { AIProviderError, AIRequestError, AIStreamError, ChatCompletionsAdapter, collectStream } from "../../src/index.js";
+import {
+  AIProviderError,
+  AIRequestError,
+  AIStreamError,
+  ChatCompletionsAdapter,
+  collectStream,
+} from "../../src/index.js";
 import type { NormalizedRequest, FetchFn } from "../../src/index.js";
 // ── Helpers ───────────────────────────────────────────────────
 

@@ -3,12 +3,7 @@
  */
 
 import { AIRequestError } from "../../runtime/errors.js";
-import {
-  messageItem,
-  reasoningItem,
-  serverToolCallItem,
-  textBlock,
-} from "../../canonical/index.js";
+import { messageItem, reasoningItem, serverToolCallItem, textBlock } from "../../canonical/index.js";
 import type {
   AIStreamEvent,
   ContentBlock,
@@ -367,4 +362,3 @@ export async function sleep(ms: number): Promise<void> {
 
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
-

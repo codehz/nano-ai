@@ -4,13 +4,7 @@
  * 流结束后由聚合器产出，用于承载当前轮的规范化输出、replay 材料及辅助信息。
  */
 
-import type {
-  OutputItem,
-  ReplayItem,
-  ServerToolCallItem,
-  ServerToolResultItem,
-  ToolCallItem,
-} from "./items.js";
+import type { OutputItem, ReplayItem, ServerToolCallItem, ServerToolResultItem, ToolCallItem } from "./items.js";
 import type { AdapterKind } from "./kind.js";
 
 // ── StopReason ────────────────────────────────────────────────

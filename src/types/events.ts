@@ -8,13 +8,7 @@
 
 import type { ContentBlock } from "./content.js";
 import type { Usage, BillingInfo, AuxiliaryInfo, BackendTrace, StopReason } from "./response.js";
-import type {
-  Citation,
-  OpaqueItem,
-  ReplayItem,
-  ServerToolDiscoveryItem,
-  ServerToolResultItem,
-} from "./items.js";
+import type { Citation, OpaqueItem, ReplayItem, ServerToolDiscoveryItem, ServerToolResultItem } from "./items.js";
 import type { AdapterKind } from "./kind.js";
 
 // ── 事件基类 ──────────────────────────────────────────────────

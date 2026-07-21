@@ -3,18 +3,8 @@
  */
 
 import { AIRequestError } from "../../runtime/errors.js";
-import type {
-  ContentBlock,
-  InputItem,
-  NormalizedRequest,
-  ReplayItem,
-  ToolResultItem,
-} from "../../types/index.js";
-import type {
-  MockHandlerContext,
-  MockInputExpectation,
-  MockRequestExpectation,
-} from "./types.js";
+import type { ContentBlock, InputItem, NormalizedRequest, ReplayItem, ToolResultItem } from "../../types/index.js";
+import type { MockHandlerContext, MockInputExpectation, MockRequestExpectation } from "./types.js";
 
 export function assertMockRequest(
   request: NormalizedRequest,
@@ -88,7 +78,6 @@ export function assertMockRequest(
     }
   }
 }
-
 
 export function assertReplayIncluded(input: readonly InputItem[], replay: readonly ReplayItem[], prefix: string): void {
   const fingerprints = input.map(fingerprintItem);
@@ -233,4 +222,3 @@ export function describeExpectation(expectation: MockInputExpectation): string {
 export function cloneItem<T>(item: T): T {
   return structuredClone(item);
 }
-

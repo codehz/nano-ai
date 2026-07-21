@@ -1130,7 +1130,6 @@ describe("ResponsesAdapter - integration", () => {
   });
 });
 
-
 // ── Server tools streaming ────────────────────────────────────
 
 describe("ResponsesAdapter - server tools streaming", () => {
@@ -1211,7 +1210,10 @@ describe("ResponsesAdapter - server tools streaming", () => {
           id: "resp-code",
           model: "gpt-4o",
           status: "completed",
-          output: [{ id: "ci_1", type: "code_interpreter_call", status: "completed" }, { id: "m2", type: "message" }],
+          output: [
+            { id: "ci_1", type: "code_interpreter_call", status: "completed" },
+            { id: "m2", type: "message" },
+          ],
         },
       })}\n\n`,
     ];
@@ -1307,7 +1309,10 @@ describe("ResponsesAdapter - server tools streaming", () => {
           id: "resp-approval",
           model: "gpt-4o",
           status: "completed",
-          output: [{ id: "mcpr_1", type: "mcp_approval_request" }, { id: "m4", type: "message" }],
+          output: [
+            { id: "mcpr_1", type: "mcp_approval_request" },
+            { id: "m4", type: "message" },
+          ],
         },
       })}\n\n`,
     ];
@@ -1323,4 +1328,3 @@ describe("ResponsesAdapter - server tools streaming", () => {
     expect(result.stopReason).toBe("end_turn");
   });
 });
-

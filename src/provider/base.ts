@@ -28,13 +28,7 @@ import type {
   AdapterKind,
 } from "../types/index.js";
 import { createEventFactory } from "../stream/event-factory.js";
-import {
-  AIMappingError,
-  AIProviderError,
-  AIRequestError,
-  AIStreamError,
-  WarningCode,
-} from "../runtime/errors.js";
+import { AIMappingError, AIProviderError, AIRequestError, AIStreamError, WarningCode } from "../runtime/errors.js";
 import type { EventFactory } from "../stream/event-factory.js";
 import { extractText } from "../canonical/index.js";
 import { AdapterAuxiliaryState } from "./auxiliary.js";

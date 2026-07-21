@@ -1,6 +1,22 @@
 import { describe, it, expect } from "bun:test";
 
-import { mapStopReason, mapReasoningVisibility, textBlock, jsonBlock, imageBlock, opaqueBlock, messageItem, reasoningItem, toolCallItem, toolResultItem, opaqueItem, replayFromOutput, AIMappingError, AIProviderError, collectStream } from "../../src/index.js";
+import {
+  mapStopReason,
+  mapReasoningVisibility,
+  textBlock,
+  jsonBlock,
+  imageBlock,
+  opaqueBlock,
+  messageItem,
+  reasoningItem,
+  toolCallItem,
+  toolResultItem,
+  opaqueItem,
+  replayFromOutput,
+  AIMappingError,
+  AIProviderError,
+  collectStream,
+} from "../../src/index.js";
 
 import { AdapterBase } from "../../src/provider/base.js";
 import type { NormalizedRequest, AIStreamEvent } from "../../src/index.js";

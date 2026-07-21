@@ -38,24 +38,12 @@ import {
 import { mergeProviderHeaders, applyExtraBody } from "../../provider/request-options.js";
 import { mapOllamaThink } from "../../provider/reasoning.js";
 
-import type {
-  NormalizedRequest,
-  AIStreamEvent,
-  OutputItem,
-  FetchFn,
-  StopReason,
-} from "../../types/index.js";
+import type { NormalizedRequest, AIStreamEvent, OutputItem, FetchFn, StopReason } from "../../types/index.js";
 import type { EventFactory } from "../../stream/event-factory.js";
 
 // ── 选项类型 ──────────────────────────────────────────────────
 
-import type {
-  OllamaAdapterOptions,
-  OllamaChatRequest,
-  OllamaMessage,
-  OllamaToolCall,
-  OllamaTool
-} from "./types.js";
+import type { OllamaAdapterOptions, OllamaChatRequest, OllamaMessage, OllamaToolCall, OllamaTool } from "./types.js";
 
 const mapper = new NormalizedRequestMapper("ollama");
 
@@ -294,7 +282,10 @@ export class OllamaAdapter extends AdapterBase {
       );
     }
     if (request.metadata) {
-      yield factory.responseWarning("Request metadata is not supported by the Ollama adapter", WarningCode.UNSUPPORTED_METADATA);
+      yield factory.responseWarning(
+        "Request metadata is not supported by the Ollama adapter",
+        WarningCode.UNSUPPORTED_METADATA,
+      );
     }
 
     const headers: Record<string, string> = {

@@ -9,7 +9,16 @@
  */
 
 import { describe, it, expect } from "bun:test";
-import { AIError, AIRequestError, AIProviderError, AIStreamError, AIMappingError, WarningCode, collectStream, textBlock } from "../../src/index.js";
+import {
+  AIError,
+  AIRequestError,
+  AIProviderError,
+  AIStreamError,
+  AIMappingError,
+  WarningCode,
+  collectStream,
+  textBlock,
+} from "../../src/index.js";
 import { createEventFactory } from "../../src/stream/event-factory.js";
 import { aggregateEvents } from "../../src/stream/aggregator.js";
 import { AdapterBase } from "../../src/provider/base.js";

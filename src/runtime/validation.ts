@@ -293,12 +293,7 @@ function validateTools(tools: unknown, issues: ValidationIssue[]): void {
 const SEARCH_CONTEXT_SIZES = new Set(["low", "medium", "high"]);
 const CODE_MEMORY_LIMITS = new Set(["1g", "4g", "16g", "64g"]);
 
-function validateStringArrayField(
-  value: unknown,
-  field: string,
-  code: string,
-  issues: ValidationIssue[],
-): void {
+function validateStringArrayField(value: unknown, field: string, code: string, issues: ValidationIssue[]): void {
   if (!Array.isArray(value)) {
     pushIssue(issues, field, code, `${field} must be a string array`);
     return;
@@ -436,12 +431,7 @@ function validateServerTools(serverTools: unknown, issues: ValidationIssue[]): v
           );
         }
         if (tool.authorization !== undefined && typeof tool.authorization !== "string") {
-          pushIssue(
-            issues,
-            `${field}.authorization`,
-            "SERVER_TOOL_INVALID",
-            `${field}.authorization must be a string`,
-          );
+          pushIssue(issues, `${field}.authorization`, "SERVER_TOOL_INVALID", `${field}.authorization must be a string`);
         }
         if (tool.allowedTools !== undefined) {
           validateStringArrayField(tool.allowedTools, `${field}.allowedTools`, "SERVER_TOOL_INVALID", issues);

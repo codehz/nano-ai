@@ -97,5 +97,3 @@ export type PendingToolCall = {
 export type ReasoningFieldName = "reasoning" | "reasoning_content";
 
 export const REASONING_FIELDS: readonly ReasoningFieldName[] = ["reasoning_content", "reasoning"];
-
-

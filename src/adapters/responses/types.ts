@@ -141,5 +141,3 @@ export type ResponsesTool =
   | ResponsesWebSearchTool
   | ResponsesCodeInterpreterTool
   | ResponsesMcpTool;
-
-

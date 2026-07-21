@@ -297,7 +297,6 @@ export class MockAdapter extends AdapterBase {
   }
 }
 
-
 function resolveStopReason(output: OutputItem[]): StopReason {
   return output.some((item) => item.type === "tool_call") ? "tool_call" : "end_turn";
 }
@@ -309,7 +308,6 @@ function consumePendingToolCalls(pending: readonly ToolCallItem[], input: readon
 
   return pending.filter((item) => !fulfilledIds.has(item.id)).map(cloneItem);
 }
-
 
 function cloneItem<T>(item: T): T {
   return structuredClone(item);

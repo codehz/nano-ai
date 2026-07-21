@@ -218,4 +218,3 @@ export type ResolvedMockTextStreamOptions = {
   chunkSize: number;
   initialDelayMs: number;
 };
-

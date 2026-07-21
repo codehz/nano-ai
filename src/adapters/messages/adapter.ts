@@ -34,13 +34,7 @@ import {
 import { mergeProviderHeaders, applyExtraBody } from "../../provider/request-options.js";
 import { mapMessagesThinking } from "../../provider/reasoning.js";
 
-import type {
-  NormalizedRequest,
-  AIStreamEvent,
-  OutputItem,
-  FetchFn,
-  ContentBlock,
-} from "../../types/index.js";
+import type { NormalizedRequest, AIStreamEvent, OutputItem, FetchFn, ContentBlock } from "../../types/index.js";
 import type { EventFactory } from "../../stream/event-factory.js";
 
 // ── 类型 ──────────────────────────────────────────────────────
@@ -50,7 +44,7 @@ import type {
   MessagesAPIRequest,
   MessagesAPIMessage,
   MessagesAPIContentBlock,
-  MessagesAPITool
+  MessagesAPITool,
 } from "./types.js";
 
 const mapper = new NormalizedRequestMapper("messages");

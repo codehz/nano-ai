@@ -2,13 +2,30 @@ import { describe, it, expect } from "bun:test";
 
 // ── 类型导入验证 ──────────────────────────────────────────────
 
-import { // ContentBlock
-  type ContentBlock, type InstructionBlock, // Items
-  type MessageItem, type ReasoningItem, type ToolCallItem, type ToolResultItem, type OpaqueItem, type InputItem, type ReplayItem, // Request
-  type AIRequest, type ToolDefinition, type ToolChoice, // Response
-  type AIResponse, type StopReason, type Usage, type BillingInfo, // Events
+import {
+  // ContentBlock
+  type ContentBlock,
+  type InstructionBlock, // Items
+  type MessageItem,
+  type ReasoningItem,
+  type ToolCallItem,
+  type ToolResultItem,
+  type OpaqueItem,
+  type InputItem,
+  type ReplayItem, // Request
+  type AIRequest,
+  type ToolDefinition,
+  type ToolChoice, // Response
+  type AIResponse,
+  type StopReason,
+  type Usage,
+  type BillingInfo, // Events
   type AIStreamEvent, // Client
-  assertMockRequest, createAIClient, MockAdapter, withMockStreaming } from "../../src/index.js";
+  assertMockRequest,
+  createAIClient,
+  MockAdapter,
+  withMockStreaming,
+} from "../../src/index.js";
 // ── ContentBlock ──────────────────────────────────────────────
 
 describe("ContentBlock", () => {
@@ -307,7 +324,6 @@ describe("exports", () => {
     expect(publicApi.REASONING_LEVELS).toContain("high");
   });
 
-  
   it("should accept custom AdapterKind on BackendAdapter", () => {
     const adapter: import("../../src/index.js").BackendAdapter = {
       kind: "custom-x",

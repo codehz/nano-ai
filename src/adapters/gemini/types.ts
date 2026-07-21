@@ -91,5 +91,3 @@ export type GeminiStreamChunk = {
   modelVersion?: string;
   responseId?: string;
 };
-
-

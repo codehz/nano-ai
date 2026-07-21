@@ -23,9 +23,7 @@ const GEMINI_SUPPORTED = new Set<ReasoningLevel>(["none", "minimal", "low", "med
 
 export type OpenAIReasoningEffort = ReasoningLevel;
 
-export type MessagesThinkingConfig =
-  | { type: "disabled" }
-  | { type: "enabled"; budget_tokens: number };
+export type MessagesThinkingConfig = { type: "disabled" } | { type: "enabled"; budget_tokens: number };
 
 export type OllamaThinkValue = false | "low" | "medium" | "high";
 

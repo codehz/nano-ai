@@ -55,5 +55,3 @@ export type OllamaTool = {
     parameters: Record<string, unknown>;
   };
 };
-
-

@@ -47,5 +47,3 @@ export type MessagesAPITool = {
   description?: string;
   input_schema: Record<string, unknown>;
 };
-
-

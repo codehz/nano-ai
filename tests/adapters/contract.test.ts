@@ -26,14 +26,7 @@ import {
 
 import { AdapterBase } from "../../src/provider/base.js";
 import { aggregateEvents } from "../../src/stream/aggregator.js";
-import type {
-  AIStreamEvent,
-  FetchFn,
-  InputItem,
-  NormalizedRequest,
-  OutputItem,
-  ReplayItem,
-} from "../../src/index.js";
+import type { AIStreamEvent, FetchFn, InputItem, NormalizedRequest, OutputItem, ReplayItem } from "../../src/index.js";
 
 function sseResponse(...chunks: string[]): Response {
   const encoder = new TextEncoder();
@@ -643,10 +636,7 @@ describe("A→C opaque round-trip matrix", () => {
     await collectStream(
       new ChatCompletionsAdapter({ apiKey: "test-key", fetch }).stream(
         makeRequest({
-          input: [
-            { type: "message", role: "user", content: [{ type: "text", text: "Hello" }] },
-            ...round1.replay,
-          ],
+          input: [{ type: "message", role: "user", content: [{ type: "text", text: "Hello" }] }, ...round1.replay],
         }),
       ),
     );
@@ -737,9 +727,7 @@ describe("A→C opaque round-trip matrix", () => {
       ),
     );
 
-    expect(body.current?.messages).toEqual([
-      { role: "assistant", content: "答案", reasoning_content: "先思考" },
-    ]);
+    expect(body.current?.messages).toEqual([{ role: "assistant", content: "答案", reasoning_content: "先思考" }]);
   });
 
   /**
@@ -929,10 +917,7 @@ describe("A→C opaque round-trip matrix", () => {
                 replaceCanonical: true,
                 content: {
                   role: "model",
-                  parts: [
-                    { text: "thought", thought: true, thoughtSignature: "sig-1" },
-                    { text: "A1" },
-                  ],
+                  parts: [{ text: "thought", thought: true, thoughtSignature: "sig-1" }, { text: "A1" }],
                 },
               },
             },
@@ -945,10 +930,7 @@ describe("A→C opaque round-trip matrix", () => {
     const contents = body.current?.contents as Array<{ role: string; parts: unknown[] }>;
     const models = contents.filter((c) => c.role === "model");
     expect(models).toHaveLength(1);
-    expect(models[0]?.parts).toEqual([
-      { text: "thought", thought: true, thoughtSignature: "sig-1" },
-      { text: "A1" },
-    ]);
+    expect(models[0]?.parts).toEqual([{ text: "thought", thought: true, thoughtSignature: "sig-1" }, { text: "A1" }]);
   });
 
   it("A→C opaque: responses prefers canonical items over previous_response_id", async () => {
@@ -966,10 +948,7 @@ describe("A→C opaque round-trip matrix", () => {
     await collectStream(
       new ResponsesAdapter({ apiKey: "test-key", fetch }).stream(
         makeRequest({
-          input: [
-            { type: "message", role: "user", content: [{ type: "text", text: "Hello" }] },
-            ...round1.replay,
-          ],
+          input: [{ type: "message", role: "user", content: [{ type: "text", text: "Hello" }] }, ...round1.replay],
         }),
       ),
     );
@@ -1024,10 +1003,7 @@ describe("A→C opaque round-trip matrix", () => {
       await collectStream(
         entry.create(entry.capture.fetch).stream(
           makeRequest({
-            input: [
-              { type: "message", role: "user", content: [{ type: "text", text: "Hello" }] },
-              foreignOpaque,
-            ],
+            input: [{ type: "message", role: "user", content: [{ type: "text", text: "Hello" }] }, foreignOpaque],
           }),
         ),
       );
@@ -1049,9 +1025,7 @@ describe("A→C opaque round-trip matrix", () => {
           return;
         }
 
-        const assistantMessages = request.input.filter(
-          (item) => item.type === "message" && item.role === "assistant",
-        );
+        const assistantMessages = request.input.filter((item) => item.type === "message" && item.role === "assistant");
         // 正确语义：多轮后 canonical assistant 不应被重复叠入；mock 侧以单份为准
         expect(assistantMessages.length).toBeLessThanOrEqual(1);
         yield { type: "message", content: "done" };
@@ -1098,9 +1072,7 @@ describe("A→E dual-track ledger", () => {
   function assertDualTrack(result: Awaited<ReturnType<typeof collectStream>>, label: string) {
     const ledger = canonicalLedgerFromReplay(result.replay);
     expect(result.output, `${label} output ≡ non-opaque replay`).toEqual(ledger);
-    expect(result.toolCalls, `${label} toolCalls`).toEqual(
-      result.output.filter((item) => item.type === "tool_call"),
-    );
+    expect(result.toolCalls, `${label} toolCalls`).toEqual(result.output.filter((item) => item.type === "tool_call"));
     expect(result.text, `${label} text`).toBe(extractText(result.output));
     expect(result.serverToolCalls ?? [], `${label} serverToolCalls`).toEqual(
       result.output.filter((item) => item.type === "server_tool_call"),
@@ -1241,8 +1213,7 @@ describe("A contract error-path smoke", () => {
 
     const events = await collectEvents(new MappingErrorAdapter().stream(makeRequest({ input: [] })));
     const warning = events.find(
-      (event): event is Extract<AIStreamEvent, { type: "response.warning" }> =>
-        event.type === "response.warning",
+      (event): event is Extract<AIStreamEvent, { type: "response.warning" }> => event.type === "response.warning",
     );
     expect(warning?.message).toContain("provider exploded");
     expect(warning?.code).toBe(WarningCode.MAPPING_ERROR);

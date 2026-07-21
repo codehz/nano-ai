@@ -59,7 +59,7 @@ import type {
   GeminiTool,
   GeminiFunctionCallingConfig,
   GeminiGenerateContentRequest,
-  GeminiStreamChunk
+  GeminiStreamChunk,
 } from "./types.js";
 
 const mapper = new NormalizedRequestMapper("gemini");
@@ -506,9 +506,7 @@ export class GeminiAdapter extends AdapterBase {
           const reason = mapStopReason(candidate.finishReason);
           // 有 tool_call 时优先 tool_call 语义
           const effectiveReason =
-            pendingToolCalls.length > 0 && (reason === "end_turn" || reason === "unknown")
-              ? "tool_call"
-              : reason;
+            pendingToolCalls.length > 0 && (reason === "end_turn" || reason === "unknown") ? "tool_call" : reason;
           stopReason = effectiveReason;
           yield* emitCompleted(effectiveReason, responseId);
         }

@@ -102,7 +102,9 @@ describe("GeminiAdapter - text streaming", () => {
 
   it("should preserve UTF-8 characters split across transport chunks", async () => {
     const encoder = new TextEncoder();
-    const prefix = encoder.encode('data: {"responseId":"resp-utf","candidates":[{"content":{"role":"model","parts":[{"text":"');
+    const prefix = encoder.encode(
+      'data: {"responseId":"resp-utf","candidates":[{"content":{"role":"model","parts":[{"text":"',
+    );
     const text = encoder.encode("你好");
     const suffix = encoder.encode('"}]},"finishReason":"STOP","index":0}]}\n');
     const adapter = new GeminiAdapter({
@@ -365,10 +367,7 @@ describe("GeminiAdapter - reasoning and replay", () => {
           {
             content: {
               role: "model",
-              parts: [
-                { text: "Let me think", thought: true, thoughtSignature: "sig-abc" },
-                { text: "Answer" },
-              ],
+              parts: [{ text: "Let me think", thought: true, thoughtSignature: "sig-abc" }, { text: "Answer" }],
             },
             finishReason: "STOP",
             index: 0,
@@ -443,10 +442,7 @@ describe("GeminiAdapter - reasoning and replay", () => {
                 replaceCanonical: true,
                 content: {
                   role: "model",
-                  parts: [
-                    { text: "thought", thought: true, thoughtSignature: "sig-1" },
-                    { text: "A1" },
-                  ],
+                  parts: [{ text: "thought", thought: true, thoughtSignature: "sig-1" }, { text: "A1" }],
                 },
               },
             },
@@ -458,10 +454,7 @@ describe("GeminiAdapter - reasoning and replay", () => {
 
     const contents = capturedBody?.contents as Array<{ role: string; parts: Array<Record<string, unknown>> }>;
     const model = contents.find((c) => c.role === "model");
-    expect(model?.parts).toEqual([
-      { text: "thought", thought: true, thoughtSignature: "sig-1" },
-      { text: "A1" },
-    ]);
+    expect(model?.parts).toEqual([{ text: "thought", thought: true, thoughtSignature: "sig-1" }, { text: "A1" }]);
   });
 });
 
@@ -708,9 +701,9 @@ describe("GeminiAdapter - errors and stream edge cases", () => {
       },
     });
 
-    await expect(
-      collectStream(adapter.stream(makeRequest({ signal: controller.signal }))),
-    ).rejects.toBeInstanceOf(DOMException);
+    await expect(collectStream(adapter.stream(makeRequest({ signal: controller.signal })))).rejects.toBeInstanceOf(
+      DOMException,
+    );
   });
 
   it("should emit completed only once when finishReason repeats", async () => {

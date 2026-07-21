@@ -305,10 +305,7 @@ function handleToolCallCompleted(state: AggregatorState, event: AIStreamEvent & 
   state.toolCalls.push(item);
 }
 
-function handleServerToolStarted(
-  state: AggregatorState,
-  event: AIStreamEvent & { type: "server_tool.started" },
-): void {
+function handleServerToolStarted(state: AggregatorState, event: AIStreamEvent & { type: "server_tool.started" }): void {
   const id = event.item.id;
   if (state.activeItems.has(id)) {
     throw streamProtocolError(`Item with id ${id} is already active`);
