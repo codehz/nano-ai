@@ -1,9 +1,9 @@
 /**
  * 模拟流式 (Synthetic Streaming)
  *
- * 将一组已解析的 canonical OutputItem 包装为规范事件流。
- * 适用于非原生流式后端：adapter 拿到完整响应后，调用此函数
- * 即可产出一致的事件序列，无需自己逐事件组装。
+ * **用途**：测试与非原生流式后端的 best-effort 包装（test-first helper）。
+ * 将一组已解析的 canonical OutputItem 包装为规范事件流；
+ * adapter 拿到完整响应后可调用此函数产出一致事件序列。
  *
  * 约束：
  * - 每个 item 只发一块完整 delta（不模拟逐 token）
@@ -11,6 +11,7 @@
  * - 保持后端原始顺序
  * - 不发明 reasoning
  * - 不改写工具参数
+ * - 当前 **不**展开 server_tool_* item（仅 message/reasoning/tool_call/opaque 路径）
  */
 
 import { createEventFactory } from "../stream/event-factory.js";

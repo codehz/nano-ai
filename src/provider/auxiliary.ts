@@ -5,6 +5,10 @@ import { AuxiliaryCollector, type BillingSource, type LookupResult, type UsageSo
 
 type MaybePromise<T> = T | Promise<T>;
 
+/**
+ * 实验性：由调用方接线；库内 HTTP adapter **未**默认启用。
+ * 用于从 usage/auxiliary 派生 billing 的后处理钩子。
+ */
 export type BillingPostprocessHook = (context: {
   request: NormalizedRequest;
   usage?: Usage;
@@ -12,9 +16,15 @@ export type BillingPostprocessHook = (context: {
   auxiliary?: AuxiliaryInfo;
 }) => MaybePromise<Partial<BillingInfo> | undefined>;
 
+/**
+ * finalize 选项。`lookup` / `postprocessBilling` 为 experimental unused 扩展点：
+ * 生产 adapter 当前不传入；仅测试或宿主自定义 wiring 使用。
+ */
 export type AuxiliaryFinalizeOptions = {
+  /** experimental：异步补查 usage/billing */
   lookup?: () => Promise<LookupResult>;
   lookupTimeoutMs?: number;
+  /** experimental：在尚无 billing 时派生估算账单 */
   postprocessBilling?: BillingPostprocessHook;
   postprocessBillingSource?: BillingSource;
 };

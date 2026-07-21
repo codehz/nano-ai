@@ -166,21 +166,8 @@ export function parseDataLineSse(item: string): StreamParseResult<unknown> {
   }
 }
 
-/** Chat Completions 别名；逻辑与 `parseDataLineSse` 相同。 */
-export const parseChatCompletionsDataLine = parseDataLineSse;
-
 export function createDataLineSseParser<T>(): IncrementalStreamParser<T> {
   return new IncrementalStreamParser(splitLines, (item) => parseDataLineSse(item) as StreamParseResult<T>);
-}
-
-/** Chat Completions data-line SSE parser. */
-export function createChatCompletionsSseParser<T>(): IncrementalStreamParser<T> {
-  return createDataLineSseParser<T>();
-}
-
-/** Gemini streamGenerateContent `alt=sse` data-line parser. */
-export function createGeminiSseParser<T>(): IncrementalStreamParser<T> {
-  return createDataLineSseParser<T>();
 }
 
 /** NDJSON 行解析（Ollama 等）：空行忽略，JSON 失败为 malformed。 */

@@ -1,5 +1,6 @@
 import { AIRequestError } from "../runtime/errors.js";
 import { contentBlocksToText } from "../canonical/index.js";
+import { parseJsonStrictObject } from "./json-parse.js";
 
 import type {
   ContentBlock,
@@ -45,16 +46,8 @@ export class NormalizedRequestMapper {
   }
 
   parseToolArguments(item: ToolCallItem): Record<string, unknown> {
-    try {
-      const parsed: unknown = JSON.parse(item.argumentsText);
-      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-        return parsed as Record<string, unknown>;
-      }
-    } catch {
-      // handled below
-    }
-
-    throw new AIRequestError(
+    return parseJsonStrictObject(
+      item.argumentsText,
       `${this.kind} requires tool_call argumentsText to be a valid JSON object`,
       "TOOL_CALL_ARGUMENTS_INVALID",
     );

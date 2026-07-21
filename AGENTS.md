@@ -17,18 +17,29 @@ Custom adapters should implement the public `BackendAdapter` interface only; do 
 
 ### Event-authority streaming (no dual-track output)
 
-HTTP adapters must not maintain a parallel `OutputItem[]` content ledger alongside stream events. Item lifecycle goes through `createStreamingItemSession` (`src/provider/streaming-item-session.ts`): yield start/delta/complete events and build canonical replay via `replayFromOutput(session.completedItems())`, then append wire-level opaque envelopes. Full `AIResponse` (`output` / `text` / `toolCalls` / …) is produced only by `collectStream` / the aggregator; `response.completed` carries replay + completion metadata only.
+HTTP adapters must **not** maintain a parallel `OutputItem[]` content ledger alongside stream events (the aggregator is the sole full-response authority). Item lifecycle goes through `createStreamingItemSession` (`src/provider/streaming-item-session.ts`): yield start/delta/complete events and build canonical replay via `replayFromOutput(session.completedItems())` / `finalizeStreamTurn`, then append wire-level opaque envelopes.
+
+**Allowed:** opaque **wire snapshot buffers** (provider-native assistant/model turns, partial tool args, finish metadata) used only to emit opaque replay tails — not a second canonical `OutputItem[]` ledger.
+
+Full `AIResponse` (`output` / `text` / `toolCalls` / …) is produced only by `collectStream` / the aggregator; `response.completed` carries replay + completion metadata only. Opaque items are **always trailing** in `output` (from `response.completed.opaqueOutput`).
+
+Thick HTTP adapters split like `responses`: thin `adapter.ts` + `map-request.ts` + `map-stream.ts` (chat-completions / messages / ollama / gemini).
 
 ### Opaque replay protocol
 
 HTTP adapters restore wire turns from `input` items with `type: "opaque"`:
 
-1. **Filter** — only `source === <adapterSource>` and `purpose === "replay"`; otherwise ignore.
+1. **Filter** — only `source === <adapterSource>` (`OPAQUE_SOURCE.*` in `src/provider/opaque-sources.ts`) and `purpose === "replay"`; otherwise ignore.
 2. **Envelope** — `assertOpaqueReplayEnvelope` (object, ≤64KB, depth ≤8); failures throw `AIRequestError` / `INVALID_OPAQUE_REPLAY`.
 3. **Replace trailing turn** — before appending an assistant/model wire turn, rollback trailing messages of that role (`assistant` for chat/messages/ollama, `model` for gemini), then append. Single-assistant opaque payloads use the same replace semantics as `replaceCanonical: true`. Responses uses id / `previous_response_id` continuation instead of stacking assistant wire messages (canonical non-opaque input wins).
-4. **Shapes** — known invalid shapes throw `INVALID_OPAQUE_REPLAY`; unrecognized shapes after a valid envelope are skipped.
+4. **Shapes** — known invalid shapes throw `INVALID_OPAQUE_REPLAY`; unrecognized shapes after a valid envelope are skipped. Chat Completions **only** accepts `messages` form (single `role`/`content` deprecated).
 
 Use `acceptOpaqueReplay` from `src/provider/opaque-replay.ts` at the start of each adapter's `case "opaque"`.
+
+### Warnings & tool_call validation
+
+- Stream / response warnings are structured: `{ message: string; code?: WarningCode }[]` (not bare `string[]`).
+- Runtime validation of `tool_call.argumentsText` checks shape (`typeof string`) only — **no** `JSON.parse`; object semantics are enforced in adapter request mapping (`parseToolArguments` / `parseJsonStrictObject`).
 
 `tests/` mirrors source layers (`types/`, `runtime/`, `stream/`, `provider/`, `adapters/`, `scenarios/`) plus shared `tests/fixtures.ts`. `examples/` contains runnable usage samples like `examples/basic.ts` and `examples/tool-loop.ts`. `dist/` is generated output from the packaging build and should not be edited by hand.
 

@@ -42,10 +42,7 @@ export {
   parseSseJsonFrame,
   createSseJsonParser,
   parseDataLineSse,
-  parseChatCompletionsDataLine,
   createDataLineSseParser,
-  createChatCompletionsSseParser,
-  createGeminiSseParser,
   createNdjsonLineParser,
 } from "./transport/parser.js";
 export type { StreamSplitResult, StreamParseResult, SseJsonEvent } from "./transport/parser.js";
@@ -86,3 +83,10 @@ export type {
   GeminiThinkingConfig,
 } from "./reasoning.js";
 export { NormalizedRequestMapper } from "./request-mapper.js";
+export { parseJsonLooseObject, parseJsonStrictObject } from "./json-parse.js";
+export { mapOpenAiFunctionTool } from "./openai-tools.js";
+export type { OpenAiFunctionTool } from "./openai-tools.js";
+export { OPAQUE_SOURCE } from "./opaque-sources.js";
+export type { OpaqueSourceId } from "./opaque-sources.js";
+export { finalizeStreamTurn } from "./finalize-stream-turn.js";
+export type { FinalizeStreamTurnOptions } from "./finalize-stream-turn.js";

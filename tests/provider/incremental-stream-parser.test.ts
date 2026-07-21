@@ -6,8 +6,6 @@ import {
   splitSSEFrames,
   parseDataLineSse,
   createDataLineSseParser,
-  createChatCompletionsSseParser,
-  createGeminiSseParser,
   createSseJsonParser,
 } from "../../src/provider/transport/parser.js";
 
@@ -144,19 +142,15 @@ describe("data-line SSE parsers", () => {
     expect(parser.feed(encoder.encode("data: {\n"))).toEqual({ items: [], malformed: 1 });
   });
 
-  it("createChatCompletionsSseParser and createGeminiSseParser match on the same input", () => {
-    const chat = createChatCompletionsSseParser<unknown>();
-    const gemini = createGeminiSseParser<unknown>();
-    const shared = createDataLineSseParser<unknown>();
+  it("createDataLineSseParser parses mixed data lines consistently", () => {
+    const parser = createDataLineSseParser<unknown>();
     const payload = 'data: {"a":1}\ndata: [DONE]\ndata: bad\ndata: {"b":2}\n';
 
-    for (const parser of [chat, gemini, shared]) {
-      expect(parser.feed(encoder.encode(payload))).toEqual({
-        items: [{ a: 1 }, { b: 2 }],
-        malformed: 1,
-      });
-      expect(parser.flush()).toEqual({ items: [], malformed: 0 });
-    }
+    expect(parser.feed(encoder.encode(payload))).toEqual({
+      items: [{ a: 1 }, { b: 2 }],
+      malformed: 1,
+    });
+    expect(parser.flush()).toEqual({ items: [], malformed: 0 });
   });
 
   it("createSseJsonParser parses event/data frames", () => {

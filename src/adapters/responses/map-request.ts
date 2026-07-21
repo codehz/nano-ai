@@ -6,6 +6,7 @@ import { AIRequestError } from "../../runtime/errors.js";
 import { acceptOpaqueReplay } from "../../provider/opaque-replay.js";
 import { NormalizedRequestMapper } from "../../provider/request-mapper.js";
 import { mapResponsesReasoning } from "../../provider/reasoning.js";
+import { OPAQUE_SOURCE } from "../../provider/opaque-sources.js";
 import type { ContentBlock, NormalizedRequest, ReasoningItem } from "../../types/index.js";
 import { mapServerTools } from "./map-server-tools.js";
 import type {
@@ -120,7 +121,7 @@ export function buildResponsesRequest(request: NormalizedRequest): ResponsesAPIR
       case "opaque": {
         // Canonical replay 优先；否则用 previous_response_id 做服务端续写。
         // 注意：response id 不能塞进 item_reference（那是 item id）；不叠 wire assistant。
-        const payload = acceptOpaqueReplay(item, "responses");
+        const payload = acceptOpaqueReplay(item, OPAQUE_SOURCE.RESPONSES);
         if (!payload) break;
 
         // 显式字段校验：id / previous_response_id / item_id 若存在必须是合法 string

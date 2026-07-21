@@ -6,9 +6,11 @@
  */
 
 import { HttpAdapterBase } from "../../provider/http-adapter.js";
-import { opaqueItem, replayFromOutput } from "../../canonical/index.js";
+import { opaqueItem } from "../../canonical/index.js";
 import { usageFromOpenAIResponses } from "../../provider/usage/index.js";
 import { createSseJsonParser } from "../../provider/transport/parser.js";
+import { finalizeStreamTurn } from "../../provider/finalize-stream-turn.js";
+import { OPAQUE_SOURCE } from "../../provider/opaque-sources.js";
 import { buildResponsesRequest } from "./map-request.js";
 import { inferResponsesStopReason } from "./infer-stop-reason.js";
 import { createResponsesSseProcessor } from "./map-items.js";
@@ -70,26 +72,23 @@ export class ResponsesAdapter extends HttpAdapterBase {
       }
     }
 
-    const replay = [...replayFromOutput(processor.items.completedItems())];
-    if (completedResponse?.id) {
-      // 同时保留 id（向后兼容）与 previous_response_id（语义明确）
-      replay.push(
-        opaqueItem("responses", "replay", {
-          id: completedResponse.id,
-          previous_response_id: completedResponse.id,
-        }),
-      );
-    }
-
     const stopReason = completedResponse ? inferResponsesStopReason(completedResponse) : undefined;
 
-    yield* session.complete(
+    yield* finalizeStreamTurn(
+      session,
+      processor.items,
       {
-        replay,
+        // 同时保留 id（向后兼容）与 previous_response_id（语义明确）
+        opaque: completedResponse?.id
+          ? opaqueItem(OPAQUE_SOURCE.RESPONSES, "replay", {
+              id: completedResponse.id,
+              previous_response_id: completedResponse.id,
+            })
+          : null,
         stopReason,
         rawResponseId,
+        onDuplicate: "silent",
       },
-      { onDuplicate: "silent" },
     );
   }
 }
