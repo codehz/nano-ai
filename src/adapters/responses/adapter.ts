@@ -10,7 +10,7 @@
  */
 
 import { AdapterBase } from "../../provider/base.js";
-import { AIRequestError } from "../../runtime/errors.js";
+import { AIRequestError, WarningCode } from "../../runtime/errors.js";
 import {
   textBlock,
   jsonBlock,
@@ -892,7 +892,7 @@ export class ResponsesAdapter extends AdapterBase {
             case "mcp_approval_request":
               yield factory.responseWarning(
                 `MCP approval requested for tool "${typeof item.name === "string" ? item.name : "unknown"}" on server "${typeof item.server_label === "string" ? item.server_label : "unknown"}"; requireApproval never expected`,
-                "MCP_APPROVAL_REQUIRED",
+                WarningCode.MCP_APPROVAL_REQUIRED,
               );
               break;
           }
@@ -955,7 +955,7 @@ export class ResponsesAdapter extends AdapterBase {
           if (item.type === "mcp_approval_request") {
             yield factory.responseWarning(
               `MCP approval request item "${item.id}" completed; approval flow is not supported in MVP`,
-              "MCP_APPROVAL_REQUIRED",
+              WarningCode.MCP_APPROVAL_REQUIRED,
             );
             continue;
           }
@@ -1150,7 +1150,7 @@ export class ResponsesAdapter extends AdapterBase {
         ) {
           const data = sseEvent.data as { response: ResponsesAPIResponse };
           if (completedResponse) {
-            yield factory.responseWarning("Duplicate finish signal ignored", "DUPLICATE_FINISH");
+            yield factory.responseWarning("Duplicate finish signal ignored", WarningCode.DUPLICATE_FINISH);
             continue;
           }
 
@@ -1176,7 +1176,7 @@ export class ResponsesAdapter extends AdapterBase {
           if (sseEvent.type === "response.failed") {
             yield factory.responseWarning(
               `Response failed: ${extractFailureMessage(data.response)}`,
-              "PROVIDER_FAILURE",
+              WarningCode.PROVIDER_FAILURE,
             );
           }
           continue;
@@ -1186,7 +1186,7 @@ export class ResponsesAdapter extends AdapterBase {
           unknownEventsWarned = true;
           yield factory.responseWarning(
             `Responses API sent unknown event type "${sseEvent.type}"; this may indicate an incomplete integration`,
-            "UNKNOWN_PROVIDER_EVENT",
+            WarningCode.UNKNOWN_PROVIDER_EVENT,
           );
         }
       }

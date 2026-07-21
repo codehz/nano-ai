@@ -28,7 +28,13 @@ import type {
   AdapterKind,
 } from "../types/index.js";
 import { createEventFactory } from "../stream/event-factory.js";
-import { AIMappingError, AIProviderError, AIRequestError, AIStreamError } from "../runtime/errors.js";
+import {
+  AIMappingError,
+  AIProviderError,
+  AIRequestError,
+  AIStreamError,
+  WarningCode,
+} from "../runtime/errors.js";
 import type { EventFactory } from "../stream/event-factory.js";
 import { extractText } from "../canonical/index.js";
 import { AdapterAuxiliaryState } from "./auxiliary.js";
@@ -87,7 +93,7 @@ export abstract class AdapterBase implements BackendAdapter {
       }
 
       if (err instanceof AIMappingError) {
-        yield factory.responseWarning(err.message, "MAPPING_ERROR");
+        yield factory.responseWarning(err.message, WarningCode.MAPPING_ERROR);
         const errorResp = this.buildResponse(request, { output: [], replay: [] }, factory);
         yield factory.responseCompleted({
           replay: errorResp.replay,

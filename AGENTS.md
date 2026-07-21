@@ -13,6 +13,8 @@
 
 The public entrypoint is `src/index.ts`. Prefer deep imports for internal modules; do not import the root entry from within `src/`.
 
+Custom adapters should implement the public `BackendAdapter` interface only; do not depend on internal `AdapterBase` (or other `src/provider/*` scaffolding) from application code.
+
 `tests/` mirrors source layers (`types/`, `runtime/`, `stream/`, `provider/`, `adapters/`, `scenarios/`) plus shared `tests/fixtures.ts`. `examples/` contains runnable usage samples like `examples/basic.ts` and `examples/tool-loop.ts`. `dist/` is generated output from the packaging build and should not be edited by hand.
 
 ## Build, Test, and Development Commands

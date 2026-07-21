@@ -90,6 +90,7 @@ export {
   AIMappingError,
   WarningCode,
 } from "./runtime/errors.js";
+export type { ErrorCode, KnownErrorCode, WarningCodeName } from "./runtime/errors.js";
 
 // ── Stream ───────────────────────────────────────────────────
 export { collectStream } from "./stream/collect-stream.js";

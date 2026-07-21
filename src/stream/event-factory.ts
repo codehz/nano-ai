@@ -37,6 +37,7 @@ import type {
   AdapterKind,
   ServerToolResultItem,
   ServerToolDiscoveryItem,
+  WarningCodeValue,
 } from "../types/index.js";
 
 export type EventFactoryBackend = {
@@ -77,7 +78,7 @@ export function createEventFactory(state: EventFactoryState) {
       return { ...base(), type: "response.started", model };
     },
 
-    responseWarning(message: string, code?: string): ResponseWarningEvent {
+    responseWarning(message: string, code?: WarningCodeValue): ResponseWarningEvent {
       warnings.push(message);
       return { ...base(), type: "response.warning", message, code };
     },

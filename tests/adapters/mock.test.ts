@@ -202,7 +202,7 @@ describe("MockAdapter", () => {
   it("should simulate content filtering via completed stopReason", async () => {
     const adapter = new MockAdapter({
       handler: async function* () {
-        yield { type: "warning", message: "content filtered by policy", code: "CONTENT_FILTERED" };
+        yield { type: "warning", message: "content filtered by policy", code: "CONTENT_FILTER" };
         yield {
           type: "complete",
           stopReason: "content_filter",

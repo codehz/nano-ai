@@ -21,6 +21,7 @@ import {
   MockAdapter,
   OllamaAdapter,
   ResponsesAdapter,
+  WarningCode,
 } from "../../src/index.js";
 
 import { AdapterBase } from "../../src/provider/base.js";
@@ -1230,7 +1231,7 @@ describe("A contract error-path smoke", () => {
       readonly isSyntheticStream = true;
 
       protected buildRequest(): never {
-        throw new AIMappingError("provider exploded", "MAPPING_ERROR");
+        throw new AIMappingError("provider exploded", WarningCode.MAPPING_ERROR);
       }
 
       protected async *runStream(): AsyncIterable<AIStreamEvent> {
@@ -1244,7 +1245,7 @@ describe("A contract error-path smoke", () => {
         event.type === "response.warning",
     );
     expect(warning?.message).toContain("provider exploded");
-    expect(warning?.code).toBe("MAPPING_ERROR");
+    expect(warning?.code).toBe(WarningCode.MAPPING_ERROR);
     expect(events.some((event) => event.type === "response.completed")).toBe(true);
     expect(events.some((event) => event.type === "response.started")).toBe(true);
   });

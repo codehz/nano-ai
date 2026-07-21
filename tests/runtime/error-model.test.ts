@@ -77,6 +77,14 @@ describe("WarningCode", () => {
     expect(WarningCode.STREAM_INCOMPLETE).toBe("STREAM_INCOMPLETE");
     expect(WarningCode.SYNTHETIC_STREAM).toBe("SYNTHETIC_STREAM");
     expect(WarningCode.TOOL_CALL_BATCHED).toBe("TOOL_CALL_BATCHED");
+    expect(WarningCode.MAPPING_ERROR).toBe("MAPPING_ERROR");
+    expect(WarningCode.UNSUPPORTED_METADATA).toBe("UNSUPPORTED_METADATA");
+    expect(WarningCode.DUPLICATE_FINISH).toBe("DUPLICATE_FINISH");
+    expect(WarningCode.UNKNOWN_PROVIDER_EVENT).toBe("UNKNOWN_PROVIDER_EVENT");
+    expect(WarningCode.CONTENT_FILTER).toBe("CONTENT_FILTER");
+    expect(WarningCode.MULTIPLE_CHOICES_IGNORED).toBe("MULTIPLE_CHOICES_IGNORED");
+    expect(WarningCode.MCP_APPROVAL_REQUIRED).toBe("MCP_APPROVAL_REQUIRED");
+    expect(WarningCode.PROVIDER_FAILURE).toBe("PROVIDER_FAILURE");
   });
 });
 

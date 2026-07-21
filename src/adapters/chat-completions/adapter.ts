@@ -392,7 +392,7 @@ export class ChatCompletionsAdapter extends AdapterBase {
       rawResponseId: string | undefined,
     ): AsyncIterable<AIStreamEvent> {
       if (!gate.tryComplete()) {
-        yield factory.responseWarning("Duplicate finish signal ignored", "DUPLICATE_FINISH");
+        yield factory.responseWarning("Duplicate finish signal ignored", WarningCode.DUPLICATE_FINISH);
         return;
       }
 
@@ -436,7 +436,7 @@ export class ChatCompletionsAdapter extends AdapterBase {
             if (!warnedNonZeroChoice) {
               yield factory.responseWarning(
                 `Chat Completions returned choice index ${choice.index}; only the first choice (index 0) is supported. This choice is ignored.`,
-                "MULTIPLE_CHOICES_IGNORED",
+                WarningCode.MULTIPLE_CHOICES_IGNORED,
               );
               warnedNonZeroChoice = true;
             }
@@ -445,7 +445,7 @@ export class ChatCompletionsAdapter extends AdapterBase {
 
           if (gate.completed) {
             if (choice.finish_reason) {
-              yield factory.responseWarning("Duplicate finish signal ignored", "DUPLICATE_FINISH");
+              yield factory.responseWarning("Duplicate finish signal ignored", WarningCode.DUPLICATE_FINISH);
             }
             continue;
           }

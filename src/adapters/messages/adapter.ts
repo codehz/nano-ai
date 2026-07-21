@@ -11,7 +11,7 @@
  */
 
 import { AdapterBase } from "../../provider/base.js";
-import { AIRequestError } from "../../runtime/errors.js";
+import { AIRequestError, WarningCode } from "../../runtime/errors.js";
 import {
   textBlock,
   messageItem,
@@ -372,7 +372,7 @@ export class MessagesAdapter extends AdapterBase {
     if (request.metadata) {
       yield factory.responseWarning(
         "Request metadata is not supported by the Messages adapter",
-        "UNSUPPORTED_METADATA",
+        WarningCode.UNSUPPORTED_METADATA,
       );
     }
 

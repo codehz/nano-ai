@@ -315,7 +315,7 @@ export class GeminiAdapter extends AdapterBase {
     if (request.metadata) {
       yield factory.responseWarning(
         "Request metadata is not supported by the Gemini adapter",
-        "UNSUPPORTED_METADATA",
+        WarningCode.UNSUPPORTED_METADATA,
       );
     }
 
@@ -400,7 +400,7 @@ export class GeminiAdapter extends AdapterBase {
       rawResponseId: string | undefined,
     ): AsyncIterable<AIStreamEvent> {
       if (!gate.tryComplete()) {
-        yield factory.responseWarning("Duplicate finish signal ignored", "DUPLICATE_FINISH");
+        yield factory.responseWarning("Duplicate finish signal ignored", WarningCode.DUPLICATE_FINISH);
         return;
       }
 
@@ -449,7 +449,7 @@ export class GeminiAdapter extends AdapterBase {
           stopReason = "content_filter";
           yield factory.responseWarning(
             `Gemini blocked the prompt: ${chunk.promptFeedback.blockReason}`,
-            "CONTENT_FILTER",
+            WarningCode.CONTENT_FILTER,
           );
           if (!gate.completed) {
             yield* emitCompleted(stopReason, responseId);
@@ -459,7 +459,7 @@ export class GeminiAdapter extends AdapterBase {
 
         if (gate.completed) {
           if (chunk.candidates?.some((c) => c.finishReason)) {
-            yield factory.responseWarning("Duplicate finish signal ignored", "DUPLICATE_FINISH");
+            yield factory.responseWarning("Duplicate finish signal ignored", WarningCode.DUPLICATE_FINISH);
           }
           continue;
         }

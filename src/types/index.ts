@@ -51,6 +51,8 @@ export type { AIResponse, StopReason, Usage, BillingInfo, AuxiliaryInfo, Backend
 export type {
   AIStreamEvent,
   StreamEventBase,
+  KnownWarningCode,
+  WarningCodeValue,
   ResponseStartedEvent,
   ResponseWarningEvent,
   ResponseAuxiliaryEvent,

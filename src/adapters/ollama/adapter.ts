@@ -294,7 +294,7 @@ export class OllamaAdapter extends AdapterBase {
       );
     }
     if (request.metadata) {
-      yield factory.responseWarning("Request metadata is not supported by the Ollama adapter", "UNSUPPORTED_METADATA");
+      yield factory.responseWarning("Request metadata is not supported by the Ollama adapter", WarningCode.UNSUPPORTED_METADATA);
     }
 
     const headers: Record<string, string> = {
@@ -330,7 +330,7 @@ export class OllamaAdapter extends AdapterBase {
       rawResponseId: string | undefined,
     ): AsyncIterable<AIStreamEvent> {
       if (!gate.tryComplete()) {
-        yield factory.responseWarning("Duplicate finish signal ignored", "DUPLICATE_FINISH");
+        yield factory.responseWarning("Duplicate finish signal ignored", WarningCode.DUPLICATE_FINISH);
         return;
       }
 
@@ -371,7 +371,7 @@ export class OllamaAdapter extends AdapterBase {
 
         if (gate.completed) {
           if (chunk.done) {
-            yield factory.responseWarning("Duplicate finish signal ignored", "DUPLICATE_FINISH");
+            yield factory.responseWarning("Duplicate finish signal ignored", WarningCode.DUPLICATE_FINISH);
           }
           continue;
         }

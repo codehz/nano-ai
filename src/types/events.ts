@@ -37,10 +37,36 @@ export type ResponseStartedEvent = StreamEventBase & {
   model: string;
 };
 
+/**
+ * 已知 warning 码字面量（与 runtime WarningCode 值对齐）。
+ * types 层不依赖 runtime，故在此维护联合；扩展自定义码用 `string & {}`。
+ */
+export type KnownWarningCode =
+  | "REPLAY_FIDELITY_LOW"
+  | "USAGE_MISSING"
+  | "BILLING_MISSING"
+  | "BILLING_ESTIMATED"
+  | "LOOKUP_FAILED"
+  | "LOOKUP_TIMEOUT"
+  | "STREAM_INCOMPLETE"
+  | "CAPABILITY_DOWNGRADE"
+  | "SYNTHETIC_STREAM"
+  | "TOOL_CALL_BATCHED"
+  | "MAPPING_ERROR"
+  | "UNSUPPORTED_METADATA"
+  | "DUPLICATE_FINISH"
+  | "UNKNOWN_PROVIDER_EVENT"
+  | "CONTENT_FILTER"
+  | "MULTIPLE_CHOICES_IGNORED"
+  | "MCP_APPROVAL_REQUIRED"
+  | "PROVIDER_FAILURE";
+
+export type WarningCodeValue = KnownWarningCode | (string & {});
+
 export type ResponseWarningEvent = StreamEventBase & {
   type: "response.warning";
   message: string;
-  code?: string;
+  code?: WarningCodeValue;
 };
 
 export type ResponseAuxiliaryEvent = StreamEventBase & {
