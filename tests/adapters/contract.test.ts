@@ -1062,12 +1062,13 @@ describe("A→C opaque round-trip matrix", () => {
   });
 });
 
-// ── A→E 双轨一致性 ────────────────────────────────────────────
+// ── A→E 双轨一致性（事件权威；E 强制等价）────────────────────
 
 describe("A→E dual-track ledger", () => {
   /**
-   * 对照公式：collectStream.output ≡ replay 去掉 opaque 的子集；
-   * text / toolCalls 与 output 派生一致。response.completed 故意不带 output（非 bug）。
+   * 对照公式（E 强制）：collectStream.output ≡ replay 去掉 opaque 的子集；
+   * text / toolCalls / serverTool* 由 output 派生一致。
+   * response.completed 故意不带 output（非 bug）；完整 AIResponse 以 collectStream 为准。
    */
   function assertDualTrack(result: Awaited<ReturnType<typeof collectStream>>, label: string) {
     const ledger = canonicalLedgerFromReplay(result.replay);
@@ -1191,6 +1192,73 @@ describe("A→E dual-track ledger", () => {
       }).stream(makeRequest()),
     );
     assertDualTrack(result, "mock");
+  });
+
+  it("A→E dual-track: ollama tool-only empty message stays in output≡replay", async () => {
+    // 漂移路径：事件会 start/complete 空 message；账本不得再丢弃
+    const chunks = [
+      `{"model":"llama3.2","created_at":"2024-01-01T00:00:00Z","message":{"role":"assistant","content":"","tool_calls":[{"function":{"name":"search","arguments":{"q":1}}}]},"done":true,"done_reason":"stop"}\n`,
+    ];
+    const result = await collectStream(
+      new OllamaAdapter({ fetch: mockFetch(() => ndjsonResponse(...chunks)) }).stream(makeRequest()),
+    );
+    assertDualTrack(result, "ollama-tool-only");
+    expect(result.output.some((item) => item.type === "message")).toBe(true);
+    expect(result.toolCalls).toHaveLength(1);
+  });
+
+  it("A→E dual-track: gemini tool-only ledger matches events", async () => {
+    const sse = `data: ${JSON.stringify({
+      responseId: "gemini-dual-tool",
+      candidates: [
+        {
+          content: {
+            role: "model",
+            parts: [{ functionCall: { id: "fc1", name: "lookup", args: { k: 1 } } }],
+          },
+          finishReason: "STOP",
+          index: 0,
+        },
+      ],
+    })}\n`;
+    const result = await collectStream(
+      new GeminiAdapter({
+        apiKey: "test-key",
+        fetch: mockFetch(() => sseResponse(sse)),
+      }).stream(makeRequest()),
+    );
+    assertDualTrack(result, "gemini-tool-only");
+    expect(result.toolCalls).toHaveLength(1);
+  });
+
+  it("A→E dual-track: responses message+function_call ledger matches events", async () => {
+    const sse = [
+      'event: response.output_item.added\ndata: {"item":{"id":"m-dual","type":"message"}}\n\n',
+      'event: response.output_text.delta\ndata: {"item_id":"m-dual","delta":"Hi"}\n\n',
+      'event: response.output_text.done\ndata: {"item_id":"m-dual","text":"Hi"}\n\n',
+      'event: response.output_item.added\ndata: {"item":{"id":"fc_dual","type":"function_call","call_id":"call_dual","name":"search"}}\n\n',
+      'event: response.function_call_arguments.delta\ndata: {"item_id":"fc_dual","delta":"{}"}\n\n',
+      'event: response.function_call_arguments.done\ndata: {"item_id":"fc_dual","arguments":"{}"}\n\n',
+      `event: response.completed\ndata: ${JSON.stringify({
+        response: {
+          id: "resp-dual-tc",
+          model: "gpt-4o",
+          output: [
+            { id: "m-dual", type: "message", content: [{ type: "output_text", text: "Hi" }] },
+            { id: "fc_dual", type: "function_call", call_id: "call_dual", name: "search" },
+          ],
+        },
+      })}\n\n`,
+    ];
+    const result = await collectStream(
+      new ResponsesAdapter({
+        apiKey: "test-key",
+        fetch: mockFetch(() => sseResponse(...sse)),
+      }).stream(makeRequest()),
+    );
+    assertDualTrack(result, "responses-message+tool");
+    expect(result.toolCalls).toHaveLength(1);
+    expect(result.text).toBe("Hi");
   });
 });
 
