@@ -2,25 +2,46 @@
 
 统一流式 AI 客户端，提供一套 canonical API，对接真实模型后端与面向测试的回调驱动 `MockAdapter`（`responses` / `messages` / `chat-completions` / `ollama` / `gemini` / `mock`）。
 
-## 0.5.0 迁移说明
+## 0.6.0 迁移说明
 
-`0.5.0` 收紧了根入口 `@codehz/ai` 的公开面。以下符号**不再**从包根导出（内部模块，不构成 semver 公开面）：
+小 breaking：warnings 形状、tool_call 校验与 Chat Completions opaque 入站。
 
-- `AdapterBase` / `createEventFactory` / `aggregateEvents`
-- `normalizeRequest` / `validateRequest` / `assertValidRequest`
-- `NormalizedRequestMapper` / `IncrementalStreamParser` / `openProviderJsonStream` 等 transport 脚手架
-- `syntheticStream` / `AuxiliaryCollector` / usage 与 provider reasoning 映射函数
-- `assertOpaqueReplayEnvelope` 等 security 工具
+### `warnings` 结构化
 
-**仍从根导出：** `createAIClient`、`collectStream`、错误类型与 `WarningCode`、全部 adapters 与 Mock 夹具、canonical 构造（`textBlock` / `messageItem` 等）、`REASONING_LEVELS`，以及全部 canonical 类型。
+`AIResponse.warnings` / `response.warning` / `response.completed.warnings` 由 `string[]` 改为：
 
-自定义 adapter 请实现 `BackendAdapter` 接口；库内部测试可通过源码 deep import 访问 `src/provider/*` / `src/stream/*`，但这些路径不保证稳定。
+```ts
+type StreamWarning = { message: string; code?: WarningCode };
+// AIResponse.warnings?: StreamWarning[]
+```
+
+迁移：原先 `for (const w of response.warnings ?? []) console.log(w)` 改为读取 `w.message`（及可选 `w.code`）。
+
+### `tool_call.argumentsText` 校验
+
+运行时 `validateRequest` **不再**对 `tool_call.argumentsText` 做 `JSON.parse`；只校验为 `string`。非法 JSON object 语义在 adapter 映射入站（`parseToolArguments` / `parseJsonStrictObject`）时抛 `AIRequestError`（`TOOL_CALL_ARGUMENTS_INVALID`）。
+
+### Chat Completions opaque
+
+入站 opaque 仅接受 `messages` 形（`{ messages: ChatMessage[] }`）。单条 `{ role, content }` 已 **deprecate**（有效 envelope 下未识别 shape 会被跳过，不再当完整 assistant turn 还原）。出站仍写 `messages: [assistantReplayMessage]`。
+
+### 其余行为（0.6 一并落地，多为兼容增强）
+
+- HTTP adapter 错误码与 incomplete 流完成路径收敛；Chat Completions 支持 arguments-before-id 与 `function_call`/`tool_calls` 互斥 warning。
+- Aggregator 在 finalize 时从 `output` 派生 `text` / `toolCalls` / `serverTool*`；`argumentsText` 分块累积。
+- 四家厚 adapter 拆为 `map-request` / `map-stream`（对齐 `responses`）；opaque 恒尾置。
+
+## 0.5.0 迁移说明（摘要）
+
+`0.5.0` 收紧了根入口公开面：`AdapterBase`、`createEventFactory`、`aggregateEvents`、`normalizeRequest`、transport / `syntheticStream` 等**不再**从 `@codehz/ai` 根导出（内部模块）。
+
+**仍从根导出：** `createAIClient`、`collectStream`、错误类型与 `WarningCode`、全部 adapters 与 Mock 夹具、canonical 构造、`REASONING_LEVELS`，以及 canonical 类型。自定义 adapter 请实现 `BackendAdapter`。
 
 ### 错误通道语义
 
 - `AIRequestError` / `AIProviderError` / `AIStreamError`：致命，同步或在异步迭代中抛出，不伪造 `response.completed`。
 - `AIMappingError`：由内部 `AdapterBase` 捕获后降级为 `response.warning`（`WarningCode.MAPPING_ERROR`）+ 空 output 的 `response.completed`；生产 adapter 原则上不抛。
-- 非致命差异走 `response.warning` 与 `WarningCode`；自定义 adapter 只实现 `BackendAdapter`，勿依赖内部 `AdapterBase`。
+- 非致命差异走 `response.warning` 与 `WarningCode`（0.6 起为结构化对象）。
 
 ## 安装
 
@@ -151,7 +172,7 @@ console.log(response.replay); // 续接材料
 | `usage`             | `Usage?`                 | token 统计（可选）        |
 | `billing`           | `BillingInfo?`           | 计费信息（可选）          |
 | `auxiliary`         | `AuxiliaryInfo?`         | Provider 辅助信息（可选） |
-| `warnings`          | `string[]?`              | 非致命警告（可选）        |
+| `warnings`          | `StreamWarning[]?`       | 非致命警告（`{ message; code? }`） |
 | `backend`           | `BackendTrace`           | 调用链路元数据            |
 
 流式 `message.delta` / `reasoning.delta` 保持后端分片粒度；完成态 `output` 中的
@@ -451,13 +472,13 @@ const r2 = await collectStream(client.stream({ input, tools }));
 
 ## 模拟流式
 
-真实 adapter 在原生流不可用时，库内部会用 synthetic 路径包装为规范事件流。应用层一般只需消费 `client.stream()` / `collectStream()`；`0.5.0` 起 `syntheticStream` 不再从根入口导出。
+真实 adapter 在原生流不可用时，库内部会用 synthetic 路径包装为规范事件流。应用层一般只需消费 `client.stream()` / `collectStream()`；`0.5.0` 起 `syntheticStream` 不再从根入口导出（test-first helper，不展开 `server_tool_*`）。
 
 若只需前端逐字预览效果，请优先使用 `MockAdapter` + `withMockStreaming()`（见上文 Mock 后端）。
 
 ## 辅助信息采集
 
-usage / billing / providerMetadata 由 adapter 在流结束时经 `response.auxiliary` 与 `AIResponse` 字段交付。`AuxiliaryCollector` 是 provider 内部实现细节，`0.5.0` 起不再从根入口导出。
+usage / billing / providerMetadata 由 adapter 在流结束时经 `response.auxiliary` 与 `AIResponse` 字段交付。`AuxiliaryCollector` 是 provider 内部实现细节，`0.5.0` 起不再从根入口导出。`lookup` / `postprocessBilling` 为 experimental 扩展点，库内 HTTP adapter 默认未接线。
 
 ## 开发命令
 
