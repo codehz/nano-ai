@@ -122,6 +122,9 @@ response.started → (item.started → item.delta* → item.completed)* → resp
 
 ### 统一终结结果
 
+**`AIResponse` 的完整形态以 `collectStream()` / 事件聚合器为唯一真相源。**
+流式消费者读 `AIStreamEvent`；`response.completed` 只携带 `replay`、终止原因、usage/billing 等元数据，**不**携带完整 `output`/`text`/`toolCalls` 账本。
+
 流结束后可通过 `collectStream()` 聚合为 `AIResponse`：
 
 ```ts

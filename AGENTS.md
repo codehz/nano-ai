@@ -15,6 +15,10 @@ The public entrypoint is `src/index.ts`. Prefer deep imports for internal module
 
 Custom adapters should implement the public `BackendAdapter` interface only; do not depend on internal `AdapterBase` (or other `src/provider/*` scaffolding) from application code.
 
+### Event-authority streaming (no dual-track output)
+
+HTTP adapters must not maintain a parallel `OutputItem[]` content ledger alongside stream events. Item lifecycle goes through `createStreamingItemSession` (`src/provider/streaming-item-session.ts`): yield start/delta/complete events and build canonical replay via `replayFromOutput(session.completedItems())`, then append wire-level opaque envelopes. Full `AIResponse` (`output` / `text` / `toolCalls` / …) is produced only by `collectStream` / the aggregator; `response.completed` carries replay + completion metadata only.
+
 ### Opaque replay protocol
 
 HTTP adapters restore wire turns from `input` items with `type: "opaque"`:
