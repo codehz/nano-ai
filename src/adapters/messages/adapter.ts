@@ -26,11 +26,6 @@ import { acceptOpaqueReplay } from "../../provider/opaque-replay.js";
 import { usageFromAnthropicMessages } from "../../provider/usage/index.js";
 import { NormalizedRequestMapper } from "../../provider/request-mapper.js";
 import { createSseJsonParser } from "../../provider/transport/parser.js";
-import {
-  openProviderJsonStream,
-  iterateProviderStreamBatches,
-  createCompletionGate,
-} from "../../provider/transport/open-stream.js";
 import { mapMessagesThinking } from "../../provider/reasoning.js";
 
 import type { NormalizedRequest, AIStreamEvent, OutputItem, ContentBlock } from "../../types/index.js";
@@ -348,8 +343,8 @@ export class MessagesAdapter extends HttpAdapterBase {
     factory: EventFactory,
     request: NormalizedRequest,
   ): AsyncIterable<AIStreamEvent> {
-    const auxiliary = this.createAuxiliaryState(request);
-    const gate = createCompletionGate();
+    const session = this.beginJsonStream(factory, request);
+    const { auxiliary } = session;
 
     if (request.metadata) {
       yield factory.responseWarning(
@@ -358,8 +353,7 @@ export class MessagesAdapter extends HttpAdapterBase {
       );
     }
 
-    const { reader, headers } = await openProviderJsonStream({
-      fetchFn: this.fetchFn,
+    const { headers } = await session.open({
       url: `${this.baseUrl}/messages`,
       headers: this.mergeHeaders({
         "Content-Type": "application/json",
@@ -367,7 +361,6 @@ export class MessagesAdapter extends HttpAdapterBase {
         "anthropic-version": this.apiVersion,
       }),
       body: providerRequest,
-      signal: request.signal,
     });
 
     const parser = createSseJsonParser<MessagesSSEEvent>();
@@ -396,10 +389,8 @@ export class MessagesAdapter extends HttpAdapterBase {
       );
     }
 
-    for await (const batch of iterateProviderStreamBatches({
-      reader,
+    for await (const batch of session.batches({
       parser,
-      factory,
       providerLabel: "Messages",
       transportLabel: "SSE event(s)",
       incompleteMessage: "Stream ended with an incomplete Messages SSE frame",
@@ -572,13 +563,14 @@ export class MessagesAdapter extends HttpAdapterBase {
       );
     }
 
-    if (gate.tryComplete()) {
-      yield* this.emitStreamCompleted(factory, request, auxiliary, {
+    yield* session.complete(
+      {
         output,
         replay,
         stopReason: stopReason ? mapStopReason(stopReason) : undefined,
         rawResponseId,
-      });
-    }
+      },
+      { onDuplicate: "silent" },
+    );
   }
 }

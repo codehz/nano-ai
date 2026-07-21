@@ -30,11 +30,6 @@ import { acceptOpaqueReplay } from "../../provider/opaque-replay.js";
 import { usageFromOllama } from "../../provider/usage/index.js";
 import { NormalizedRequestMapper } from "../../provider/request-mapper.js";
 import { createNdjsonLineParser } from "../../provider/transport/parser.js";
-import {
-  openProviderJsonStream,
-  iterateProviderStreamBatches,
-  createCompletionGate,
-} from "../../provider/transport/open-stream.js";
 import { mapOllamaThink } from "../../provider/reasoning.js";
 
 import type { NormalizedRequest, AIStreamEvent, OutputItem, StopReason } from "../../types/index.js";
@@ -270,8 +265,8 @@ export class OllamaAdapter extends HttpAdapterBase {
     factory: EventFactory,
     request: NormalizedRequest,
   ): AsyncIterable<AIStreamEvent> {
-    const auxiliary = this.createAuxiliaryState(request);
-    const gate = createCompletionGate();
+    const session = this.beginJsonStream(factory, request);
+    const { auxiliary, gate } = session;
 
     if (request.toolChoice && request.toolChoice !== "auto") {
       yield factory.responseWarning(
@@ -295,12 +290,10 @@ export class OllamaAdapter extends HttpAdapterBase {
       headers.Authorization = `Bearer ${this.apiKey}`;
     }
 
-    const { reader } = await openProviderJsonStream({
-      fetchFn: this.fetchFn,
+    await session.open({
       url: `${this.baseUrl}/api/chat`,
       headers: this.mergeHeaders(headers),
       body: providerRequest,
-      signal: request.signal,
     });
 
     const parser = createNdjsonLineParser<OllamaChatChunk>(
@@ -316,15 +309,9 @@ export class OllamaAdapter extends HttpAdapterBase {
     let toolCallIndex = 0;
 
     const emitCompleted = async function* (
-      this: OllamaAdapter,
       stopReason: StopReason | undefined,
       rawResponseId: string | undefined,
     ): AsyncIterable<AIStreamEvent> {
-      if (!gate.tryComplete()) {
-        yield factory.responseWarning("Duplicate finish signal ignored", WarningCode.DUPLICATE_FINISH);
-        return;
-      }
-
       const replay = replayFromOutput(output);
       if (accumulatedContent || pendingToolCalls.length > 0) {
         replay.push(
@@ -339,18 +326,16 @@ export class OllamaAdapter extends HttpAdapterBase {
         );
       }
 
-      yield* this.emitStreamCompleted(factory, request, auxiliary, {
+      yield* session.complete({
         output,
         replay,
         stopReason,
         rawResponseId,
       });
-    }.bind(this);
+    };
 
-    for await (const batch of iterateProviderStreamBatches({
-      reader,
+    for await (const batch of session.batches({
       parser,
-      factory,
       providerLabel: "Ollama",
       transportLabel: "NDJSON line(s)",
       incompleteMessage: "Stream ended with an incomplete Ollama NDJSON line",

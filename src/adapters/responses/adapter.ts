@@ -28,11 +28,6 @@ import { acceptOpaqueReplay } from "../../provider/opaque-replay.js";
 import { usageFromOpenAIResponses } from "../../provider/usage/index.js";
 import { NormalizedRequestMapper } from "../../provider/request-mapper.js";
 import { createSseJsonParser } from "../../provider/transport/parser.js";
-import {
-  openProviderJsonStream,
-  iterateProviderStreamBatches,
-  createCompletionGate,
-} from "../../provider/transport/open-stream.js";
 import { mapResponsesReasoning } from "../../provider/reasoning.js";
 
 import type {
@@ -716,18 +711,16 @@ export class ResponsesAdapter extends HttpAdapterBase {
     factory: EventFactory,
     request: NormalizedRequest,
   ): AsyncIterable<AIStreamEvent> {
-    const auxiliary = this.createAuxiliaryState(request);
-    const gate = createCompletionGate();
+    const session = this.beginJsonStream(factory, request);
+    const { auxiliary } = session;
 
-    const { reader } = await openProviderJsonStream({
-      fetchFn: this.fetchFn,
+    await session.open({
       url: `${this.baseUrl}/responses`,
       headers: this.mergeHeaders({
         "Content-Type": "application/json",
         Authorization: `Bearer ${this.apiKey}`,
       }),
       body: providerRequest,
-      signal: request.signal,
     });
 
     const parser = createSseJsonParser<ResponsesSSEEvent>();
@@ -804,10 +797,8 @@ export class ResponsesAdapter extends HttpAdapterBase {
       output.push(reasoningItem(text ? [textBlock(text)] : [], visibility, itemId));
     };
 
-    for await (const batch of iterateProviderStreamBatches({
-      reader,
+    for await (const batch of session.batches({
       parser,
-      factory,
       providerLabel: "Responses",
       transportLabel: "SSE event(s)",
       incompleteMessage: "Stream ended with an incomplete Responses SSE frame",
@@ -1186,14 +1177,15 @@ export class ResponsesAdapter extends HttpAdapterBase {
 
     const stopReason = completedResponse ? this.inferStopReason(completedResponse) : undefined;
 
-    if (gate.tryComplete()) {
-      yield* this.emitStreamCompleted(factory, request, auxiliary, {
+    yield* session.complete(
+      {
         output,
         replay,
         stopReason,
         rawResponseId,
-      });
-    }
+      },
+      { onDuplicate: "silent" },
+    );
   }
 
   // ── 辅助方法 ──────────────────────────────────────────────

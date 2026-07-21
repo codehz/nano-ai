@@ -32,11 +32,6 @@ import { acceptOpaqueReplay } from "../../provider/opaque-replay.js";
 import { usageFromGemini } from "../../provider/usage/index.js";
 import { NormalizedRequestMapper } from "../../provider/request-mapper.js";
 import { createChatCompletionsSseParser } from "../../provider/transport/parser.js";
-import {
-  openProviderJsonStream,
-  iterateProviderStreamBatches,
-  createCompletionGate,
-} from "../../provider/transport/open-stream.js";
 import { mapGeminiThinking } from "../../provider/reasoning.js";
 
 import type {
@@ -290,8 +285,8 @@ export class GeminiAdapter extends HttpAdapterBase {
     factory: EventFactory,
     request: NormalizedRequest,
   ): AsyncIterable<AIStreamEvent> {
-    const auxiliary = this.createAuxiliaryState(request);
-    const gate = createCompletionGate();
+    const session = this.beginJsonStream(factory, request);
+    const { auxiliary, gate } = session;
 
     if (request.metadata) {
       yield factory.responseWarning(
@@ -301,15 +296,13 @@ export class GeminiAdapter extends HttpAdapterBase {
     }
 
     const modelPath = normalizeModelPath(request.model);
-    const { reader } = await openProviderJsonStream({
-      fetchFn: this.fetchFn,
+    await session.open({
       url: `${this.baseUrl}/models/${modelPath}:streamGenerateContent?alt=sse`,
       headers: this.mergeHeaders({
         "Content-Type": "application/json",
         "x-goog-api-key": this.apiKey ?? "",
       }),
       body: providerRequest,
-      signal: request.signal,
     });
 
     const parser = createChatCompletionsSseParser<GeminiStreamChunk>();
@@ -373,11 +366,11 @@ export class GeminiAdapter extends HttpAdapterBase {
     };
 
     const emitCompleted = async function* (
-      this: GeminiAdapter,
       reason: StopReason | undefined,
       rawResponseId: string | undefined,
     ): AsyncIterable<AIStreamEvent> {
-      if (!gate.tryComplete()) {
+      // finalize 仅应在首次 complete 前执行；session.complete 内部 gate 防重
+      if (gate.completed) {
         yield factory.responseWarning("Duplicate finish signal ignored", WarningCode.DUPLICATE_FINISH);
         return;
       }
@@ -397,18 +390,16 @@ export class GeminiAdapter extends HttpAdapterBase {
         );
       }
 
-      yield* this.emitStreamCompleted(factory, request, auxiliary, {
+      yield* session.complete({
         output,
         replay,
         stopReason: reason,
         rawResponseId,
       });
-    }.bind(this);
+    };
 
-    for await (const batch of iterateProviderStreamBatches({
-      reader,
+    for await (const batch of session.batches({
       parser,
-      factory,
       providerLabel: "Gemini",
       transportLabel: "SSE event(s)",
       incompleteMessage: "Stream ended with an incomplete Gemini SSE frame",

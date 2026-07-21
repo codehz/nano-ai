@@ -23,11 +23,6 @@ import { acceptOpaqueReplay } from "../../provider/opaque-replay.js";
 import { usageFromChatCompletions } from "../../provider/usage/index.js";
 import { NormalizedRequestMapper } from "../../provider/request-mapper.js";
 import { createChatCompletionsSseParser } from "../../provider/transport/parser.js";
-import {
-  openProviderJsonStream,
-  iterateProviderStreamBatches,
-  createCompletionGate,
-} from "../../provider/transport/open-stream.js";
 import { mapChatCompletionsReasoningEffort } from "../../provider/reasoning.js";
 
 import type { NormalizedRequest, AIStreamEvent, OutputItem, StopReason } from "../../types/index.js";
@@ -292,18 +287,16 @@ export class ChatCompletionsAdapter extends HttpAdapterBase {
     factory: EventFactory,
     request: NormalizedRequest,
   ): AsyncIterable<AIStreamEvent> {
-    const auxiliary = this.createAuxiliaryState(request);
-    const gate = createCompletionGate();
+    const session = this.beginJsonStream(factory, request);
+    const { auxiliary, gate } = session;
 
-    const { reader } = await openProviderJsonStream({
-      fetchFn: this.fetchFn,
+    await session.open({
       url: `${this.baseUrl}/chat/completions`,
       headers: this.mergeHeaders({
         "Content-Type": "application/json",
         Authorization: `Bearer ${this.apiKey}`,
       }),
       body: providerRequest,
-      signal: request.signal,
     });
 
     const parser = createChatCompletionsSseParser<ChatChunk>();
@@ -365,16 +358,10 @@ export class ChatCompletionsAdapter extends HttpAdapterBase {
     };
 
     const emitCompleted = async function* (
-      this: ChatCompletionsAdapter,
       stopReason: StopReason | undefined,
       assistantReplayMessage: ChatMessage | null,
       rawResponseId: string | undefined,
     ): AsyncIterable<AIStreamEvent> {
-      if (!gate.tryComplete()) {
-        yield factory.responseWarning("Duplicate finish signal ignored", WarningCode.DUPLICATE_FINISH);
-        return;
-      }
-
       const replay = [...replayFromOutput(output)];
       if (assistantReplayMessage) {
         replay.push(
@@ -385,18 +372,16 @@ export class ChatCompletionsAdapter extends HttpAdapterBase {
         );
       }
 
-      yield* this.emitStreamCompleted(factory, request, auxiliary, {
+      yield* session.complete({
         output,
         replay,
         stopReason,
         rawResponseId,
       });
-    }.bind(this);
+    };
 
-    for await (const batch of iterateProviderStreamBatches({
-      reader,
+    for await (const batch of session.batches({
       parser,
-      factory,
       providerLabel: "Chat Completions",
       transportLabel: "SSE event(s)",
       incompleteMessage: "Stream ended with an incomplete Chat Completions SSE frame",
