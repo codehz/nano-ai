@@ -34,8 +34,11 @@ import type {
   ContentBlock,
   Citation,
 } from "../types/index.js";
+import { coalesceContentBlocks } from "../canonical/content.js";
 import { AIStreamError } from "../runtime/errors.js";
 import { mergeAuxiliary } from "./merge-auxiliary.js";
+
+// coalesceContentBlocks 自 canonical；见 finalizeMessage / finalizeReasoning
 
 // ── Active item types ─────────────────────────────────────────
 
@@ -134,19 +137,6 @@ function getActiveItem(state: AggregatorState, itemId: string, expectedType: Act
     throw streamProtocolError(`Item ${itemId} started as ${item.type} but received ${expectedType} event`);
   }
   return item;
-}
-
-function coalesceContentBlocks(blocks: readonly ContentBlock[]): ContentBlock[] {
-  const result: ContentBlock[] = [];
-  for (const block of blocks) {
-    const previous = result[result.length - 1];
-    if (block.type === "text" && previous?.type === "text") {
-      previous.text += block.text;
-    } else {
-      result.push({ ...block });
-    }
-  }
-  return result;
 }
 
 function finalizeMessage(active: ActiveMessage): MessageItem {

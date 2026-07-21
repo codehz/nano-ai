@@ -61,6 +61,8 @@ export type {
   ProviderJsonStreamBatchOptions,
   ProviderJsonStreamCompleteOptions,
 } from "./transport/run-json-stream.js";
+export { createStreamingItemSession } from "./streaming-item-session.js";
+export type { StreamingItemSession } from "./streaming-item-session.js";
 export { mergeProviderHeaders, applyExtraBody } from "./request-options.js";
 export {
   REASONING_LEVELS,

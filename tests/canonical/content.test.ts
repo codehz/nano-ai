@@ -5,7 +5,15 @@
 
 import { describe, expect, it } from "bun:test";
 
-import { blockToText, contentBlocksToText, imageBlock, jsonBlock, opaqueBlock, textBlock } from "../../src/index.js";
+import {
+  blockToText,
+  coalesceContentBlocks,
+  contentBlocksToText,
+  imageBlock,
+  jsonBlock,
+  opaqueBlock,
+  textBlock,
+} from "../../src/index.js";
 
 describe("content block constructors", () => {
   it("textBlock should create a text block", () => {
@@ -61,5 +69,19 @@ describe("contentBlocksToText", () => {
     expect(contentBlocksToText([textBlock("x"), imageBlock("https://example.com/i.png"), textBlock("y")])).toBe(
       "x\n\ny",
     );
+  });
+});
+
+describe("coalesceContentBlocks", () => {
+  it("should merge adjacent text blocks without separator", () => {
+    expect(coalesceContentBlocks([textBlock("a"), textBlock("b")])).toEqual([{ type: "text", text: "ab" }]);
+  });
+
+  it("should preserve non-text boundaries", () => {
+    expect(coalesceContentBlocks([textBlock("a"), jsonBlock({ x: 1 }), textBlock("b"), textBlock("c")])).toEqual([
+      { type: "text", text: "a" },
+      { type: "json", json: { x: 1 } },
+      { type: "text", text: "bc" },
+    ]);
   });
 });

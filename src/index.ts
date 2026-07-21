@@ -105,6 +105,7 @@ export {
   opaqueBlock,
   blockToText,
   contentBlocksToText,
+  coalesceContentBlocks,
   messageItem,
   reasoningItem,
   toolCallItem,

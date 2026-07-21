@@ -36,3 +36,20 @@ export function blockToText(b: ContentBlock): string {
 export function contentBlocksToText(blocks: ContentBlock[]): string {
   return blocks.map(blockToText).join("\n");
 }
+
+/**
+ * 合并相邻 text content blocks（直接拼接、不插入分隔符）。
+ * 非 text block 保留边界。供 aggregator 与 StreamingItemSession 共用。
+ */
+export function coalesceContentBlocks(blocks: readonly ContentBlock[]): ContentBlock[] {
+  const result: ContentBlock[] = [];
+  for (const block of blocks) {
+    const previous = result[result.length - 1];
+    if (block.type === "text" && previous?.type === "text") {
+      previous.text += block.text;
+    } else {
+      result.push({ ...block });
+    }
+  }
+  return result;
+}
