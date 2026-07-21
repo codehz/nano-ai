@@ -229,7 +229,7 @@ describe("MockAdapter", () => {
     );
 
     expect(result.stopReason).toBe("content_filter");
-    expect(result.warnings).toContain("content filtered by policy");
+    expect(result.warnings?.some((w) => w.message === "content filtered by policy")).toBe(true);
     expect(result.auxiliary?.providerMetadata?.moderationCategory).toBe("violence");
   });
 
@@ -270,7 +270,7 @@ describe("MockAdapter", () => {
 
     expect(result.stopReason).toBe("error");
     expect(result.text).toBe("upstream failed after planning");
-    expect(result.warnings).toContain("mock upstream timeout");
+    expect(result.warnings?.some((w) => w.message === "mock upstream timeout")).toBe(true);
   });
 
   it("should stream message deltas in chunks with configurable character speed", async () => {

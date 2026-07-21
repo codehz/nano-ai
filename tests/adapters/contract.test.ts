@@ -542,7 +542,7 @@ describe("Adapter contracts", () => {
     );
 
     results.forEach((result) => {
-      expect(result.warnings?.some((warning) => warning.includes("Billing information"))).toBeFalsy();
+      expect(result.warnings?.some((warning) => warning.message.includes("Billing information"))).toBeFalsy();
     });
   });
 

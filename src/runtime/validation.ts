@@ -187,6 +187,7 @@ function validateInputItem(item: unknown, field: string, issues: ValidationIssue
       if (typeof item.name !== "string" || item.name.length === 0) {
         pushIssue(issues, `${field}.name`, "TOOL_CALL_NAME_INVALID", `${field}.name must be a non-empty string`);
       }
+      // 仅校验 shape；JSON object 语义由 adapter 映射（parseToolArguments）负责
       if (typeof item.argumentsText !== "string") {
         pushIssue(
           issues,
@@ -194,25 +195,6 @@ function validateInputItem(item: unknown, field: string, issues: ValidationIssue
           "TOOL_CALL_ARGUMENTS_INVALID",
           `${field}.argumentsText must be a string`,
         );
-      } else {
-        try {
-          const parsed: unknown = JSON.parse(item.argumentsText);
-          if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-            pushIssue(
-              issues,
-              `${field}.argumentsText`,
-              "TOOL_CALL_ARGUMENTS_INVALID",
-              `${field}.argumentsText must encode a JSON object`,
-            );
-          }
-        } catch {
-          pushIssue(
-            issues,
-            `${field}.argumentsText`,
-            "TOOL_CALL_ARGUMENTS_INVALID",
-            `${field}.argumentsText must encode a JSON object`,
-          );
-        }
       }
       return;
     case "tool_result":

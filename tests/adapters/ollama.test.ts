@@ -218,7 +218,7 @@ describe("OllamaAdapter - tool calls", () => {
     const adapter = new OllamaAdapter({ fetch: mockFetch(ndjsonResponse(...chunks)) });
     const result = await collectStream(adapter.stream(makeRequest({ include: { billing: "off" } })));
 
-    expect(result.warnings?.some((w) => w.includes("tool call(s) as a batch"))).toBe(true);
+    expect(result.warnings?.some((w) => w.message.includes("tool call(s) as a batch"))).toBe(true);
     expect(result.backend.isSyntheticStream).toBe(false);
   });
 
@@ -230,7 +230,7 @@ describe("OllamaAdapter - tool calls", () => {
     const adapter = new OllamaAdapter({ fetch: mockFetch(ndjsonResponse(...chunks)) });
     const result = await collectStream(adapter.stream(makeRequest({ include: { billing: "off" } })));
 
-    expect(result.warnings?.some((w) => w.includes("tool call(s) as a batch"))).toBeFalsy();
+    expect(result.warnings?.some((w) => w.message.includes("tool call(s) as a batch"))).toBeFalsy();
   });
 
   it("should handle tool call with content", async () => {
@@ -439,9 +439,7 @@ describe("OllamaAdapter - request building", () => {
     const body = JSON.parse(capturedBody!);
     expect(body.tools).toHaveLength(1);
     expect(body.tools[0].function.name).toBe("get_weather");
-    expect(result.warnings).toContain(
-      'Ollama cannot force tool choice; only tool "get_weather" was provided as a best-effort constraint',
-    );
+    expect(result.warnings?.some((w) => w.message.includes('Ollama cannot force tool choice'))).toBe(true);
   });
 
   it("should map toolChoice none by omitting tools", async () => {
@@ -503,7 +501,7 @@ describe("OllamaAdapter - request building", () => {
     const result = await collectStream(
       adapter.stream(makeRequest({ metadata: { traceId: "trace-1" }, include: { billing: "off" } })),
     );
-    expect(result.warnings?.some((w) => w.includes("Request metadata is not supported"))).toBe(true);
+    expect(result.warnings?.some((w) => w.message.includes("Request metadata is not supported"))).toBe(true);
   });
 
   it("should use custom baseUrl and apiKey", async () => {
@@ -777,7 +775,7 @@ describe("OllamaAdapter - error handling", () => {
 
     const adapter = new OllamaAdapter({ fetch: mockFetch(ndjsonResponse(...chunks)) });
     const result = await collectStream(adapter.stream(makeRequest({ include: { billing: "off" } })));
-    expect(result.warnings?.some((w) => w.includes("malformed Ollama NDJSON"))).toBe(true);
+    expect(result.warnings?.some((w) => w.message.includes("malformed Ollama NDJSON"))).toBe(true);
     expect(result.text).toBe("Hi");
   });
 

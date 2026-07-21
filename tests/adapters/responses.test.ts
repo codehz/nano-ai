@@ -229,7 +229,7 @@ describe("ResponsesAdapter - text streaming", () => {
 
     const result = await collectStream(adapter.stream(makeRequest({ model: "o3" })));
 
-    expect(result.warnings?.some((w) => w.includes("unknown event type")) ?? false).toBe(false);
+    expect(result.warnings?.some((w) => w.message.includes("unknown event type")) ?? false).toBe(false);
     expect(result.output).toHaveLength(2);
     expect(result.output[0]!.type).toBe("reasoning");
     if (result.output[0]!.type === "reasoning") {
@@ -901,7 +901,7 @@ describe("ResponsesAdapter - error handling", () => {
 
     const result = await collectStream(adapter.stream(makeRequest()));
     expect(result.warnings).toBeDefined();
-    expect(result.warnings).toContain("Rate limit exceeded");
+    expect(result.warnings?.some((w) => w.message.includes("Rate limit exceeded"))).toBe(true);
   });
 
   it("should warn once on unknown SSE event types without aborting", async () => {
@@ -922,7 +922,7 @@ describe("ResponsesAdapter - error handling", () => {
 
     const result = await collectStream(adapter.stream(makeRequest()));
     expect(result.text).toBe("ok");
-    const unknownWarnings = (result.warnings ?? []).filter((w) => w.includes("unknown event type"));
+    const unknownWarnings = (result.warnings ?? []).filter((w) => w.message.includes("unknown event type"));
     expect(unknownWarnings).toHaveLength(1);
   });
 
@@ -949,7 +949,7 @@ describe("ResponsesAdapter - error handling", () => {
     const result = await collectStream(adapter.stream(makeRequest()));
     expect(result.stopReason).toBe("error");
     expect(result.backend.rawResponseId).toBe("resp-failed");
-    expect(result.warnings?.some((w) => w.includes("Response failed") || w.includes("upstream timeout"))).toBe(true);
+    expect(result.warnings?.some((w) => w.message.includes("Response failed") || w.message.includes("upstream timeout"))).toBe(true);
   });
 
   it("should map response.incomplete max_output_tokens to stopReason", async () => {
@@ -1035,7 +1035,7 @@ describe("ResponsesAdapter - error handling", () => {
     });
 
     const result = await collectStream(adapter.stream(makeRequest({ include: { billing: "off" } })));
-    expect(result.warnings?.some((w) => w.includes("Billing information"))).toBeFalsy();
+    expect(result.warnings?.some((w) => w.message.includes("Billing information"))).toBeFalsy();
   });
 
   it("should emit warning for malformed SSE data", async () => {
@@ -1054,7 +1054,7 @@ describe("ResponsesAdapter - error handling", () => {
     });
 
     const result = await collectStream(adapter.stream(makeRequest({ include: { billing: "off" } })));
-    expect(result.warnings?.some((w) => w.includes("malformed Responses SSE"))).toBe(true);
+    expect(result.warnings?.some((w) => w.message.includes("malformed Responses SSE"))).toBe(true);
     expect(result.text).toBe("Hi");
   });
 });
@@ -1193,7 +1193,7 @@ describe("ResponsesAdapter - server tools streaming", () => {
     ]);
     expect(result.stopReason).toBe("end_turn");
     expect(result.text).toBe("Sunny in Hangzhou.");
-    expect((result.warnings ?? []).some((w) => w.includes("UNKNOWN_PROVIDER_EVENT"))).toBe(false);
+    expect((result.warnings ?? []).some((w) => w.message.includes("UNKNOWN_PROVIDER_EVENT"))).toBe(false);
   });
 
   it("should map code_interpreter_call code stream and outputs", async () => {
@@ -1323,7 +1323,7 @@ describe("ResponsesAdapter - server tools streaming", () => {
     });
 
     const result = await collectStream(adapter.stream(makeRequest()));
-    expect((result.warnings ?? []).some((w) => w.includes("MCP approval"))).toBe(true);
+    expect((result.warnings ?? []).some((w) => w.message.includes("MCP approval"))).toBe(true);
     expect(result.text).toBe("Need approval.");
     expect(result.stopReason).toBe("end_turn");
   });

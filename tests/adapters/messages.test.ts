@@ -579,7 +579,7 @@ describe("MessagesAdapter - request building", () => {
     const adapter = new MessagesAdapter({ apiKey: "test-key", fetch });
 
     const result = await collectStream(adapter.stream(makeRequest({ metadata: { traceId: "trace-1" } })));
-    expect(result.warnings?.some((w) => w.includes("Request metadata is not supported"))).toBe(true);
+    expect(result.warnings?.some((w) => w.message.includes("Request metadata is not supported"))).toBe(true);
   });
 
   it("should merge custom headers and extraBody from constructor options", async () => {
@@ -886,7 +886,7 @@ describe("MessagesAdapter - error handling", () => {
 
     const result = await collectStream(adapter.stream(makeRequest()));
     expect(result.warnings).toBeDefined();
-    expect(result.warnings!.some((w) => w.includes("Overloaded"))).toBe(true);
+    expect(result.warnings!.some((w) => w.message.includes("Overloaded"))).toBe(true);
   });
 
   it("should isolate warnings between concurrent streams on the same adapter", async () => {
@@ -916,10 +916,10 @@ describe("MessagesAdapter - error handling", () => {
       collectStream(adapter.stream(makeRequest({ requestId: "request-b" }))),
     ]);
 
-    expect(resultA.warnings?.some((w) => w.includes("warning-from-a"))).toBe(true);
-    expect(resultA.warnings?.some((w) => w.includes("warning-from-b"))).toBe(false);
-    expect(resultB.warnings?.some((w) => w.includes("warning-from-b"))).toBe(true);
-    expect(resultB.warnings?.some((w) => w.includes("warning-from-a"))).toBe(false);
+    expect(resultA.warnings?.some((w) => w.message.includes("warning-from-a"))).toBe(true);
+    expect(resultA.warnings?.some((w) => w.message.includes("warning-from-b"))).toBe(false);
+    expect(resultB.warnings?.some((w) => w.message.includes("warning-from-b"))).toBe(true);
+    expect(resultB.warnings?.some((w) => w.message.includes("warning-from-a"))).toBe(false);
     expect(resultA.backend.warnings).toEqual(resultA.warnings);
     expect(resultB.backend.warnings).toEqual(resultB.warnings);
   });
@@ -941,7 +941,7 @@ describe("MessagesAdapter - error handling", () => {
     });
 
     const result = await collectStream(adapter.stream(makeRequest({ include: { billing: "off" } })));
-    expect(result.warnings?.some((w) => w.includes("malformed Messages SSE"))).toBe(true);
+    expect(result.warnings?.some((w) => w.message.includes("malformed Messages SSE"))).toBe(true);
     expect(result.text).toBe("Hi");
   });
 });

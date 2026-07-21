@@ -286,8 +286,8 @@ describe("Scenario: degradation warnings", () => {
     const result = aggregateEvents(goldenWarningSequence());
     expect(result.warnings).toBeDefined();
     expect(result.warnings).toHaveLength(2);
-    expect(result.warnings![0]).toContain("Usage");
-    expect(result.warnings![1]).toContain("Replay");
+    expect(result.warnings?.[0]?.message).toContain("Usage");
+    expect(result.warnings?.[1]?.message).toContain("Replay");
   });
 
   it("should not prevent successful result when warnings are present", () => {

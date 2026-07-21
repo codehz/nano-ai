@@ -6,6 +6,7 @@
 
 import type { OutputItem, ReplayItem, ServerToolCallItem, ServerToolResultItem, ToolCallItem } from "./items.js";
 import type { AdapterKind } from "./kind.js";
+import type { StreamWarning } from "./warning-codes.js";
 
 // ── StopReason ────────────────────────────────────────────────
 
@@ -49,7 +50,7 @@ export type BackendTrace = {
   adapter: AdapterKind;
   isSyntheticStream: boolean;
   metadataSources?: string[];
-  warnings?: string[];
+  warnings?: StreamWarning[];
 };
 
 // ── 统一响应 ──────────────────────────────────────────────────
@@ -68,6 +69,7 @@ export type AIResponse = {
   usage?: Usage;
   billing?: BillingInfo;
   auxiliary?: AuxiliaryInfo;
-  warnings?: string[];
+  /** 结构化 warning；权威源含 message + 可选 code */
+  warnings?: StreamWarning[];
   backend: BackendTrace;
 };

@@ -38,6 +38,7 @@ import type {
   ServerToolResultItem,
   ServerToolDiscoveryItem,
   WarningCodeValue,
+  StreamWarning,
 } from "../types/index.js";
 
 export type EventFactoryBackend = {
@@ -56,7 +57,9 @@ function timestamp(): string {
 
 export function createEventFactory(state: EventFactoryState) {
   let seq = 0;
-  const warnings: string[] = [];
+  const warnings: StreamWarning[] = [];
+  // backend 在 factory 生命周期内不变，复用只读引用
+  const backend = state.backend;
 
   function next(): number {
     return seq++;
@@ -67,7 +70,7 @@ export function createEventFactory(state: EventFactoryState) {
       responseId: state.responseId,
       sequence: next(),
       timestamp: timestamp(),
-      backend: { ...state.backend },
+      backend,
     };
   }
 
@@ -79,7 +82,7 @@ export function createEventFactory(state: EventFactoryState) {
     },
 
     responseWarning(message: string, code?: WarningCodeValue): ResponseWarningEvent {
-      warnings.push(message);
+      warnings.push({ message, ...(code !== undefined ? { code } : {}) });
       return { ...base(), type: "response.warning", message, code };
     },
 
@@ -97,7 +100,7 @@ export function createEventFactory(state: EventFactoryState) {
       usage?: Usage;
       billing?: BillingInfo;
       auxiliary?: AuxiliaryInfo;
-      warnings?: string[];
+      warnings?: StreamWarning[];
       opaqueOutput?: OpaqueItem[];
       trace?: Partial<BackendTrace>;
     }): ResponseCompletedEvent {
@@ -201,8 +204,8 @@ export function createEventFactory(state: EventFactoryState) {
     },
 
     /** 返回当前已记录的 warning 副本。 */
-    get warnings(): string[] {
-      return [...warnings];
+    get warnings(): StreamWarning[] {
+      return warnings.map((w) => ({ ...w }));
     },
   };
 }

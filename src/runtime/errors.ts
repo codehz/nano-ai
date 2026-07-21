@@ -107,49 +107,12 @@ export class AIMappingError extends AIError {
   }
 }
 
-// ── Warning 辅助 ──────────────────────────────────────────────
+// ── Warning 辅助（单源在 types/warning-codes）────────────────
 
-/**
- * 标准 warning 代码列表。
- * 用于非致命差异的记录。
- */
-export const WarningCode = {
-  /** replay fidelity 低于预期 */
-  REPLAY_FIDELITY_LOW: "REPLAY_FIDELITY_LOW",
-  /** usage 字段缺失 */
-  USAGE_MISSING: "USAGE_MISSING",
-  /** billing 字段缺失 */
-  BILLING_MISSING: "BILLING_MISSING",
-  /** billing 只能给估算值 */
-  BILLING_ESTIMATED: "BILLING_ESTIMATED",
-  /** follow-up lookup 失败 */
-  LOOKUP_FAILED: "LOOKUP_FAILED",
-  /** lookup 超时 */
-  LOOKUP_TIMEOUT: "LOOKUP_TIMEOUT",
-  /** 流提前中断 */
-  STREAM_INCOMPLETE: "STREAM_INCOMPLETE",
-  /** 能力降级 */
-  CAPABILITY_DOWNGRADE: "CAPABILITY_DOWNGRADE",
-  /** 模拟流式 */
-  SYNTHETIC_STREAM: "SYNTHETIC_STREAM",
-  /** 工具调用以批量方式到达（非 token 级流式） */
-  TOOL_CALL_BATCHED: "TOOL_CALL_BATCHED",
-  /** AIMappingError 降级为 warning */
-  MAPPING_ERROR: "MAPPING_ERROR",
-  /** 请求 metadata 不被该 adapter 支持 */
-  UNSUPPORTED_METADATA: "UNSUPPORTED_METADATA",
-  /** 重复 finish / done 信号被忽略 */
-  DUPLICATE_FINISH: "DUPLICATE_FINISH",
-  /** provider 发出未知事件类型 */
-  UNKNOWN_PROVIDER_EVENT: "UNKNOWN_PROVIDER_EVENT",
-  /** 内容被安全/策略过滤 */
-  CONTENT_FILTER: "CONTENT_FILTER",
-  /** 多 choice 仅支持 index 0，其余忽略 */
-  MULTIPLE_CHOICES_IGNORED: "MULTIPLE_CHOICES_IGNORED",
-  /** MCP 审批流不被支持 */
-  MCP_APPROVAL_REQUIRED: "MCP_APPROVAL_REQUIRED",
-  /** provider 侧 response.failed 等失败 */
-  PROVIDER_FAILURE: "PROVIDER_FAILURE",
-} as const;
-
-export type WarningCodeName = (typeof WarningCode)[keyof typeof WarningCode];
+export { WarningCode, streamWarningKey } from "../types/warning-codes.js";
+export type {
+  WarningCodeName,
+  KnownWarningCode,
+  WarningCodeValue,
+  StreamWarning,
+} from "../types/warning-codes.js";

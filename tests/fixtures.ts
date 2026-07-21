@@ -123,7 +123,7 @@ export function goldenWarningSequence(): AIStreamEvent[] {
     f.messageCompleted("m1"),
     f.responseCompleted({
       replay: [m],
-      warnings: ["Usage information was not provided", "Replay fidelity is low for this provider"],
+      warnings: [{ message: "Usage information was not provided" }, { message: "Replay fidelity is low for this provider" }],
       trace: { adapter: "responses", isSyntheticStream: false },
     }),
   ];

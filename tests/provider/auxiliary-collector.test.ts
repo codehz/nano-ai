@@ -44,7 +44,7 @@ describe("AuxiliaryCollector - basic", () => {
     c.recordWarning("billing degraded");
 
     const result = c.build();
-    expect(result.warnings).toEqual(["usage missing", "billing degraded"]);
+    expect(result.warnings).toEqual([{ message: "usage missing" }, { message: "billing degraded" }]);
   });
 
   it("should record provider metadata", () => {
@@ -140,7 +140,7 @@ describe("AuxiliaryCollector - lookup", () => {
 
     const result = c.build();
     expect(result.warnings).toBeDefined();
-    expect(result.warnings![0]).toContain("Auxiliary lookup failed");
+    expect(result.warnings?.[0]?.message).toContain("Auxiliary lookup failed");
   });
 
   it("should not throw on lookup failure", async () => {
@@ -162,7 +162,7 @@ describe("AuxiliaryCollector - lookup", () => {
 
     const result = c.build();
     expect(result.warnings).toBeDefined();
-    expect(result.warnings![0]).toContain("Lookup timed out");
+    expect(result.warnings?.[0]?.message).toContain("Lookup timed out");
   });
 
   it("should preserve pre-lookup data when lookup fails", async () => {

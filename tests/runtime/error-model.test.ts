@@ -254,7 +254,7 @@ describe("Non-fatal differences use warning channel", () => {
 
     const result = aggregateEvents(events);
     expect(result.warnings).toBeDefined();
-    expect(result.warnings!.some((w) => w.includes("Usage"))).toBe(true);
+    expect(result.warnings!.some((w) => w.message.includes("Usage"))).toBe(true);
   });
 
   it("should report replay fidelity downgrade as warning", () => {
@@ -274,7 +274,7 @@ describe("Non-fatal differences use warning channel", () => {
 
     const result = aggregateEvents(events);
     expect(result.warnings).toBeDefined();
-    expect(result.warnings!.some((w) => w.includes("Replay"))).toBe(true);
+    expect(result.warnings!.some((w) => w.message.includes("Replay"))).toBe(true);
   });
 
   it("should not treat warning-only events as fatal errors", () => {

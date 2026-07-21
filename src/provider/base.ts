@@ -26,7 +26,9 @@ import type {
   BillingInfo,
   BackendTrace,
   AdapterKind,
+  StreamWarning,
 } from "../types/index.js";
+import { streamWarningKey } from "../types/warning-codes.js";
 import { createEventFactory } from "../stream/event-factory.js";
 import { AIMappingError, AIProviderError, AIRequestError, AIStreamError, WarningCode } from "../runtime/errors.js";
 import type { EventFactory } from "../stream/event-factory.js";
@@ -48,7 +50,7 @@ export type StreamResult = {
   billing?: BillingInfo;
   providerMetadata?: Record<string, unknown>;
   auxiliary?: Partial<AuxiliaryInfo>;
-  warnings?: string[];
+  warnings?: StreamWarning[];
   metadataSources?: string[];
   rawResponseId?: string;
 };
@@ -60,7 +62,7 @@ export type StreamCompletedPayload = {
   usage?: Usage;
   billing?: BillingInfo;
   auxiliary?: AuxiliaryInfo;
-  warnings?: string[] | undefined;
+  warnings?: StreamWarning[] | undefined;
   trace: Partial<BackendTrace>;
 };
 
@@ -196,15 +198,16 @@ export abstract class AdapterBase implements BackendAdapter {
   }
 }
 
-function mergeWarnings(...groups: Array<string[] | undefined>): string[] | undefined {
+function mergeWarnings(...groups: Array<StreamWarning[] | undefined>): StreamWarning[] | undefined {
   const seen = new Set<string>();
-  const merged: string[] = [];
+  const merged: StreamWarning[] = [];
 
   for (const group of groups) {
     if (!group) continue;
     for (const warning of group) {
-      if (seen.has(warning)) continue;
-      seen.add(warning);
+      const key = streamWarningKey(warning);
+      if (seen.has(key)) continue;
+      seen.add(key);
       merged.push(warning);
     }
   }

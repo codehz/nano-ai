@@ -46,7 +46,7 @@ export type SyntheticStreamOptions = {
   billing?: BillingInfo;
   providerMetadata?: Record<string, unknown>;
   rawResponseId?: string;
-  warnings?: string[];
+  warnings?: import("../types/index.js").StreamWarning[];
 };
 
 // ── Synthetic Stream ──────────────────────────────────────────
@@ -108,8 +108,12 @@ export async function* syntheticStream(options: SyntheticStreamOptions): AsyncIt
   const finalReplay = replay ?? replayFromOutput(output);
 
   // 收集警告
-  const allWarnings: string[] = [];
-  allWarnings.push("Response is synthetically streamed; delta granularity may differ from native streaming");
+  const allWarnings: import("../types/index.js").StreamWarning[] = [
+    {
+      message: "Response is synthetically streamed; delta granularity may differ from native streaming",
+      code: "SYNTHETIC_STREAM",
+    },
+  ];
   if (extraWarnings) allWarnings.push(...extraWarnings);
 
   yield factory.responseCompleted({

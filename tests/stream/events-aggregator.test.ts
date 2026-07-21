@@ -277,11 +277,14 @@ describe("aggregateEvents", () => {
       f.responseStarted("gpt-4"),
       f.responseWarning("usage missing", WarningCode.USAGE_MISSING),
       f.responseWarning("replay degraded"),
-      f.responseCompleted({ replay: [], warnings: ["usage missing", "replay degraded"] }),
+      f.responseCompleted({ replay: [], warnings: [{ message: "usage missing" }, { message: "replay degraded" }] }),
     ];
 
     const result = aggregateEvents(events);
-    expect(result.warnings).toEqual(["usage missing", "replay degraded"]);
+    expect(result.warnings).toEqual([
+      { message: "usage missing", code: WarningCode.USAGE_MISSING },
+      { message: "replay degraded" },
+    ]);
   });
 
   it("should preserve auxiliary and warnings from response.completed", () => {
@@ -300,7 +303,7 @@ describe("aggregateEvents", () => {
           providerUsage: { input_tokens: 10, output_tokens: 5 },
           providerMetadata: { serviceTier: "default" },
         },
-        warnings: ["synthetic warning"],
+        warnings: [{ message: "synthetic warning" }],
       }),
     ];
 
@@ -311,7 +314,7 @@ describe("aggregateEvents", () => {
       requestId: "req-123",
       serviceTier: "default",
     });
-    expect(result.warnings).toEqual(["synthetic warning"]);
+    expect(result.warnings).toEqual([{ message: "synthetic warning" }]);
   });
 
   it("should produce correct text from multi-message output", () => {

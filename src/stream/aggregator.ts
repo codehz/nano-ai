@@ -33,7 +33,9 @@ import type {
   StopReason,
   ContentBlock,
   Citation,
+  StreamWarning,
 } from "../types/index.js";
+import { streamWarningKey } from "../types/warning-codes.js";
 import { coalesceContentBlocks } from "../canonical/content.js";
 import { AIStreamError } from "../runtime/errors.js";
 import { mergeAuxiliary } from "./merge-auxiliary.js";
@@ -87,7 +89,7 @@ export interface AggregatorState {
   usage?: Usage;
   billing?: BillingInfo;
   auxiliary: AuxiliaryInfo;
-  warnings: string[];
+  warnings: StreamWarning[];
   warningSet: Set<string>;
   output: OutputItem[];
   textParts: string[];
@@ -193,7 +195,7 @@ function handleResponseStarted(state: AggregatorState, event: AIStreamEvent & { 
 }
 
 function handleResponseWarning(state: AggregatorState, event: AIStreamEvent & { type: "response.warning" }): void {
-  pushWarnings(state, [event.message]);
+  pushWarnings(state, [{ message: event.message, ...(event.code !== undefined ? { code: event.code } : {}) }]);
 }
 
 function handleResponseAuxiliary(state: AggregatorState, event: AIStreamEvent & { type: "response.auxiliary" }): void {
@@ -499,10 +501,11 @@ export function finalizeAggregation(state: AggregatorState): AIResponse {
   return buildResponse(state);
 }
 
-function pushWarnings(state: AggregatorState, warnings: readonly string[]): void {
+function pushWarnings(state: AggregatorState, warnings: readonly StreamWarning[]): void {
   for (const warning of warnings) {
-    if (!state.warningSet.has(warning)) {
-      state.warningSet.add(warning);
+    const key = streamWarningKey(warning);
+    if (!state.warningSet.has(key)) {
+      state.warningSet.add(key);
       state.warnings.push(warning);
     }
   }

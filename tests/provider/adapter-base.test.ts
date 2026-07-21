@@ -287,7 +287,7 @@ describe("AdapterBase", () => {
     expect(completed).toBeDefined();
     if (completed?.type === "response.completed") {
       expect(completed.warnings).toBeDefined();
-      expect(completed.warnings![0]).toContain("provider exploded");
+      expect(completed.warnings![0]!.message).toContain("provider exploded");
     }
   });
 

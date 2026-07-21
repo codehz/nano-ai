@@ -208,7 +208,7 @@ describe("syntheticStream - metadata", () => {
     const completed = events.find((e) => e.type === "response.completed");
     if (completed?.type === "response.completed") {
       expect(completed.warnings).toBeDefined();
-      expect(completed.warnings!.some((w) => w.includes("synthetically"))).toBe(true);
+      expect(completed.warnings!.some((w) => w.message.includes("synthetically"))).toBe(true);
     }
   });
 
@@ -216,13 +216,13 @@ describe("syntheticStream - metadata", () => {
     const events = await collect(
       syntheticStream(
         makeOptions({
-          warnings: ["Custom adapter warning"],
+          warnings: [{ message: "Custom adapter warning" }],
         }),
       ),
     );
     const completed = events.find((e) => e.type === "response.completed");
     if (completed?.type === "response.completed") {
-      expect(completed.warnings).toContain("Custom adapter warning");
+      expect(completed.warnings?.some((w) => w.message === "Custom adapter warning" || w.message.includes("Custom adapter warning"))).toBe(true);
     }
   });
 });

@@ -157,7 +157,7 @@ export type MockCompleteStep = {
   auxiliary?: Partial<AuxiliaryInfo>;
   providerMetadata?: Record<string, unknown>;
   rawResponseId?: string;
-  warnings?: string[];
+  warnings?: import("../../types/index.js").StreamWarning[];
 };
 
 export type MockErrorStep = {

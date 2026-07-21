@@ -48,12 +48,14 @@ export { REASONING_LEVELS, REASONING_LEVEL_SET } from "./request.js";
 // 响应模型
 export type { AIResponse, StopReason, Usage, BillingInfo, AuxiliaryInfo, BackendTrace } from "./response.js";
 
+// Warning 单源
+export { WarningCode, streamWarningKey } from "./warning-codes.js";
+export type { WarningCodeName, KnownWarningCode, WarningCodeValue, StreamWarning } from "./warning-codes.js";
+
 // 流事件模型
 export type {
   AIStreamEvent,
   StreamEventBase,
-  KnownWarningCode,
-  WarningCodeValue,
   ResponseStartedEvent,
   ResponseWarningEvent,
   ResponseAuxiliaryEvent,

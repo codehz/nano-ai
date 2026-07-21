@@ -16,7 +16,7 @@
  *   - 不阻断主生成链路
  */
 
-import type { Usage, BillingInfo, AuxiliaryInfo } from "../types/index.js";
+import type { Usage, BillingInfo, AuxiliaryInfo, StreamWarning } from "../types/index.js";
 
 // ── 来源类型 ──────────────────────────────────────────────────
 
@@ -39,7 +39,7 @@ export class AuxiliaryCollector {
   private providerMetadata: Record<string, unknown> = {};
   private providerUsage: unknown;
   private providerBilling: unknown;
-  private warnings: string[] = [];
+  private warnings: StreamWarning[] = [];
   private lookupAttempted = false;
 
   // ── 记录方法 ──────────────────────────────────────────────
@@ -77,8 +77,8 @@ export class AuxiliaryCollector {
   /**
    * 记录一条 warning。
    */
-  recordWarning(message: string): this {
-    this.warnings.push(message);
+  recordWarning(message: string, code?: StreamWarning["code"]): this {
+    this.warnings.push({ message, ...(code !== undefined ? { code } : {}) });
     return this;
   }
 
@@ -119,8 +119,13 @@ export class AuxiliaryCollector {
    * 构建最终的 usage / billing / auxiliary。
    * 所有字段均为可选的 — 拿不到就不给。
    */
-  build(): { usage?: Usage; billing?: BillingInfo; auxiliary?: AuxiliaryInfo; warnings?: string[] } {
-    const result: { usage?: Usage; billing?: BillingInfo; auxiliary?: AuxiliaryInfo; warnings?: string[] } = {};
+  build(): { usage?: Usage; billing?: BillingInfo; auxiliary?: AuxiliaryInfo; warnings?: StreamWarning[] } {
+    const result: {
+      usage?: Usage;
+      billing?: BillingInfo;
+      auxiliary?: AuxiliaryInfo;
+      warnings?: StreamWarning[];
+    } = {};
 
     if (Object.keys(this.usage).length > 0) {
       result.usage = this.usage as Usage;

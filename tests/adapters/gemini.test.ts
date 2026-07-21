@@ -179,7 +179,7 @@ describe("GeminiAdapter - text streaming", () => {
 
     const result = await collectStream(adapter.stream(makeRequest({ include: { usage: "off", billing: "off" } })));
     expect(result.stopReason).toBe("content_filter");
-    expect(result.warnings?.some((w) => w.includes("blocked the prompt"))).toBe(true);
+    expect(result.warnings?.some((w) => w.message.includes("blocked the prompt"))).toBe(true);
   });
 
   it("should map usage cache and thoughts tokens", async () => {
@@ -669,7 +669,7 @@ describe("GeminiAdapter - errors and stream edge cases", () => {
     });
 
     const result = await collectStream(adapter.stream(makeRequest({ include: { billing: "off" } })));
-    expect(result.warnings?.some((w) => w.includes("malformed"))).toBe(true);
+    expect(result.warnings?.some((w) => w.message.includes("malformed"))).toBe(true);
     expect(result.text).toBe("Hi");
   });
 
@@ -688,7 +688,7 @@ describe("GeminiAdapter - errors and stream edge cases", () => {
 
     const result = await collectStream(adapter.stream(makeRequest({ include: { billing: "off" } })));
     expect(result.text).toBe("Partial");
-    expect(result.warnings?.some((w) => w.includes("without a finishReason"))).toBe(true);
+    expect(result.warnings?.some((w) => w.message.includes("without a finishReason"))).toBe(true);
   });
 
   it("should honor abort signal", async () => {

@@ -24,7 +24,7 @@ export type AuxiliaryFinalizeResult = {
   usage?: Usage;
   billing?: BillingInfo;
   auxiliary?: AuxiliaryInfo;
-  warnings?: string[];
+  warnings?: import("../types/index.js").StreamWarning[];
   metadataSources?: string[];
 };
 
