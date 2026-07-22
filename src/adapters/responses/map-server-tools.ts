@@ -4,12 +4,7 @@
 
 import { AIRequestError } from "../../runtime/errors.js";
 import type { ServerToolDefinition } from "../../types/index.js";
-import type {
-  ResponsesCodeInterpreterTool,
-  ResponsesMcpTool,
-  ResponsesTool,
-  ResponsesWebSearchTool,
-} from "./types.js";
+import type { ResponsesCodeInterpreterTool, ResponsesMcpTool, ResponsesTool, ResponsesWebSearchTool } from "./types.js";
 
 /** 将 canonical serverTools 映射为 Responses API tools 数组项。 */
 export function mapServerTools(serverTools: ServerToolDefinition[] | undefined): ResponsesTool[] {

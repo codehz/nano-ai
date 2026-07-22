@@ -3,11 +3,7 @@
  */
 
 import { AIRequestError, WarningCode } from "../../runtime/errors.js";
-import {
-  textBlock,
-  opaqueItem,
-  mapStopReason,
-} from "../../canonical/index.js";
+import { textBlock, opaqueItem, mapStopReason } from "../../canonical/index.js";
 import { createStreamingItemSession } from "../../provider/streaming-item-session.js";
 import { usageFromGemini } from "../../provider/usage/index.js";
 import { createDataLineSseParser } from "../../provider/transport/parser.js";
@@ -17,13 +13,7 @@ import { NormalizedRequestMapper } from "../../provider/request-mapper.js";
 
 import type { NormalizedRequest, AIStreamEvent, StopReason, ContentBlock } from "../../types/index.js";
 import type { EventFactory } from "../../stream/event-factory.js";
-import type {
-  GeminiPart,
-  GeminiContent,
-  GeminiGenerateContentRequest,
-  GeminiStreamChunk,
-} from "./types.js";
-
+import type { GeminiPart, GeminiContent, GeminiGenerateContentRequest, GeminiStreamChunk } from "./types.js";
 
 export const mapper = new NormalizedRequestMapper("gemini");
 
@@ -109,7 +99,6 @@ export function mergeModelParts(base: GeminiPart[], incoming: GeminiPart[]): Gem
   return result;
 }
 
-
 export type GeminiAdapterStreamHost = {
   beginJsonStream: (
     factory: EventFactory,
@@ -118,7 +107,6 @@ export type GeminiAdapterStreamHost = {
   baseUrl: string;
   apiKey?: string;
   mergeHeaders: (headers: Record<string, string>) => Record<string, string>;
-  
 };
 
 export async function* mapGeminiStream(

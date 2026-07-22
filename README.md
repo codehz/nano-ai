@@ -160,20 +160,20 @@ console.log(response.replay); // 续接材料
 
 `AIResponse` 包含：
 
-| 字段                | 类型                     | 说明                      |
-| ------------------- | ------------------------ | ------------------------- |
-| `output`            | `OutputItem[]`           | 当前轮输出                |
-| `replay`            | `ReplayItem[]`           | 续接材料（下次请求带回）  |
-| `text`              | `string`                 | 全部文本拼接              |
-| `toolCalls`         | `ToolCallItem[]`         | 客户端工具调用            |
-| `serverToolCalls`   | `ServerToolCallItem[]`   | 服务端工具调用            |
-| `serverToolResults` | `ServerToolResultItem[]` | 服务端工具结果            |
-| `stopReason`        | `StopReason?`            | 终止原因（可选）          |
-| `usage`             | `Usage?`                 | token 统计（可选）        |
-| `billing`           | `BillingInfo?`           | 计费信息（可选）          |
-| `auxiliary`         | `AuxiliaryInfo?`         | Provider 辅助信息（可选） |
+| 字段                | 类型                     | 说明                               |
+| ------------------- | ------------------------ | ---------------------------------- |
+| `output`            | `OutputItem[]`           | 当前轮输出                         |
+| `replay`            | `ReplayItem[]`           | 续接材料（下次请求带回）           |
+| `text`              | `string`                 | 全部文本拼接                       |
+| `toolCalls`         | `ToolCallItem[]`         | 客户端工具调用                     |
+| `serverToolCalls`   | `ServerToolCallItem[]`   | 服务端工具调用                     |
+| `serverToolResults` | `ServerToolResultItem[]` | 服务端工具结果                     |
+| `stopReason`        | `StopReason?`            | 终止原因（可选）                   |
+| `usage`             | `Usage?`                 | token 统计（可选）                 |
+| `billing`           | `BillingInfo?`           | 计费信息（可选）                   |
+| `auxiliary`         | `AuxiliaryInfo?`         | Provider 辅助信息（可选）          |
 | `warnings`          | `StreamWarning[]?`       | 非致命警告（`{ message; code? }`） |
-| `backend`           | `BackendTrace`           | 调用链路元数据            |
+| `backend`           | `BackendTrace`           | 调用链路元数据                     |
 
 流式 `message.delta` / `reasoning.delta` 保持后端分片粒度；完成态 `output` 中的
 `message` / `reasoning` 会合并相邻 `text` content blocks（直接拼接且不添加分隔符），
@@ -268,6 +268,49 @@ adapter.isSyntheticStream;
 
 响应级 `backend.isSyntheticStream` 使用同一标记；具体响应内容仍应从
 本次事件流、warning 和 `replay` 判断。
+
+### 上下文压缩（可选能力）
+
+部分 adapter 原生支持上下文压缩，通过独立接口暴露，**不**挂在 `BackendAdapter` / `AIClient` 上：
+
+| Adapter            | `supportsContextCompress` | 说明                                                                    |
+| ------------------ | ------------------------- | ----------------------------------------------------------------------- |
+| `ResponsesAdapter` | 是                        | `POST /responses/compact`；结果为 opaque `compacted_window`             |
+| `MockAdapter`      | 是                        | 构造期可选 `compressHandler`；未配置则抛 `MOCK_COMPRESS_NOT_CONFIGURED` |
+| 其余内置 adapter   | 否                        | 本期无客户端摘要 fallback                                               |
+
+```ts
+import { ResponsesAdapter, supportsContextCompress, createAIClient, collectStream } from "@codehz/ai";
+import type { InputItem } from "@codehz/ai";
+
+const adapter = new ResponsesAdapter({ apiKey: process.env.OPENAI_API_KEY! });
+const client = createAIClient({ adapter, model: "gpt-5.1" });
+
+let transcript: InputItem[] = [/* 多轮累积 */];
+
+if (supportsContextCompress(adapter)) {
+  // 用 replay 替换旧 transcript（不要 append 全文）
+  const { replay } = await adapter.compress({
+    model: "gpt-5.1",
+    input: transcript,
+  });
+  transcript = [...replay];
+}
+
+transcript.push({
+  type: "message",
+  role: "user",
+  content: [{ type: "text", text: "继续上一任务" }],
+});
+
+const response = await collectStream(client.stream({ input: transcript }));
+```
+
+边界：
+
+- 本期仅覆盖 **独立** `compress()`；不支持在 `stream` 请求里自动 `context_management` / `compact_threshold`。
+- Anthropic Messages 的请求内 compaction 未接入（无独立端点，另期）。
+- 调用方负责何时压缩与 transcript 替换；库不托管会话状态。
 
 ## Mock 后端
 

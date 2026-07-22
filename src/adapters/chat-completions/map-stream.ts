@@ -3,11 +3,7 @@
  */
 
 import { AIRequestError, WarningCode } from "../../runtime/errors.js";
-import {
-  textBlock,
-  opaqueItem,
-  mapStopReason,
-} from "../../canonical/index.js";
+import { textBlock, opaqueItem, mapStopReason } from "../../canonical/index.js";
 import { createStreamingItemSession } from "../../provider/streaming-item-session.js";
 import { NormalizedRequestMapper } from "../../provider/request-mapper.js";
 import { usageFromChatCompletions } from "../../provider/usage/index.js";
@@ -27,7 +23,6 @@ import {
   type PendingToolCall,
   type ReasoningFieldName,
 } from "./types.js";
-
 
 export const mapper = new NormalizedRequestMapper("chat-completions");
 
@@ -49,7 +44,9 @@ export function extractReasoningText(value: unknown): string {
   return "";
 }
 
-export function extractReasoningDeltas(delta: ChatChunkChoice["delta"]): Array<{ field: ReasoningFieldName; text: string }> {
+export function extractReasoningDeltas(
+  delta: ChatChunkChoice["delta"],
+): Array<{ field: ReasoningFieldName; text: string }> {
   const deltas: Array<{ field: ReasoningFieldName; text: string }> = [];
 
   for (const field of REASONING_FIELDS) {
@@ -141,7 +138,6 @@ export function buildAssistantReplayMessage(params: {
   return replayMessage;
 }
 
-
 export type ChatCompletionsAdapterStreamHost = {
   beginJsonStream: (
     factory: EventFactory,
@@ -150,7 +146,6 @@ export type ChatCompletionsAdapterStreamHost = {
   baseUrl: string;
   apiKey?: string;
   mergeHeaders: (headers: Record<string, string>) => Record<string, string>;
-  
 };
 
 export async function* mapChatCompletionsStream(
@@ -197,10 +192,7 @@ export async function* mapChatCompletionsStream(
     return [...pendingToolCalls.values()];
   };
 
-  const ensurePendingToolCallStarted = (
-    pending: PendingToolCall,
-    events: AIStreamEvent[],
-  ): void => {
+  const ensurePendingToolCallStarted = (pending: PendingToolCall, events: AIStreamEvent[]): void => {
     if (pending.started) return;
     events.push(items.startToolCall(pending.id, pending.name));
     if (pending.args) {

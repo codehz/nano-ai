@@ -20,7 +20,6 @@ import {
   type ReasoningFieldName,
 } from "./types.js";
 
-
 export const mapper = new NormalizedRequestMapper("chat-completions");
 
 export function extractReasoningText(value: unknown): string {
@@ -41,7 +40,9 @@ export function extractReasoningText(value: unknown): string {
   return "";
 }
 
-export function extractReasoningDeltas(delta: ChatChunkChoice["delta"]): Array<{ field: ReasoningFieldName; text: string }> {
+export function extractReasoningDeltas(
+  delta: ChatChunkChoice["delta"],
+): Array<{ field: ReasoningFieldName; text: string }> {
   const deltas: Array<{ field: ReasoningFieldName; text: string }> = [];
 
   for (const field of REASONING_FIELDS) {
@@ -132,7 +133,6 @@ export function buildAssistantReplayMessage(params: {
 
   return replayMessage;
 }
-
 
 export function buildChatCompletionsRequest(request: NormalizedRequest): ChatRequest {
   mapper.assertNoServerTools(request.serverTools);

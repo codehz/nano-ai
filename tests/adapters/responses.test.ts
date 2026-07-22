@@ -949,7 +949,9 @@ describe("ResponsesAdapter - error handling", () => {
     const result = await collectStream(adapter.stream(makeRequest()));
     expect(result.stopReason).toBe("error");
     expect(result.backend.rawResponseId).toBe("resp-failed");
-    expect(result.warnings?.some((w) => w.message.includes("Response failed") || w.message.includes("upstream timeout"))).toBe(true);
+    expect(
+      result.warnings?.some((w) => w.message.includes("Response failed") || w.message.includes("upstream timeout")),
+    ).toBe(true);
   });
 
   it("should map response.incomplete max_output_tokens to stopReason", async () => {

@@ -18,7 +18,6 @@ import type {
   GeminiGenerateContentRequest,
 } from "./types.js";
 
-
 export const mapper = new NormalizedRequestMapper("gemini");
 
 export function normalizeModelPath(model: string): string {
@@ -102,7 +101,6 @@ export function mergeModelParts(base: GeminiPart[], incoming: GeminiPart[]): Gem
   }
   return result;
 }
-
 
 export function buildGeminiRequest(request: NormalizedRequest): GeminiGenerateContentRequest {
   mapper.assertNoServerTools(request.serverTools);

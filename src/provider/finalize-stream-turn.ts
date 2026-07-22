@@ -6,10 +6,7 @@
 import { replayFromOutput } from "../canonical/index.js";
 import type { AIStreamEvent, OpaqueItem, StopReason } from "../types/index.js";
 import type { StreamingItemSession } from "./streaming-item-session.js";
-import type {
-  ProviderJsonStreamCompleteOptions,
-  ProviderJsonStreamSession,
-} from "./transport/run-json-stream.js";
+import type { ProviderJsonStreamCompleteOptions, ProviderJsonStreamSession } from "./transport/run-json-stream.js";
 
 export type FinalizeStreamTurnOptions = {
   opaque?: OpaqueItem | null | undefined;

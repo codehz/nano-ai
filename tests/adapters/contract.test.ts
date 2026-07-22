@@ -1313,7 +1313,10 @@ describe("A→E dual-track ledger", () => {
     for (const { label, result } of cases) {
       assertDualTrack(result, label);
       assertOpaqueTrailingInReplay(result, label);
-      expect(result.replay.some((item) => item.type === "opaque"), `${label} emits opaque replay`).toBe(true);
+      expect(
+        result.replay.some((item) => item.type === "opaque"),
+        `${label} emits opaque replay`,
+      ).toBe(true);
     }
   });
 });

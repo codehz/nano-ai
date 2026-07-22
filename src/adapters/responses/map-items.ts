@@ -13,10 +13,7 @@ import {
   serverToolResultItem,
   serverToolDiscoveryItem,
 } from "../../canonical/index.js";
-import {
-  createStreamingItemSession,
-  type StreamingItemSession,
-} from "../../provider/streaming-item-session.js";
+import { createStreamingItemSession, type StreamingItemSession } from "../../provider/streaming-item-session.js";
 import type {
   AIStreamEvent,
   Citation,
@@ -431,10 +428,7 @@ export function createResponsesSseProcessor(factory: EventFactory): ResponsesSse
     }
   };
 
-  const ensureReasoningState = (
-    itemId: string,
-    visibility: ReasoningVisibility = "summary",
-  ): ReasoningStreamState => {
+  const ensureReasoningState = (itemId: string, visibility: ReasoningVisibility = "summary"): ReasoningStreamState => {
     let state = reasoningStates.get(itemId);
     if (!state) {
       state = createReasoningState(visibility);
@@ -612,10 +606,7 @@ export function createResponsesSseProcessor(factory: EventFactory): ResponsesSse
         const citations = messageCitations.get(data.item_id);
         // 复制数组，避免后续 annotation / item.done 再 push 时污染 snapshot
         const citationsSnapshot = citations && citations.length > 0 ? [...citations] : undefined;
-        yield items.completeMessage(
-          data.item_id,
-          citationsSnapshot ? { citations: citationsSnapshot } : undefined,
-        );
+        yield items.completeMessage(data.item_id, citationsSnapshot ? { citations: citationsSnapshot } : undefined);
       }
       return;
     }

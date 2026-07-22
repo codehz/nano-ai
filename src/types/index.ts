@@ -78,3 +78,7 @@ export type {
 
 // Adapter 协议和 client 类型
 export type { BackendAdapter, FetchFn, NormalizedRequest, CreateAIClientOptions, AIClient } from "./adapter.js";
+
+// 上下文压缩能力（可选 adapter 接口）
+export type { CompressRequest, CompressResult, ContextCompressCapable } from "./compress.js";
+export { supportsContextCompress } from "./compress.js";

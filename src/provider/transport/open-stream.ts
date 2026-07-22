@@ -30,6 +30,37 @@ export type OpenedProviderStream = {
 
 /** POST JSON 并返回可读 body reader + response headers；统一网络/HTTP/空 body 错误。 */
 export async function openProviderJsonStream(options: OpenProviderJsonStreamOptions): Promise<OpenedProviderStream> {
+  const opened = await postProviderJsonResponse(options);
+  const bodyStream = opened.response.body;
+  if (!bodyStream) {
+    throw new AIStreamError("Response body is not readable", "STREAM_ERROR");
+  }
+
+  // Bun/DOM ReadableStreamDefaultReader 类型略有差异，按最小接口使用
+  return {
+    reader: bodyStream.getReader() as ReadableStreamDefaultReader<Uint8Array>,
+    headers: opened.headers,
+  };
+}
+
+export type PostProviderJsonOptions = {
+  fetchFn: FetchFn;
+  url: string;
+  headers: Record<string, string>;
+  body: unknown;
+  signal?: AbortSignal;
+};
+
+export type PostedProviderJsonResponse = {
+  response: Response;
+  headers: Headers;
+};
+
+/**
+ * POST JSON 并返回已校验 2xx 的 Response（非流式调用可用 response.json()）。
+ * 网络错误 / HTTP 非 2xx 映射与 openProviderJsonStream 一致。
+ */
+export async function postProviderJsonResponse(options: PostProviderJsonOptions): Promise<PostedProviderJsonResponse> {
   const { fetchFn, url, headers, body, signal } = options;
 
   let response: Response;
@@ -49,16 +80,29 @@ export async function openProviderJsonStream(options: OpenProviderJsonStreamOpti
     throw providerHttpError(response.status, errorBody);
   }
 
-  const bodyStream = response.body;
-  if (!bodyStream) {
-    throw new AIStreamError("Response body is not readable", "STREAM_ERROR");
-  }
+  return { response, headers: response.headers };
+}
 
-  // Bun/DOM ReadableStreamDefaultReader 类型略有差异，按最小接口使用
-  return {
-    reader: bodyStream.getReader() as ReadableStreamDefaultReader<Uint8Array>,
-    headers: response.headers,
-  };
+/**
+ * POST JSON 并解析 JSON body；解析失败抛 STREAM_PROTOCOL_ERROR（非流场景的协议错误）。
+ */
+export async function postProviderJson<T = unknown>(
+  options: PostProviderJsonOptions,
+): Promise<{
+  data: T;
+  headers: Headers;
+}> {
+  const { response, headers } = await postProviderJsonResponse(options);
+  let data: T;
+  try {
+    data = (await response.json()) as T;
+  } catch (err) {
+    throw new AIStreamError(
+      `Failed to parse provider JSON response: ${err instanceof Error ? err.message : String(err)}`,
+      "STREAM_PROTOCOL_ERROR",
+    );
+  }
+  return { data, headers };
 }
 
 export type ProviderStreamBatchOptions<T> = {

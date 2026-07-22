@@ -15,6 +15,9 @@ import { AdapterBase } from "../../provider/base.js";
 import { replayFromOutput } from "../../canonical/index.js";
 import type {
   AIStreamEvent,
+  CompressRequest,
+  CompressResult,
+  ContextCompressCapable,
   NormalizedRequest,
   OutputItem,
   ReplayItem,
@@ -27,6 +30,7 @@ import type { EventFactory } from "../../stream/event-factory.js";
 import type {
   MockAdapterOptions,
   MockCompleteStep,
+  MockCompressHandler,
   MockHandler,
   MockHandlerContext,
   MockHistoryRecord,
@@ -47,12 +51,13 @@ import {
   resolveStepStreamOptions,
 } from "./streaming.js";
 
-export class MockAdapter extends AdapterBase {
+export class MockAdapter extends AdapterBase implements ContextCompressCapable {
   readonly kind = "mock" as const;
   readonly isSyntheticStream = true;
 
   private readonly handler: MockHandler;
   private readonly providerMetadata?: Record<string, unknown>;
+  private readonly compressHandler?: MockCompressHandler;
 
   private cursor = 0;
   private previousReplay: ReplayItem[] = [];
@@ -64,6 +69,19 @@ export class MockAdapter extends AdapterBase {
     super();
     this.handler = options.handler;
     this.providerMetadata = options.providerMetadata;
+    this.compressHandler = options.compressHandler;
+  }
+
+  /**
+   * 可选压缩夹具：需构造时提供 compressHandler，否则抛 MOCK_COMPRESS_NOT_CONFIGURED。
+   * 始终存在 compress 方法以便 supportsContextCompress(mock) === true。
+   */
+  async compress(request: CompressRequest): Promise<CompressResult> {
+    request.signal?.throwIfAborted();
+    if (!this.compressHandler) {
+      throw new AIRequestError("MockAdapter compress handler not configured", "MOCK_COMPRESS_NOT_CONFIGURED");
+    }
+    return this.compressHandler(request);
   }
 
   protected async buildRequest(request: NormalizedRequest): Promise<MockProviderRequest> {
@@ -167,9 +185,7 @@ export class MockAdapter extends AdapterBase {
             break;
           }
           case "complete": {
-            yield factory.responseCompleted(
-              this.finalizeTurn(request, factory, mockRequest, output, step, stepCount),
-            );
+            yield factory.responseCompleted(this.finalizeTurn(request, factory, mockRequest, output, step, stepCount));
             return;
           }
           case "error": {

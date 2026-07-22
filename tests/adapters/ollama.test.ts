@@ -439,7 +439,7 @@ describe("OllamaAdapter - request building", () => {
     const body = JSON.parse(capturedBody!);
     expect(body.tools).toHaveLength(1);
     expect(body.tools[0].function.name).toBe("get_weather");
-    expect(result.warnings?.some((w) => w.message.includes('Ollama cannot force tool choice'))).toBe(true);
+    expect(result.warnings?.some((w) => w.message.includes("Ollama cannot force tool choice"))).toBe(true);
   });
 
   it("should map toolChoice none by omitting tools", async () => {

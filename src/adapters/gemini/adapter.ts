@@ -14,7 +14,6 @@ import { mapGeminiStream } from "./map-stream.js";
 export class GeminiAdapter extends HttpAdapterBase {
   readonly kind = "gemini" as const;
   readonly isSyntheticStream = false;
-  
 
   constructor(options: GeminiAdapterOptions) {
     super(options, { baseUrl: "https://generativelanguage.googleapis.com/v1beta" });
@@ -35,7 +34,6 @@ export class GeminiAdapter extends HttpAdapterBase {
         baseUrl: this.baseUrl,
         apiKey: this.apiKey,
         mergeHeaders: this.mergeHeaders.bind(this),
-        
       },
       providerRequest,
       factory,

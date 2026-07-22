@@ -3,11 +3,7 @@
  */
 
 import { WarningCode } from "../../runtime/errors.js";
-import {
-  textBlock,
-  opaqueItem,
-  mapStopReason,
-} from "../../canonical/index.js";
+import { textBlock, opaqueItem, mapStopReason } from "../../canonical/index.js";
 import { createStreamingItemSession } from "../../provider/streaming-item-session.js";
 import { NormalizedRequestMapper } from "../../provider/request-mapper.js";
 import { usageFromOllama } from "../../provider/usage/index.js";
@@ -19,7 +15,6 @@ import { OPAQUE_SOURCE } from "../../provider/opaque-sources.js";
 import type { NormalizedRequest, AIStreamEvent, StopReason } from "../../types/index.js";
 import type { EventFactory } from "../../stream/event-factory.js";
 import type { OllamaChatRequest, OllamaToolCall } from "./types.js";
-
 
 export const mapper = new NormalizedRequestMapper("ollama");
 
@@ -77,8 +72,6 @@ export function toWireOllamaToolCalls(toolCalls: OllamaReplayToolCall[]): Ollama
   }));
 }
 
-
-
 export type OllamaAdapterStreamHost = {
   beginJsonStream: (
     factory: EventFactory,
@@ -87,7 +80,6 @@ export type OllamaAdapterStreamHost = {
   baseUrl: string;
   apiKey?: string;
   mergeHeaders: (headers: Record<string, string>) => Record<string, string>;
-  
 };
 
 export async function* mapOllamaStream(

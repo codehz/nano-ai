@@ -10,13 +10,7 @@ import { mapMessagesThinking } from "../../provider/reasoning.js";
 import { OPAQUE_SOURCE } from "../../provider/opaque-sources.js";
 
 import type { NormalizedRequest, ContentBlock } from "../../types/index.js";
-import type {
-  MessagesAPIRequest,
-  MessagesAPIMessage,
-  MessagesAPIContentBlock,
-  MessagesAPITool,
-} from "./types.js";
-
+import type { MessagesAPIRequest, MessagesAPIMessage, MessagesAPIContentBlock, MessagesAPITool } from "./types.js";
 
 export const mapper = new NormalizedRequestMapper("messages");
 
@@ -101,10 +95,13 @@ export type MessagesAPIMessageResponse = {
 };
 
 /** 用 response 级别的命名空间合成 content block 的 item ID，避免多轮工具循环 ID 碰撞 */
-export function synthesizeItemId(kind: "msg" | "reason" | "reason-redacted", blockIndex: number, responseId: string): string {
+export function synthesizeItemId(
+  kind: "msg" | "reason" | "reason-redacted",
+  blockIndex: number,
+  responseId: string,
+): string {
   return `${kind}-${blockIndex}-${responseId}`;
 }
-
 
 // ── Content block 映射 ─────────────────────────────────────────
 
@@ -166,7 +163,6 @@ export function buildStreamMetadata(options: {
 
   return metadata;
 }
-
 
 export function buildMessagesRequest(request: NormalizedRequest): MessagesAPIRequest {
   mapper.assertNoServerTools(request.serverTools);

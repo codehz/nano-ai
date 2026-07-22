@@ -77,8 +77,12 @@ export type {
   NormalizedRequest,
   CreateAIClientOptions,
   AIClient,
+  // context compress capability
+  CompressRequest,
+  CompressResult,
+  ContextCompressCapable,
 } from "./types/index.js";
-export { KNOWN_ADAPTER_KINDS } from "./types/index.js";
+export { KNOWN_ADAPTER_KINDS, supportsContextCompress } from "./types/index.js";
 
 // ── Runtime ──────────────────────────────────────────────────
 export { createAIClient } from "./runtime/client.js";
@@ -147,6 +151,7 @@ export type {
   OllamaAdapterOptions,
   GeminiAdapterOptions,
   MockAdapterOptions,
+  MockCompressHandler,
   MockHistoryRecord,
   MockTextStreamOptions,
   MockInputExpectation,

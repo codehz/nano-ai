@@ -14,7 +14,6 @@ import { mapChatCompletionsStream } from "./map-stream.js";
 export class ChatCompletionsAdapter extends HttpAdapterBase {
   readonly kind = "chat-completions" as const;
   readonly isSyntheticStream = false;
-  
 
   constructor(options: ChatCompletionsAdapterOptions) {
     super(options, { baseUrl: "https://api.openai.com/v1" });
@@ -35,7 +34,6 @@ export class ChatCompletionsAdapter extends HttpAdapterBase {
         baseUrl: this.baseUrl,
         apiKey: this.apiKey,
         mergeHeaders: this.mergeHeaders.bind(this),
-        
       },
       providerRequest,
       factory,

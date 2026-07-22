@@ -109,10 +109,7 @@ describe("StreamingItemSession", () => {
     };
     session.completeServerToolResult(result);
 
-    expect(session.completedItems().map((i: OutputItem) => i.type)).toEqual([
-      "server_tool_call",
-      "server_tool_result",
-    ]);
+    expect(session.completedItems().map((i: OutputItem) => i.type)).toEqual(["server_tool_call", "server_tool_result"]);
   });
 
   it("should throw on delta without start", () => {

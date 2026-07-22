@@ -222,7 +222,11 @@ describe("syntheticStream - metadata", () => {
     );
     const completed = events.find((e) => e.type === "response.completed");
     if (completed?.type === "response.completed") {
-      expect(completed.warnings?.some((w) => w.message === "Custom adapter warning" || w.message.includes("Custom adapter warning"))).toBe(true);
+      expect(
+        completed.warnings?.some(
+          (w) => w.message === "Custom adapter warning" || w.message.includes("Custom adapter warning"),
+        ),
+      ).toBe(true);
     }
   });
 });

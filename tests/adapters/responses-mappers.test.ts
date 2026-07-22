@@ -93,9 +93,7 @@ describe("mapServerTools", () => {
   });
 
   it("throws UNSUPPORTED_SERVER_TOOL for unknown type", () => {
-    expect(() =>
-      mapServerTools([{ type: "not_a_tool" } as unknown as ServerToolDefinition]),
-    ).toThrow(AIRequestError);
+    expect(() => mapServerTools([{ type: "not_a_tool" } as unknown as ServerToolDefinition])).toThrow(AIRequestError);
 
     try {
       mapServerTools([{ type: "not_a_tool" } as unknown as ServerToolDefinition]);
@@ -164,18 +162,12 @@ describe("inferResponsesStopReason", () => {
       ),
     ).toBe("max_output_tokens");
 
-    expect(inferResponsesStopReason(responsesApiResponse({ status: "incomplete" }))).toBe(
-      "max_output_tokens",
-    );
+    expect(inferResponsesStopReason(responsesApiResponse({ status: "incomplete" }))).toBe("max_output_tokens");
   });
 
   it("maps empty output by status", () => {
-    expect(inferResponsesStopReason(responsesApiResponse({ status: "completed", output: [] }))).toBe(
-      "end_turn",
-    );
-    expect(
-      inferResponsesStopReason(responsesApiResponse({ status: "in_progress", output: [] })),
-    ).toBe("unknown");
+    expect(inferResponsesStopReason(responsesApiResponse({ status: "completed", output: [] }))).toBe("end_turn");
+    expect(inferResponsesStopReason(responsesApiResponse({ status: "in_progress", output: [] }))).toBe("unknown");
   });
 
   it("maps last item failed/incomplete status", () => {
@@ -291,16 +283,11 @@ describe("server tool item mappers", () => {
       id: "list_1",
       type: "mcp_list_tools",
       server_label: "dmcp",
-      tools: [
-        { name: "roll", description: "Roll a die", input_schema: { type: "object" } },
-        { name: 123 },
-      ],
+      tools: [{ name: "roll", description: "Roll a die", input_schema: { type: "object" } }, { name: 123 }],
     });
 
     expect(discovery.id).toBe("list_1");
     expect(discovery.serverLabel).toBe("dmcp");
-    expect(discovery.tools).toEqual([
-      { name: "roll", description: "Roll a die", inputSchema: { type: "object" } },
-    ]);
+    expect(discovery.tools).toEqual([{ name: "roll", description: "Roll a die", inputSchema: { type: "object" } }]);
   });
 });

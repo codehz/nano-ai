@@ -6,6 +6,8 @@ import type {
   AuxiliaryInfo,
   BillingInfo,
   Citation,
+  CompressRequest,
+  CompressResult,
   ContentBlock,
   InputItem,
   MessageItem,
@@ -201,9 +203,14 @@ export type MockStaticHandler = (
   context: MockHandlerContext,
 ) => MockHandlerSource | Promise<MockHandlerSource>;
 
+/** Mock compress 夹具；未配置时 compress() 抛 MOCK_COMPRESS_NOT_CONFIGURED */
+export type MockCompressHandler = (request: CompressRequest) => CompressResult | Promise<CompressResult>;
+
 export type MockAdapterOptions = {
   handler: MockHandler;
   providerMetadata?: Record<string, unknown>;
+  /** 可选：实现 ContextCompressCapable 供 compress 契约测试 */
+  compressHandler?: MockCompressHandler;
 };
 
 export type MockProviderRequest = {

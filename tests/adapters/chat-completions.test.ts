@@ -1062,7 +1062,9 @@ describe("ChatCompletionsAdapter - error handling", () => {
     // 应该拿到 warning + partial output
     const result = await collectStream(adapter.stream(makeRequest()));
     expect(result.warnings).toBeDefined();
-    expect(result.warnings!.some((w) => w.message.includes("INCOMPLETE_STREAM") || w.message.includes("finish_reason"))).toBe(true);
+    expect(
+      result.warnings!.some((w) => w.message.includes("INCOMPLETE_STREAM") || w.message.includes("finish_reason")),
+    ).toBe(true);
     expect(result.text).toBe("Partial");
   });
 

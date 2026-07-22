@@ -84,11 +84,7 @@ export type StreamingItemSession = {
   deltaToolCall(id: string, delta: { argumentsText?: string }): AIStreamEvent;
   completeToolCall(id: string): AIStreamEvent;
 
-  startServerTool(
-    id: string,
-    tool: string,
-    options?: { name?: string; serverLabel?: string },
-  ): AIStreamEvent;
+  startServerTool(id: string, tool: string, options?: { name?: string; serverLabel?: string }): AIStreamEvent;
   deltaServerTool(id: string, delta: { argumentsText?: string }): AIStreamEvent;
   completeServerTool(
     id: string,

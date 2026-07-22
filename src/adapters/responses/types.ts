@@ -31,6 +31,34 @@ export type ResponsesAPIRequest = {
   stream: true;
 };
 
+/**
+ * POST /responses/compact 请求体（非流式）。
+ * 仅保留 compact 相关字段；不设 stream / tools / temperature 等生成参数。
+ */
+export type ResponsesCompactAPIRequest = {
+  model: string;
+  input: ResponsesInputItem[];
+  instructions?: string;
+  previous_response_id?: string;
+};
+
+/** POST /responses/compact 响应（response.compaction） */
+export type ResponsesCompactAPIResponse = {
+  id?: string;
+  object?: string;
+  created_at?: number;
+  output: Array<Record<string, unknown>>;
+  usage?: {
+    input_tokens?: number;
+    output_tokens?: number;
+    total_tokens?: number;
+    input_tokens_details?: { cached_tokens?: number; [key: string]: unknown };
+    output_tokens_details?: { reasoning_tokens?: number; [key: string]: unknown };
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+};
+
 /** EasyInputMessage：content 可为 string，或 input_* content parts */
 export type ResponsesEasyMessage = {
   type: "message";
@@ -77,12 +105,31 @@ export type ResponsesItemReference = {
   id: string;
 };
 
+/** compact 输出中的加密 compaction 项（可原样回传为 input） */
+export type ResponsesCompactionInput = {
+  type: "compaction";
+  id?: string;
+  encrypted_content?: string;
+  [key: string]: unknown;
+};
+
+/**
+ * 保真透传的 wire item（compact window 中可能含 message/function_call/compaction 等）。
+ * 用于 compacted_window 原样展开，不在此做严格 shape 收窄。
+ */
+export type ResponsesWirePassthroughItem = {
+  type: string;
+  [key: string]: unknown;
+};
+
 export type ResponsesInputItem =
   | ResponsesEasyMessage
   | ResponsesFunctionCall
   | ResponsesFunctionCallOutput
   | ResponsesReasoningInput
-  | ResponsesItemReference;
+  | ResponsesItemReference
+  | ResponsesCompactionInput
+  | ResponsesWirePassthroughItem;
 
 export type ResponsesFunctionTool = {
   type: "function";

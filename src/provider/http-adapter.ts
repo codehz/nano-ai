@@ -11,10 +11,7 @@
 
 import { AdapterBase } from "./base.js";
 import { applyExtraBody, mergeProviderHeaders } from "./request-options.js";
-import {
-  createProviderJsonStreamSession,
-  type ProviderJsonStreamSession,
-} from "./transport/run-json-stream.js";
+import { createProviderJsonStreamSession, type ProviderJsonStreamSession } from "./transport/run-json-stream.js";
 import type { FetchFn, NormalizedRequest } from "../types/index.js";
 import type { EventFactory } from "../stream/event-factory.js";
 

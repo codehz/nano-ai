@@ -3,11 +3,7 @@
  */
 
 import { AIRequestError, WarningCode } from "../../runtime/errors.js";
-import {
-  textBlock,
-  opaqueItem,
-  mapStopReason,
-} from "../../canonical/index.js";
+import { textBlock, opaqueItem, mapStopReason } from "../../canonical/index.js";
 import { usageFromAnthropicMessages } from "../../provider/usage/index.js";
 import { createSseJsonParser } from "../../provider/transport/parser.js";
 import { createStreamingItemSession } from "../../provider/streaming-item-session.js";
@@ -18,11 +14,7 @@ import { OPAQUE_SOURCE } from "../../provider/opaque-sources.js";
 
 import type { NormalizedRequest, AIStreamEvent, ContentBlock } from "../../types/index.js";
 import type { EventFactory } from "../../stream/event-factory.js";
-import type {
-  MessagesAPIRequest,
-  MessagesAPIContentBlock,
-} from "./types.js";
-
+import type { MessagesAPIRequest, MessagesAPIContentBlock } from "./types.js";
 
 export const mapper = new NormalizedRequestMapper("messages");
 
@@ -107,10 +99,13 @@ export type MessagesAPIMessageResponse = {
 };
 
 /** 用 response 级别的命名空间合成 content block 的 item ID，避免多轮工具循环 ID 碰撞 */
-export function synthesizeItemId(kind: "msg" | "reason" | "reason-redacted", blockIndex: number, responseId: string): string {
+export function synthesizeItemId(
+  kind: "msg" | "reason" | "reason-redacted",
+  blockIndex: number,
+  responseId: string,
+): string {
   return `${kind}-${blockIndex}-${responseId}`;
 }
-
 
 // ── Content block 映射 ─────────────────────────────────────────
 
@@ -172,7 +167,6 @@ export function buildStreamMetadata(options: {
 
   return metadata;
 }
-
 
 export type MessagesAdapterStreamHost = {
   beginJsonStream: (
@@ -404,14 +398,10 @@ export async function* mapMessagesStream(
       })
     : null;
 
-  yield* finalizeStreamTurn(
-    session,
-    items,
-    {
-      opaque,
-      stopReason: stopReason ? mapStopReason(stopReason) : undefined,
-      rawResponseId,
-      onDuplicate: "silent",
-    },
-  );
+  yield* finalizeStreamTurn(session, items, {
+    opaque,
+    stopReason: stopReason ? mapStopReason(stopReason) : undefined,
+    rawResponseId,
+    onDuplicate: "silent",
+  });
 }

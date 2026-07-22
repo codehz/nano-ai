@@ -25,6 +25,7 @@ export type { GeminiAdapterOptions } from "./gemini/index.js";
 export { MockAdapter } from "./mock/index.js";
 export type {
   MockAdapterOptions,
+  MockCompressHandler,
   MockHistoryRecord,
   MockTextStreamOptions,
   MockInputExpectation,

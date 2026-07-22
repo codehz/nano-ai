@@ -392,9 +392,7 @@ function buildResponse(state: AggregatorState): AIResponse {
   const output = [...orderedOutput, ...state.output];
   const toolCalls = output.filter((item): item is ToolCallItem => item.type === "tool_call");
   const serverToolCalls = output.filter((item): item is ServerToolCallItem => item.type === "server_tool_call");
-  const serverToolResults = output.filter(
-    (item): item is ServerToolResultItem => item.type === "server_tool_result",
-  );
+  const serverToolResults = output.filter((item): item is ServerToolResultItem => item.type === "server_tool_result");
 
   return {
     id: state.responseId,

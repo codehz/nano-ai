@@ -14,7 +14,6 @@ import { mapOllamaStream } from "./map-stream.js";
 export class OllamaAdapter extends HttpAdapterBase {
   readonly kind = "ollama" as const;
   readonly isSyntheticStream = false;
-  
 
   constructor(options: OllamaAdapterOptions = {}) {
     super(options, { baseUrl: "http://localhost:11434" });
@@ -35,7 +34,6 @@ export class OllamaAdapter extends HttpAdapterBase {
         baseUrl: this.baseUrl,
         apiKey: this.apiKey,
         mergeHeaders: this.mergeHeaders.bind(this),
-        
       },
       providerRequest,
       factory,

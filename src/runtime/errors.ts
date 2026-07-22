@@ -33,7 +33,9 @@ export type KnownErrorCode =
   | "UNSUPPORTED_CONTENT_BLOCK"
   | "UNSUPPORTED_SERVER_TOOL"
   | "UNSUPPORTED_REASONING_LEVEL"
+  | "UNSUPPORTED_COMPRESS"
   | "MOCK_CONCURRENT_STREAM"
+  | "MOCK_COMPRESS_NOT_CONFIGURED"
   | "MOCK_EXPECTATION_FAILED"
   | "MOCK_STREAM_CONFIG_INVALID"
   | "MOCK_OPAQUE_OUTPUT"
@@ -110,9 +112,4 @@ export class AIMappingError extends AIError {
 // ── Warning 辅助（单源在 types/warning-codes）────────────────
 
 export { WarningCode, streamWarningKey } from "../types/warning-codes.js";
-export type {
-  WarningCodeName,
-  KnownWarningCode,
-  WarningCodeValue,
-  StreamWarning,
-} from "../types/warning-codes.js";
+export type { WarningCodeName, KnownWarningCode, WarningCodeValue, StreamWarning } from "../types/warning-codes.js";

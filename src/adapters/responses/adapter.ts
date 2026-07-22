@@ -3,23 +3,37 @@
  *
  * 接入 OpenAI Responses API (responses 端点)。
  * 编排层：buildRequest + runStream（open → SSE 处理 → complete）。
+ * 可选能力：compress → POST /responses/compact（ContextCompressCapable）。
  */
 
 import { HttpAdapterBase } from "../../provider/http-adapter.js";
 import { opaqueItem } from "../../canonical/index.js";
 import { usageFromOpenAIResponses } from "../../provider/usage/index.js";
 import { createSseJsonParser } from "../../provider/transport/parser.js";
+import { postProviderJson } from "../../provider/transport/open-stream.js";
 import { finalizeStreamTurn } from "../../provider/finalize-stream-turn.js";
 import { OPAQUE_SOURCE } from "../../provider/opaque-sources.js";
-import { buildResponsesRequest } from "./map-request.js";
+import { AIStreamError } from "../../runtime/errors.js";
+import { buildResponsesCompactRequest, buildResponsesRequest, RESPONSES_COMPACTED_WINDOW_KIND } from "./map-request.js";
 import { inferResponsesStopReason } from "./infer-stop-reason.js";
 import { createResponsesSseProcessor } from "./map-items.js";
 
-import type { NormalizedRequest, AIStreamEvent } from "../../types/index.js";
+import type {
+  AIStreamEvent,
+  CompressRequest,
+  CompressResult,
+  ContextCompressCapable,
+  NormalizedRequest,
+} from "../../types/index.js";
 import type { EventFactory } from "../../stream/event-factory.js";
-import type { ResponsesAdapterOptions, ResponsesAPIRequest, ResponsesSSEEvent } from "./types.js";
+import type {
+  ResponsesAdapterOptions,
+  ResponsesAPIRequest,
+  ResponsesCompactAPIResponse,
+  ResponsesSSEEvent,
+} from "./types.js";
 
-export class ResponsesAdapter extends HttpAdapterBase {
+export class ResponsesAdapter extends HttpAdapterBase implements ContextCompressCapable {
   readonly kind = "responses" as const;
   readonly isSyntheticStream = false;
 
@@ -29,6 +43,61 @@ export class ResponsesAdapter extends HttpAdapterBase {
 
   protected buildRequest(request: NormalizedRequest): ResponsesAPIRequest {
     return this.withExtraBody(buildResponsesRequest(request));
+  }
+
+  /**
+   * 原生上下文压缩：POST /responses/compact。
+   * 结果以单个 opaque(kind=compacted_window) 回传；调用方用 replay 替换旧 transcript。
+   */
+  async compress(request: CompressRequest): Promise<CompressResult> {
+    request.signal?.throwIfAborted();
+
+    const body = this.withExtraBody(buildResponsesCompactRequest(request));
+    const { data } = await postProviderJson<ResponsesCompactAPIResponse>({
+      fetchFn: this.fetchFn,
+      url: `${this.baseUrl}/responses/compact`,
+      headers: this.mergeHeaders({
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${this.apiKey}`,
+      }),
+      body,
+      signal: request.signal,
+    });
+
+    if (!data || typeof data !== "object" || !Array.isArray(data.output)) {
+      throw new AIStreamError("Responses compact response missing output array", "STREAM_PROTOCOL_ERROR");
+    }
+
+    const payload: Record<string, unknown> = {
+      kind: RESPONSES_COMPACTED_WINDOW_KIND,
+      output: data.output,
+    };
+    if (typeof data.id === "string" && data.id.length > 0 && data.id.length <= 256) {
+      payload.id = data.id;
+    }
+
+    const result: CompressResult = {
+      replay: [opaqueItem(OPAQUE_SOURCE.RESPONSES, "replay", payload)],
+    };
+
+    if (data.usage) {
+      const usage = usageFromOpenAIResponses(data.usage);
+      if (Object.keys(usage).length > 0) {
+        result.usage = usage;
+      }
+      if (request.include?.usage === "best_effort" || request.include?.providerMetadata === "best_effort") {
+        result.auxiliary = {
+          usageSource: "final",
+          providerUsage: data.usage,
+        };
+      }
+    }
+
+    if (typeof data.id === "string" && data.id.length > 0) {
+      result.rawResponseId = data.id;
+    }
+
+    return result;
   }
 
   protected async *runStream(
@@ -74,21 +143,17 @@ export class ResponsesAdapter extends HttpAdapterBase {
 
     const stopReason = completedResponse ? inferResponsesStopReason(completedResponse) : undefined;
 
-    yield* finalizeStreamTurn(
-      session,
-      processor.items,
-      {
-        // 同时保留 id（向后兼容）与 previous_response_id（语义明确）
-        opaque: completedResponse?.id
-          ? opaqueItem(OPAQUE_SOURCE.RESPONSES, "replay", {
-              id: completedResponse.id,
-              previous_response_id: completedResponse.id,
-            })
-          : null,
-        stopReason,
-        rawResponseId,
-        onDuplicate: "silent",
-      },
-    );
+    yield* finalizeStreamTurn(session, processor.items, {
+      // 同时保留 id（向后兼容）与 previous_response_id（语义明确）
+      opaque: completedResponse?.id
+        ? opaqueItem(OPAQUE_SOURCE.RESPONSES, "replay", {
+            id: completedResponse.id,
+            previous_response_id: completedResponse.id,
+          })
+        : null,
+      stopReason,
+      rawResponseId,
+      onDuplicate: "silent",
+    });
   }
 }

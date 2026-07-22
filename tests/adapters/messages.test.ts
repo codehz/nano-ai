@@ -880,9 +880,7 @@ describe("MessagesAdapter - error handling", () => {
       }
     }
 
-    expect(warningEvents.some((w) => w.message.includes("Overloaded") && w.code === "PROVIDER_FAILURE")).toBe(
-      true,
-    );
+    expect(warningEvents.some((w) => w.message.includes("Overloaded") && w.code === "PROVIDER_FAILURE")).toBe(true);
 
     const result = await collectStream(adapter.stream(makeRequest()));
     expect(result.warnings).toBeDefined();

@@ -7,6 +7,7 @@ export { assertMockRequest } from "./expectations.js";
 export { withMockStreaming } from "./streaming.js";
 export type {
   MockAdapterOptions,
+  MockCompressHandler,
   MockHistoryRecord,
   MockTextStreamOptions,
   MockInputExpectation,

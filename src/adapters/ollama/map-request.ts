@@ -13,7 +13,6 @@ import { OPAQUE_SOURCE } from "../../provider/opaque-sources.js";
 import type { NormalizedRequest } from "../../types/index.js";
 import type { OllamaChatRequest, OllamaMessage, OllamaToolCall } from "./types.js";
 
-
 export const mapper = new NormalizedRequestMapper("ollama");
 
 // ── Ollama 流式 chunk ─────────────────────────────────────────
@@ -69,8 +68,6 @@ export function toWireOllamaToolCalls(toolCalls: OllamaReplayToolCall[]): Ollama
     },
   }));
 }
-
-
 
 export function buildOllamaRequest(request: NormalizedRequest): OllamaChatRequest {
   mapper.assertNoServerTools(request.serverTools);
