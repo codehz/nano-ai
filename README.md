@@ -19,7 +19,7 @@ type StreamWarning = { message: string; code?: WarningCode };
 
 ### `tool_call.argumentsText` 校验
 
-运行时 `validateRequest` **不再**对 `tool_call.argumentsText` 做 `JSON.parse`；只校验为 `string`。非法 JSON object 语义在 adapter 映射入站（`parseToolArguments` / `parseJsonStrictObject`）时抛 `AIRequestError`（`TOOL_CALL_ARGUMENTS_INVALID`）。
+运行时 `validateRequest` **不再**对 `tool_call.argumentsText` 做 `JSON.parse`；只校验为 `string`。object-wire adapter（ollama / messages / gemini）在入站映射（`parseToolArguments` / `parseJsonStrictObject`）时若参数不是合法 JSON object，抛 `AIRecoverableError`（`TOOL_CALL_ARGUMENTS_INVALID`）：`AdapterBase` soft-complete 为 `response.warning` + `response.completed`（`stopReason: "error"`），不向调用方抛错、也不发 provider HTTP。chat-completions / responses 仍按字符串透传。
 
 ### Chat Completions opaque
 
@@ -40,7 +40,8 @@ type StreamWarning = { message: string; code?: WarningCode };
 ### 错误通道语义
 
 - `AIRequestError` / `AIProviderError` / `AIStreamError`：致命，同步或在异步迭代中抛出，不伪造 `response.completed`。
-- `AIMappingError`：由内部 `AdapterBase` 捕获后降级为 `response.warning`（`WarningCode.MAPPING_ERROR`）+ 空 output 的 `response.completed`；生产 adapter 原则上不抛。
+- `AIMappingError`：由内部 `AdapterBase` 捕获后降级为 `response.warning`（`WarningCode.MAPPING_ERROR`）+ 空 output 的 `response.completed`（无 `stopReason`）；生产 adapter 原则上不抛。
+- `AIRecoverableError`：由内部 `AdapterBase` 捕获后 soft-complete 为 `response.warning`（code 取自错误）+ 空 replay 的 `response.completed`（`stopReason` 默认 `"error"`）。用于可清理历史后重试的回合失败（如 object-wire 入站非法 `tool_call.argumentsText`）。
 - 非致命差异走 `response.warning` 与 `WarningCode`（0.6 起为结构化对象）。
 
 ## 安装

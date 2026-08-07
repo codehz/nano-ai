@@ -29,6 +29,8 @@ export const WarningCode = {
   TOOL_CALL_BATCHED: "TOOL_CALL_BATCHED",
   /** AIMappingError 降级为 warning */
   MAPPING_ERROR: "MAPPING_ERROR",
+  /** 入站 tool_call.argumentsText 非合法 JSON object（object-wire adapter soft-complete） */
+  TOOL_CALL_ARGUMENTS_INVALID: "TOOL_CALL_ARGUMENTS_INVALID",
   /** 请求 metadata 不被该 adapter 支持 */
   UNSUPPORTED_METADATA: "UNSUPPORTED_METADATA",
   /** 重复 finish / done 信号被忽略 */

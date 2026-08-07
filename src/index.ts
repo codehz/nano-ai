@@ -92,6 +92,7 @@ export {
   AIProviderError,
   AIStreamError,
   AIMappingError,
+  AIRecoverableError,
   WarningCode,
 } from "./runtime/errors.js";
 export type {

@@ -15,6 +15,7 @@ import {
   AIProviderError,
   AIStreamError,
   AIMappingError,
+  AIRecoverableError,
   WarningCode,
   collectStream,
   textBlock,
@@ -59,21 +60,32 @@ describe("Error types", () => {
     expect(err.name).toBe("AIMappingError");
   });
 
+  it("AIRecoverableError should have correct name, code, and default stopReason", () => {
+    const err = new AIRecoverableError("bad tool args", "TOOL_CALL_ARGUMENTS_INVALID");
+    expect(err).toBeInstanceOf(AIError);
+    expect(err.name).toBe("AIRecoverableError");
+    expect(err.code).toBe("TOOL_CALL_ARGUMENTS_INVALID");
+    expect(err.stopReason).toBe("error");
+  });
+
   it("should be distinguishable via instanceof", () => {
     const reqErr = new AIRequestError("bad", "BAD");
     const provErr = new AIProviderError("bad", "BAD");
     const streamErr = new AIStreamError("bad", "BAD");
     const mapErr = new AIMappingError("bad", "BAD");
+    const recoverableErr = new AIRecoverableError("bad", "BAD");
 
     expect(reqErr).toBeInstanceOf(AIRequestError);
     expect(provErr).toBeInstanceOf(AIProviderError);
     expect(streamErr).toBeInstanceOf(AIStreamError);
     expect(mapErr).toBeInstanceOf(AIMappingError);
+    expect(recoverableErr).toBeInstanceOf(AIRecoverableError);
 
     expect(reqErr).toBeInstanceOf(AIError);
     expect(provErr).toBeInstanceOf(AIError);
     expect(streamErr).toBeInstanceOf(AIError);
     expect(mapErr).toBeInstanceOf(AIError);
+    expect(recoverableErr).toBeInstanceOf(AIError);
   });
 });
 
@@ -94,6 +106,7 @@ describe("WarningCode", () => {
     expect(WarningCode.MULTIPLE_CHOICES_IGNORED).toBe("MULTIPLE_CHOICES_IGNORED");
     expect(WarningCode.MCP_APPROVAL_REQUIRED).toBe("MCP_APPROVAL_REQUIRED");
     expect(WarningCode.PROVIDER_FAILURE).toBe("PROVIDER_FAILURE");
+    expect(WarningCode.TOOL_CALL_ARGUMENTS_INVALID).toBe("TOOL_CALL_ARGUMENTS_INVALID");
   });
 });
 

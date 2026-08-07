@@ -403,19 +403,22 @@ describe("MessagesAdapter - request building", () => {
     expect(content[0]?.type).toBe("tool_use");
   });
 
-  it("should reject non-JSON tool_call argumentsText", async () => {
+  it("should soft-complete non-JSON tool_call argumentsText", async () => {
     const { captured, fetch } = captureRequest();
     const adapter = new MessagesAdapter({ apiKey: "test-key", fetch });
 
-    await expect(
-      collectStream(
-        adapter.stream(
-          makeRequest({
-            input: [{ type: "tool_call" as const, id: "tc1", name: "get_weather", argumentsText: '{"city":' }],
-          }),
-        ),
+    const result = await collectStream(
+      adapter.stream(
+        makeRequest({
+          input: [{ type: "tool_call" as const, id: "tc1", name: "get_weather", argumentsText: '{"city":' }],
+        }),
       ),
-    ).rejects.toMatchObject({ code: "TOOL_CALL_ARGUMENTS_INVALID" });
+    );
+
+    expect(result.stopReason).toBe("error");
+    expect(result.output).toEqual([]);
+    expect(result.warnings?.some((w) => w.code === "TOOL_CALL_ARGUMENTS_INVALID")).toBe(true);
+    expect(result.warnings?.some((w) => w.message.includes('"tc1"') && w.message.includes("get_weather"))).toBe(true);
     expect(captured.current).toBeNull();
   });
 

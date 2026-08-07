@@ -15,7 +15,10 @@ import {
   replayFromOutput,
   AIMappingError,
   AIProviderError,
+  AIRecoverableError,
+  AIRequestError,
   collectStream,
+  WarningCode,
 } from "../../src/index.js";
 
 import { AdapterBase } from "../../src/provider/base.js";
@@ -289,6 +292,59 @@ describe("AdapterBase", () => {
       expect(completed.warnings).toBeDefined();
       expect(completed.warnings![0]!.message).toContain("provider exploded");
     }
+  });
+
+  it("should soft-complete AIRecoverableError with stopReason error", async () => {
+    class RecoverableAdapter extends AdapterBase {
+      readonly kind = "responses" as const;
+      readonly isSyntheticStream = true;
+
+      protected buildRequest(): never {
+        throw new AIRecoverableError(
+          'test requires tool_call argumentsText to be a valid JSON object for tool_call "tc1" (search)',
+          "TOOL_CALL_ARGUMENTS_INVALID",
+        );
+      }
+
+      protected async *runStream(): AsyncIterable<AIStreamEvent> {
+        // unreachable since buildRequest throws
+      }
+    }
+
+    const adapter = new RecoverableAdapter();
+    const result = await collectStream(
+      adapter.stream({ model: "gpt-4", requestId: "recoverable-r", input: [] }),
+    );
+
+    expect(result.stopReason).toBe("error");
+    expect(result.output).toEqual([]);
+    expect(result.warnings).toEqual([
+      {
+        message:
+          'test requires tool_call argumentsText to be a valid JSON object for tool_call "tc1" (search)',
+        code: WarningCode.TOOL_CALL_ARGUMENTS_INVALID,
+      },
+    ]);
+  });
+
+  it("should still rethrow AIRequestError after response.started", async () => {
+    class FatalRequestAdapter extends AdapterBase {
+      readonly kind = "responses" as const;
+      readonly isSyntheticStream = true;
+
+      protected buildRequest(): never {
+        throw new AIRequestError("still fatal", "INVALID_OPAQUE_REPLAY");
+      }
+
+      protected async *runStream(): AsyncIterable<AIStreamEvent> {
+        // unreachable since buildRequest throws
+      }
+    }
+
+    const adapter = new FatalRequestAdapter();
+    await expect(
+      collectStream(adapter.stream({ model: "gpt-4", requestId: "fatal-r", input: [] })),
+    ).rejects.toMatchObject({ name: "AIRequestError", code: "INVALID_OPAQUE_REPLAY" });
   });
 
   it("should preserve requestId from NormalizedRequest", async () => {

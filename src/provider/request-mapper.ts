@@ -1,4 +1,4 @@
-import { AIRequestError } from "../runtime/errors.js";
+import { AIRecoverableError, AIRequestError } from "../runtime/errors.js";
 import { contentBlocksToText } from "../canonical/index.js";
 import { parseJsonStrictObject } from "./json-parse.js";
 
@@ -46,11 +46,15 @@ export class NormalizedRequestMapper {
   }
 
   parseToolArguments(item: ToolCallItem): Record<string, unknown> {
-    return parseJsonStrictObject(
-      item.argumentsText,
-      `${this.kind} requires tool_call argumentsText to be a valid JSON object`,
-      "TOOL_CALL_ARGUMENTS_INVALID",
-    );
+    const message = `${this.kind} requires tool_call argumentsText to be a valid JSON object for tool_call "${item.id}" (${item.name})`;
+    try {
+      return parseJsonStrictObject(item.argumentsText, message, "TOOL_CALL_ARGUMENTS_INVALID");
+    } catch (err) {
+      if (err instanceof AIRequestError && err.code === "TOOL_CALL_ARGUMENTS_INVALID") {
+        throw new AIRecoverableError(err.message, err.code);
+      }
+      throw err;
+    }
   }
 
   /**

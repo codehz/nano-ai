@@ -39,7 +39,7 @@ Use `acceptOpaqueReplay` from `src/provider/opaque-replay.ts` at the start of ea
 ### Warnings & tool_call validation
 
 - Stream / response warnings are structured: `{ message: string; code?: WarningCode }[]` (not bare `string[]`).
-- Runtime validation of `tool_call.argumentsText` checks shape (`typeof string`) only — **no** `JSON.parse`; object semantics are enforced in adapter request mapping (`parseToolArguments` / `parseJsonStrictObject`).
+- Runtime validation of `tool_call.argumentsText` checks shape (`typeof string`) only — **no** `JSON.parse`; object semantics are enforced in adapter request mapping (`parseToolArguments` / `parseJsonStrictObject`). On object-wire adapters, invalid JSON object throws `AIRecoverableError` and soft-completes the stream (`stopReason: "error"` + warning), not a fatal `AIRequestError`.
 
 `tests/` mirrors source layers (`types/`, `runtime/`, `stream/`, `provider/`, `adapters/`, `scenarios/`) plus shared `tests/fixtures.ts`. `examples/` contains runnable usage samples like `examples/basic.ts` and `examples/tool-loop.ts`. `dist/` is generated output from the packaging build and should not be edited by hand.
 

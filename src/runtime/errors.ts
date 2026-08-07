@@ -3,10 +3,13 @@
  *
  * 把失败、降级、断流三类情况明确区分：
  * - 致命错误（AIRequestError / AIProviderError / AIStreamError）→ 同步抛错或迭代器抛错
- * - AIMappingError → AdapterBase 捕获后降级为 response.warning + 空 output 的 response.completed
+ * - AIMappingError → AdapterBase 捕获后降级为 response.warning + 空 output 的 response.completed（无 stopReason）
+ * - AIRecoverableError → AdapterBase 捕获后 soft-complete：response.warning + response.completed（stopReason 默认 "error"）
  * - 非致命差异 → warning 通道（WarningCode）
  * - 流中断 → 不伪造 response.completed
  */
+
+import type { StopReason } from "../types/response.js";
 
 // ── 错误类型 ──────────────────────────────────────────────────
 
@@ -106,6 +109,26 @@ export class AIStreamError extends AIError {
 export class AIMappingError extends AIError {
   constructor(message: string, code: ErrorCode) {
     super(message, code, "AIMappingError");
+  }
+}
+
+/**
+ * 可恢复的回合失败 — buildRequest / runStream 中可安全 soft-complete 的语义错误。
+ *
+ * AdapterBase 在 `response.started` 之后捕获后降级为：
+ * - `response.warning`（code = 错误 code，通常对齐 WarningCode）
+ * - 空 replay 的 `response.completed`（`stopReason` 默认 `"error"`）
+ *
+ * 与 AIMappingError 的区别：recoverable 携带显式 stopReason，表示调用方应清理
+ * 中毒历史后重试；mapping 是协议级降级通道，通常不带 stopReason。
+ */
+export class AIRecoverableError extends AIError {
+  constructor(
+    message: string,
+    code: ErrorCode,
+    public readonly stopReason: StopReason = "error",
+  ) {
+    super(message, code, "AIRecoverableError");
   }
 }
 

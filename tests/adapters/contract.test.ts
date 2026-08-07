@@ -1348,7 +1348,7 @@ describe("A contract error-path smoke", () => {
     expect(events.some((event) => event.type === "response.started")).toBe(true);
   });
 
-  it("should reject invalid tool_call argumentsText with AIRequestError on ollama/messages/gemini", async () => {
+  it("should soft-complete invalid tool_call argumentsText on ollama/messages/gemini", async () => {
     const badToolCallInput: InputItem[] = [
       { type: "message", role: "user", content: [{ type: "text", text: "go" }] },
       { type: "tool_call", id: "bad", name: "search", argumentsText: "not-json" },
@@ -1367,10 +1367,11 @@ describe("A contract error-path smoke", () => {
     ];
 
     for (const adapter of adapters) {
-      await expect(collectStream(adapter.stream(makeRequest({ input: badToolCallInput })))).rejects.toMatchObject({
-        name: "AIRequestError",
-        code: "TOOL_CALL_ARGUMENTS_INVALID",
-      });
+      const result = await collectStream(adapter.stream(makeRequest({ input: badToolCallInput })));
+      expect(result.stopReason).toBe("error");
+      expect(result.output).toEqual([]);
+      expect(result.warnings?.some((w) => w.code === WarningCode.TOOL_CALL_ARGUMENTS_INVALID)).toBe(true);
+      expect(result.warnings?.some((w) => w.message.includes('"bad"') && w.message.includes("search"))).toBe(true);
     }
   });
 
@@ -1440,7 +1441,7 @@ describe("A contract error-path smoke", () => {
   /**
    * A→C：ollama emitCompleted 经 safeParseToolArgumentsObject 保护，
    * 非法 argumentsText 回退 {}，不泄原生 SyntaxError。
-   * 入站 tool_call 仍走严格 parseToolArguments（上条 AIRequestError）。
+   * 入站 tool_call 仍走 parseToolArguments → AIRecoverableError soft-complete（上条）。
    */
   it("A→C opaque: ollama emitCompleted safely parses tool_call argumentsText", () => {
     // 回归入口：src/adapters/ollama/adapter.ts safeParseToolArgumentsObject

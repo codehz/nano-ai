@@ -2,7 +2,7 @@
  * Provider JSON 解析小工具
  *
  * - loose：出站 opaque / wire best-effort，失败回退 {}
- * - strict：入站 tool_call 参数等，失败抛 AIRequestError
+ * - strict：失败抛 AIRequestError；入站 tool_call 参数经 `parseToolArguments` 再包装为 AIRecoverableError
  */
 
 import { AIRequestError, type ErrorCode } from "../runtime/errors.js";

@@ -11,4 +11,12 @@ export { normalizeRequest } from "./normalize.js";
 export type { NormalizeOptions } from "./normalize.js";
 export { validateRequest, assertValidRequest } from "./validation.js";
 export type { ValidationIssue } from "./validation.js";
-export { AIError, AIRequestError, AIProviderError, AIStreamError, AIMappingError, WarningCode } from "./errors.js";
+export {
+  AIError,
+  AIRequestError,
+  AIProviderError,
+  AIStreamError,
+  AIMappingError,
+  AIRecoverableError,
+  WarningCode,
+} from "./errors.js";

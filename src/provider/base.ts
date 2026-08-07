@@ -30,7 +30,14 @@ import type {
 } from "../types/index.js";
 import { streamWarningKey } from "../types/warning-codes.js";
 import { createEventFactory } from "../stream/event-factory.js";
-import { AIMappingError, AIProviderError, AIRequestError, AIStreamError, WarningCode } from "../runtime/errors.js";
+import {
+  AIMappingError,
+  AIProviderError,
+  AIRecoverableError,
+  AIRequestError,
+  AIStreamError,
+  WarningCode,
+} from "../runtime/errors.js";
 import type { EventFactory } from "../stream/event-factory.js";
 import { AdapterAuxiliaryState } from "./auxiliary.js";
 import { mergeAuxiliary } from "../stream/merge-auxiliary.js";
@@ -95,6 +102,17 @@ export abstract class AdapterBase implements BackendAdapter {
     } catch (err) {
       if (err instanceof AIRequestError || err instanceof AIProviderError || err instanceof AIStreamError) {
         throw err;
+      }
+
+      if (err instanceof AIRecoverableError) {
+        yield factory.responseWarning(err.message, err.code);
+        const payload = this.buildCompletedPayload(
+          request,
+          { replay: [], stopReason: err.stopReason },
+          factory,
+        );
+        yield factory.responseCompleted(payload);
+        return;
       }
 
       if (err instanceof AIMappingError) {
