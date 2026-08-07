@@ -134,7 +134,10 @@ export function buildAssistantReplayMessage(params: {
   return replayMessage;
 }
 
-export function buildChatCompletionsRequest(request: NormalizedRequest): ChatRequest {
+export function buildChatCompletionsRequest(
+  request: NormalizedRequest,
+  options?: { maxOpaquePayloadBytes?: number },
+): ChatRequest {
   mapper.assertNoServerTools(request.serverTools);
 
   const messages: ChatMessage[] = [];
@@ -189,7 +192,9 @@ export function buildChatCompletionsRequest(request: NormalizedRequest): ChatReq
         break;
       }
       case "opaque": {
-        const payload = acceptOpaqueReplay(item, OPAQUE_SOURCE.CHAT_COMPLETIONS);
+        const payload = acceptOpaqueReplay(item, OPAQUE_SOURCE.CHAT_COMPLETIONS, {
+          maxBytes: options?.maxOpaquePayloadBytes,
+        });
         if (!payload) break;
         // 仅接受 messages 形；单条 role/content 已 deprecate（有效 envelope 下未识别 shape 跳过）
         if ("messages" in payload) {

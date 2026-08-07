@@ -177,6 +177,7 @@ export type MessagesAdapterStreamHost = {
   apiKey?: string;
   mergeHeaders: (headers: Record<string, string>) => Record<string, string>;
   apiVersion: string;
+  maxOpaquePayloadBytes: number;
 };
 
 export async function* mapMessagesStream(
@@ -402,6 +403,8 @@ export async function* mapMessagesStream(
     opaque,
     stopReason: stopReason ? mapStopReason(stopReason) : undefined,
     rawResponseId,
+    factory,
+    maxOpaquePayloadBytes: host.maxOpaquePayloadBytes,
     onDuplicate: "silent",
   });
 }

@@ -30,7 +30,7 @@ Thick HTTP adapters split like `responses`: thin `adapter.ts` + `map-request.ts`
 HTTP adapters restore wire turns from `input` items with `type: "opaque"`:
 
 1. **Filter** — only `source === <adapterSource>` (`OPAQUE_SOURCE.*` in `src/provider/opaque-sources.ts`) and `purpose === "replay"`; otherwise ignore.
-2. **Envelope** — `assertOpaqueReplayEnvelope` (object, ≤64KB, depth ≤8); failures throw `AIRequestError` / `INVALID_OPAQUE_REPLAY`.
+2. **Envelope** — `assertOpaqueReplayEnvelope` (object, size ≤ configured limit default **1 MiB** / hard **8 MiB**, depth ≤8); failures throw `AIRequestError` / `INVALID_OPAQUE_REPLAY`. Emit uses the same limit via `finalizeStreamTurn` (oversize → omit opaque + `OPAQUE_REPLAY_OMITTED` warning, never truncate). Configure with `HttpAdapterOptions.maxOpaquePayloadBytes` (clamped).
 3. **Replace trailing turn** — before appending an assistant/model wire turn, rollback trailing messages of that role (`assistant` for chat/messages/ollama, `model` for gemini), then append. Single-assistant opaque payloads use the same replace semantics as `replaceCanonical: true`. Responses uses id / `previous_response_id` continuation instead of stacking assistant wire messages (canonical non-opaque input wins).
 4. **Shapes** — known invalid shapes throw `INVALID_OPAQUE_REPLAY`; unrecognized shapes after a valid envelope are skipped. Chat Completions **only** accepts `messages` form (single `role`/`content` deprecated).
 

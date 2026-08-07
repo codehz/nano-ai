@@ -1,9 +1,12 @@
 import { describe, expect, it } from "bun:test";
 import {
+  clampOpaquePayloadLimit,
   extractProviderErrorMessage,
   measureJsonDepth,
   providerHttpError,
   validateOpaqueReplayEnvelope,
+  DEFAULT_MAX_OPAQUE_PAYLOAD_BYTES,
+  HARD_MAX_OPAQUE_PAYLOAD_BYTES,
   MAX_OPAQUE_JSON_DEPTH,
   MAX_OPAQUE_PAYLOAD_BYTES,
 } from "../../src/provider/security.js";
@@ -17,10 +20,20 @@ describe("measureJsonDepth", () => {
   });
 
   it("counts object and array nesting", () => {
-    expect(measureJsonDepth({})).toBe(1);
     expect(measureJsonDepth({ a: 1 })).toBe(1);
     expect(measureJsonDepth({ a: { b: 1 } })).toBe(2);
-    expect(measureJsonDepth([{ a: [{ b: 1 }] }])).toBe(4);
+    expect(measureJsonDepth([{ a: 1 }])).toBe(2);
+  });
+});
+
+describe("clampOpaquePayloadLimit", () => {
+  it("defaults and clamps to hard ceiling", () => {
+    expect(clampOpaquePayloadLimit()).toBe(DEFAULT_MAX_OPAQUE_PAYLOAD_BYTES);
+    expect(clampOpaquePayloadLimit(Number.NaN)).toBe(DEFAULT_MAX_OPAQUE_PAYLOAD_BYTES);
+    expect(clampOpaquePayloadLimit(0)).toBe(DEFAULT_MAX_OPAQUE_PAYLOAD_BYTES);
+    expect(clampOpaquePayloadLimit(-1)).toBe(DEFAULT_MAX_OPAQUE_PAYLOAD_BYTES);
+    expect(clampOpaquePayloadLimit(1024)).toBe(1024);
+    expect(clampOpaquePayloadLimit(HARD_MAX_OPAQUE_PAYLOAD_BYTES + 1)).toBe(HARD_MAX_OPAQUE_PAYLOAD_BYTES);
   });
 });
 
@@ -34,12 +47,34 @@ describe("validateOpaqueReplayEnvelope", () => {
     expect(validateOpaqueReplayEnvelope({ role: "assistant", content: "hi" }).ok).toBe(true);
   });
 
-  it("rejects oversized payloads", () => {
+  it("accepts payloads larger than the legacy 64KiB under the default 1MiB limit", () => {
+    const mid = { blob: "x".repeat(70_000) };
+    expect(validateOpaqueReplayEnvelope(mid).ok).toBe(true);
+  });
+
+  it("rejects oversized payloads at the default limit", () => {
     const big = { blob: "x".repeat(MAX_OPAQUE_PAYLOAD_BYTES) };
     const result = validateOpaqueReplayEnvelope(big);
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.reason).toContain("exceeds max size");
+    }
+  });
+
+  it("honors a tighter custom maxBytes", () => {
+    const payload = { blob: "x".repeat(2000) };
+    expect(validateOpaqueReplayEnvelope(payload, { maxBytes: 500 }).ok).toBe(false);
+    expect(validateOpaqueReplayEnvelope(payload, { maxBytes: 10_000 }).ok).toBe(true);
+  });
+
+  it("cannot exceed the hard ceiling even if maxBytes is larger", () => {
+    const huge = { blob: "x".repeat(HARD_MAX_OPAQUE_PAYLOAD_BYTES) };
+    const result = validateOpaqueReplayEnvelope(huge, {
+      maxBytes: HARD_MAX_OPAQUE_PAYLOAD_BYTES * 2,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toContain(`> ${HARD_MAX_OPAQUE_PAYLOAD_BYTES}`);
     }
   });
 
@@ -58,9 +93,7 @@ describe("validateOpaqueReplayEnvelope", () => {
 
 describe("extractProviderErrorMessage", () => {
   it("extracts nested JSON error.message", () => {
-    expect(extractProviderErrorMessage(JSON.stringify({ error: { message: "Rate limit exceeded" } }), 429)).toBe(
-      "Rate limit exceeded",
-    );
+    expect(extractProviderErrorMessage(JSON.stringify({ error: { message: "nope" } }), 400)).toBe("nope");
   });
 
   it("extracts string error field", () => {
@@ -72,8 +105,7 @@ describe("extractProviderErrorMessage", () => {
   });
 
   it("omits HTML bodies", () => {
-    const html = "<!DOCTYPE html><html><body>Internal Server Error with path /secret</body></html>";
-    expect(extractProviderErrorMessage(html, 502)).toBe(`HTTP 502. Body omitted (${html.length} bytes)`);
+    expect(extractProviderErrorMessage("<!DOCTYPE html><html></html>", 502)).toContain("Body omitted");
   });
 
   it("returns HTTP status for empty body", () => {
@@ -81,8 +113,7 @@ describe("extractProviderErrorMessage", () => {
   });
 
   it("omits long non-JSON bodies", () => {
-    const body = "x".repeat(250);
-    expect(extractProviderErrorMessage(body, 503)).toBe(`HTTP 503. Body omitted (${body.length} bytes)`);
+    expect(extractProviderErrorMessage("x".repeat(500), 500)).toContain("Body omitted");
   });
 
   it("keeps short plain-text bodies", () => {

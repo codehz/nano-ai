@@ -80,6 +80,7 @@ export type OllamaAdapterStreamHost = {
   baseUrl: string;
   apiKey?: string;
   mergeHeaders: (headers: Record<string, string>) => Record<string, string>;
+  maxOpaquePayloadBytes: number;
 };
 
 export async function* mapOllamaStream(
@@ -173,6 +174,8 @@ export async function* mapOllamaStream(
     yield* finalizeStreamTurn(session, items, {
       stopReason,
       rawResponseId,
+      factory,
+      maxOpaquePayloadBytes: host.maxOpaquePayloadBytes,
       opaque:
         accumulatedContent || pendingToolCalls.length > 0
           ? opaqueItem(OPAQUE_SOURCE.OLLAMA, "replay", {

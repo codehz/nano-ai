@@ -37,7 +37,12 @@ describe("acceptOpaqueReplay", () => {
     expect(acceptOpaqueReplay({ source: "ollama", purpose: "replay", payload }, "ollama")).toEqual(payload);
   });
 
-  it("throws AIRequestError for invalid envelope", () => {
+  it("accepts mid-size payloads under the default 1MiB limit", () => {
+    const payload = { blob: "x".repeat(70_000) };
+    expect(acceptOpaqueReplay({ source: "gemini", purpose: "replay", payload }, "gemini")).toEqual(payload);
+  });
+
+  it("throws AIRequestError for invalid envelope at default limit", () => {
     expect(() =>
       acceptOpaqueReplay(
         {
@@ -61,6 +66,20 @@ describe("acceptOpaqueReplay", () => {
     } catch (error) {
       expect(error).toMatchObject({ name: "AIRequestError", code: "INVALID_OPAQUE_REPLAY" });
     }
+  });
+
+  it("throws when payload exceeds a tighter custom maxBytes", () => {
+    expect(() =>
+      acceptOpaqueReplay(
+        {
+          source: "gemini",
+          purpose: "replay",
+          payload: { blob: "x".repeat(2000) },
+        },
+        "gemini",
+        { maxBytes: 500 },
+      ),
+    ).toThrow(AIRequestError);
   });
 });
 

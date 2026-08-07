@@ -69,7 +69,10 @@ export function toWireOllamaToolCalls(toolCalls: OllamaReplayToolCall[]): Ollama
   }));
 }
 
-export function buildOllamaRequest(request: NormalizedRequest): OllamaChatRequest {
+export function buildOllamaRequest(
+  request: NormalizedRequest,
+  options?: { maxOpaquePayloadBytes?: number },
+): OllamaChatRequest {
   mapper.assertNoServerTools(request.serverTools);
 
   const messages: OllamaMessage[] = [];
@@ -132,7 +135,9 @@ export function buildOllamaRequest(request: NormalizedRequest): OllamaChatReques
       }
       case "opaque": {
         // Best-effort restore from opaque replay (local ids stripped before wire)
-        const payload = acceptOpaqueReplay(item, OPAQUE_SOURCE.OLLAMA);
+        const payload = acceptOpaqueReplay(item, OPAQUE_SOURCE.OLLAMA, {
+          maxBytes: options?.maxOpaquePayloadBytes,
+        });
         if (!payload) break;
         if (payload.role === "assistant" && typeof payload.content === "string") {
           mapper.rollbackTrailingAssistantMessages(messages);

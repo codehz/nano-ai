@@ -102,7 +102,10 @@ export function mergeModelParts(base: GeminiPart[], incoming: GeminiPart[]): Gem
   return result;
 }
 
-export function buildGeminiRequest(request: NormalizedRequest): GeminiGenerateContentRequest {
+export function buildGeminiRequest(
+  request: NormalizedRequest,
+  options?: { maxOpaquePayloadBytes?: number },
+): GeminiGenerateContentRequest {
   mapper.assertNoServerTools(request.serverTools);
 
   const contents: GeminiContent[] = [];
@@ -164,7 +167,9 @@ export function buildGeminiRequest(request: NormalizedRequest): GeminiGenerateCo
         break;
       }
       case "opaque": {
-        const payload = acceptOpaqueReplay(item, OPAQUE_SOURCE.GEMINI);
+        const payload = acceptOpaqueReplay(item, OPAQUE_SOURCE.GEMINI, {
+          maxBytes: options?.maxOpaquePayloadBytes,
+        });
         if (!payload) break;
         if (payload.replaceCanonical === true && "content" in payload) {
           assertGeminiReplayContent(payload.content, "content");

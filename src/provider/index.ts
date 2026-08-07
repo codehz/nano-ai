@@ -24,16 +24,19 @@ export {
 } from "./usage/index.js";
 export {
   assertOpaqueReplayEnvelope,
+  clampOpaquePayloadLimit,
   extractProviderErrorMessage,
   measureJsonDepth,
   providerHttpError,
   validateOpaqueReplayEnvelope,
+  DEFAULT_MAX_OPAQUE_PAYLOAD_BYTES,
+  HARD_MAX_OPAQUE_PAYLOAD_BYTES,
   MAX_OPAQUE_JSON_DEPTH,
   MAX_OPAQUE_PAYLOAD_BYTES,
   PROVIDER_ERROR_MESSAGE_MAX_LEN,
   PROVIDER_ERROR_RAW_BODY_THRESHOLD,
 } from "./security.js";
-export type { OpaqueEnvelopeResult } from "./security.js";
+export type { OpaqueEnvelopeResult, OpaqueEnvelopeOptions } from "./security.js";
 export { acceptOpaqueReplay } from "./opaque-replay.js";
 export {
   IncrementalStreamParser,

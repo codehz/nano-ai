@@ -107,6 +107,7 @@ describe("WarningCode", () => {
     expect(WarningCode.MCP_APPROVAL_REQUIRED).toBe("MCP_APPROVAL_REQUIRED");
     expect(WarningCode.PROVIDER_FAILURE).toBe("PROVIDER_FAILURE");
     expect(WarningCode.TOOL_CALL_ARGUMENTS_INVALID).toBe("TOOL_CALL_ARGUMENTS_INVALID");
+    expect(WarningCode.OPAQUE_REPLAY_OMITTED).toBe("OPAQUE_REPLAY_OMITTED");
   });
 });
 

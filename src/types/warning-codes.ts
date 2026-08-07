@@ -45,6 +45,8 @@ export const WarningCode = {
   MCP_APPROVAL_REQUIRED: "MCP_APPROVAL_REQUIRED",
   /** provider 侧 response.failed 等失败 */
   PROVIDER_FAILURE: "PROVIDER_FAILURE",
+  /** 出站 opaque 超限被省略（避免下一轮 accept 自产毒） */
+  OPAQUE_REPLAY_OMITTED: "OPAQUE_REPLAY_OMITTED",
 } as const;
 
 export type WarningCodeName = (typeof WarningCode)[keyof typeof WarningCode];

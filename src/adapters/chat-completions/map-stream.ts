@@ -146,6 +146,7 @@ export type ChatCompletionsAdapterStreamHost = {
   baseUrl: string;
   apiKey?: string;
   mergeHeaders: (headers: Record<string, string>) => Record<string, string>;
+  maxOpaquePayloadBytes: number;
 };
 
 export async function* mapChatCompletionsStream(
@@ -248,6 +249,8 @@ export async function* mapChatCompletionsStream(
     yield* finalizeStreamTurn(session, items, {
       stopReason,
       rawResponseId,
+      factory,
+      maxOpaquePayloadBytes: host.maxOpaquePayloadBytes,
       opaque: assistantReplayMessage
         ? opaqueItem(OPAQUE_SOURCE.CHAT_COMPLETIONS, "replay", {
             replaceCanonical: true,

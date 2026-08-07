@@ -11,9 +11,11 @@
 
 import { AdapterBase } from "./base.js";
 import { applyExtraBody, mergeProviderHeaders } from "./request-options.js";
+import { clampOpaquePayloadLimit } from "./security.js";
 import { createProviderJsonStreamSession, type ProviderJsonStreamSession } from "./transport/run-json-stream.js";
 import type { FetchFn, NormalizedRequest } from "../types/index.js";
 import type { EventFactory } from "../stream/event-factory.js";
+
 
 /** 真实 HTTP adapter 的公共构造选项；apiKey 由各 adapter 收紧或保持可选。 */
 export type HttpAdapterOptions = {
@@ -25,7 +27,13 @@ export type HttpAdapterOptions = {
   headers?: Record<string, string>;
   /** 额外 body 顶层字段；浅层合并，同名键可覆盖 */
   extraBody?: Record<string, unknown>;
+  /**
+   * 单条 opaque replay payload 体积上限（JSON.stringify 码元长度）。
+   * 默认 1 MiB；夹到 [1, 8 MiB] 硬顶。emit 与 accept 共用。
+   */
+  maxOpaquePayloadBytes?: number;
 };
+
 
 export type HttpAdapterDefaults = {
   baseUrl: string;
@@ -40,6 +48,8 @@ export abstract class HttpAdapterBase extends AdapterBase {
   protected fetchFn: FetchFn;
   protected headers: Record<string, string> | undefined;
   protected extraBody: Record<string, unknown> | undefined;
+  /** 已 clamp 的 opaque 体积上限（emit / accept 共用）。 */
+  protected maxOpaquePayloadBytes: number;
 
   constructor(options: HttpAdapterOptions, defaults: HttpAdapterDefaults) {
     super();
@@ -48,7 +58,9 @@ export abstract class HttpAdapterBase extends AdapterBase {
     this.fetchFn = options.fetch ?? globalThis.fetch;
     this.headers = options.headers;
     this.extraBody = options.extraBody;
+    this.maxOpaquePayloadBytes = clampOpaquePayloadLimit(options.maxOpaquePayloadBytes);
   }
+
 
   /** 合并内置 headers 与构造期自定义 headers。 */
   protected mergeHeaders(base: Record<string, string>): Record<string, string> {

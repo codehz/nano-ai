@@ -140,10 +140,13 @@ type MappedResponsesCore = {
  * stream / compact 共享的 input + instructions + opaque 续写映射。
  * compact 不附带 tools / stream 等生成字段。
  */
-function mapResponsesCore(request: {
-  input: InputItem[];
-  instructions?: string | InstructionBlock[];
-}): MappedResponsesCore {
+function mapResponsesCore(
+  request: {
+    input: InputItem[];
+    instructions?: string | InstructionBlock[];
+  },
+  options?: { maxOpaquePayloadBytes?: number },
+): MappedResponsesCore {
   const input: ResponsesInputItem[] = [];
   let previousResponseId: string | undefined;
   let usedCompactedWindow = false;
@@ -187,7 +190,9 @@ function mapResponsesCore(request: {
       case "opaque": {
         // Canonical replay 优先；compacted_window 原样展开；否则 previous_response_id 服务端续写。
         // 注意：response id 不能塞进 item_reference（那是 item id）；不叠 wire assistant。
-        const payload = acceptOpaqueReplay(item, OPAQUE_SOURCE.RESPONSES);
+        const payload = acceptOpaqueReplay(item, OPAQUE_SOURCE.RESPONSES, {
+          maxBytes: options?.maxOpaquePayloadBytes,
+        });
         if (!payload) break;
 
         // compacted_window：压缩结果整窗回传；与 previous_response_id 互斥（window 为准）
@@ -232,8 +237,11 @@ function mapResponsesCore(request: {
 }
 
 /** 构建 Responses 流式请求体；调用方再 `withExtraBody` 合并构造期扩展字段。 */
-export function buildResponsesRequest(request: NormalizedRequest): ResponsesAPIRequest {
-  const core = mapResponsesCore(request);
+export function buildResponsesRequest(
+  request: NormalizedRequest,
+  options?: { maxOpaquePayloadBytes?: number },
+): ResponsesAPIRequest {
+  const core = mapResponsesCore(request, options);
 
   const body: ResponsesAPIRequest = {
     model: request.model,
@@ -284,7 +292,10 @@ export function buildResponsesRequest(request: NormalizedRequest): ResponsesAPIR
  * 构建 Responses compact 请求体（POST /responses/compact）。
  * 仅映射 model / input / instructions / previous_response_id；无 stream / tools。
  */
-export function buildResponsesCompactRequest(request: CompressRequest): ResponsesCompactAPIRequest {
+export function buildResponsesCompactRequest(
+  request: CompressRequest,
+  options?: { maxOpaquePayloadBytes?: number },
+): ResponsesCompactAPIRequest {
   if (!request.model || typeof request.model !== "string" || request.model.length === 0) {
     throw new AIRequestError("compress requires a non-empty model", "INPUT_EMPTY");
   }
@@ -292,7 +303,7 @@ export function buildResponsesCompactRequest(request: CompressRequest): Response
     throw new AIRequestError("compress requires a non-empty input", "INPUT_EMPTY");
   }
 
-  const core = mapResponsesCore(request);
+  const core = mapResponsesCore(request, options);
   const body: ResponsesCompactAPIRequest = {
     model: request.model,
     input: core.input,

@@ -13,6 +13,7 @@ import { createSseJsonParser } from "../../provider/transport/parser.js";
 import { postProviderJson } from "../../provider/transport/open-stream.js";
 import { finalizeStreamTurn } from "../../provider/finalize-stream-turn.js";
 import { OPAQUE_SOURCE } from "../../provider/opaque-sources.js";
+import { assertOpaqueReplayEnvelope } from "../../provider/security.js";
 import { AIStreamError } from "../../runtime/errors.js";
 import { buildResponsesCompactRequest, buildResponsesRequest, RESPONSES_COMPACTED_WINDOW_KIND } from "./map-request.js";
 import { inferResponsesStopReason } from "./infer-stop-reason.js";
@@ -42,7 +43,9 @@ export class ResponsesAdapter extends HttpAdapterBase implements ContextCompress
   }
 
   protected buildRequest(request: NormalizedRequest): ResponsesAPIRequest {
-    return this.withExtraBody(buildResponsesRequest(request));
+    return this.withExtraBody(
+      buildResponsesRequest(request, { maxOpaquePayloadBytes: this.maxOpaquePayloadBytes }),
+    );
   }
 
   /**
@@ -52,7 +55,9 @@ export class ResponsesAdapter extends HttpAdapterBase implements ContextCompress
   async compress(request: CompressRequest): Promise<CompressResult> {
     request.signal?.throwIfAborted();
 
-    const body = this.withExtraBody(buildResponsesCompactRequest(request));
+    const body = this.withExtraBody(
+      buildResponsesCompactRequest(request, { maxOpaquePayloadBytes: this.maxOpaquePayloadBytes }),
+    );
     const { data } = await postProviderJson<ResponsesCompactAPIResponse>({
       fetchFn: this.fetchFn,
       url: `${this.baseUrl}/responses/compact`,
@@ -75,6 +80,9 @@ export class ResponsesAdapter extends HttpAdapterBase implements ContextCompress
     if (typeof data.id === "string" && data.id.length > 0 && data.id.length <= 256) {
       payload.id = data.id;
     }
+
+    // compress 无 warning 通道：超限硬失败，避免写出不可回放的 window
+    assertOpaqueReplayEnvelope(payload, { maxBytes: this.maxOpaquePayloadBytes });
 
     const result: CompressResult = {
       replay: [opaqueItem(OPAQUE_SOURCE.RESPONSES, "replay", payload)],
@@ -142,7 +150,6 @@ export class ResponsesAdapter extends HttpAdapterBase implements ContextCompress
     }
 
     const stopReason = completedResponse ? inferResponsesStopReason(completedResponse) : undefined;
-
     yield* finalizeStreamTurn(session, processor.items, {
       // 同时保留 id（向后兼容）与 previous_response_id（语义明确）
       opaque: completedResponse?.id
@@ -153,6 +160,8 @@ export class ResponsesAdapter extends HttpAdapterBase implements ContextCompress
         : null,
       stopReason,
       rawResponseId,
+      factory,
+      maxOpaquePayloadBytes: this.maxOpaquePayloadBytes,
       onDuplicate: "silent",
     });
   }

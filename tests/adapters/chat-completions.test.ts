@@ -967,6 +967,7 @@ describe("ChatCompletionsAdapter - error handling", () => {
   it("should reject oversized opaque replay payloads", async () => {
     const adapter = new ChatCompletionsAdapter({
       apiKey: "test-key",
+      maxOpaquePayloadBytes: 4096,
       fetch: async () => {
         throw new Error("fetch should not be called");
       },
@@ -988,6 +989,74 @@ describe("ChatCompletionsAdapter - error handling", () => {
         ),
       ),
     ).rejects.toMatchObject({ name: "AIRequestError", code: "INVALID_OPAQUE_REPLAY" });
+  });
+
+  it("should accept mid-size opaque replay under the default 1MiB limit", async () => {
+    let captured: object | null = null;
+    const adapter = new ChatCompletionsAdapter({
+      apiKey: "test-key",
+      fetch: async (_url, init) => {
+        captured = JSON.parse(init!.body as string);
+        return new Response(
+          [
+            'data: {"id":"chatcmpl-r","choices":[{"index":0,"delta":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}\n\n',
+            "data: [DONE]\n\n",
+          ].join(""),
+          { status: 200, headers: { "Content-Type": "text/event-stream" } },
+        );
+      },
+    });
+
+    await collectStream(
+      adapter.stream(
+        makeRequest({
+          input: [
+            {
+              type: "opaque",
+              source: "chat.completions",
+              purpose: "replay",
+              payload: {
+                messages: [{ role: "assistant", content: "x".repeat(70_000) }],
+              },
+            },
+            { type: "message", role: "user", content: [{ type: "text", text: "next" }] },
+          ],
+        }),
+      ),
+    );
+
+    const body = captured as { messages?: Array<{ role: string; content: string }> } | null;
+    expect(body?.messages?.some((m) => m.role === "assistant" && m.content.length === 70_000)).toBe(true);
+  });
+
+  it("should omit oversized outbound opaque with OPAQUE_REPLAY_OMITTED", async () => {
+    const huge = "y".repeat(5000);
+    const adapter = new ChatCompletionsAdapter({
+      apiKey: "test-key",
+      maxOpaquePayloadBytes: 512,
+      fetch: async () =>
+        new Response(
+          [
+            `data: ${JSON.stringify({
+              id: "chatcmpl-omit",
+              object: "chat.completion.chunk",
+              choices: [{ index: 0, delta: { role: "assistant", content: huge }, finish_reason: null }],
+            })}\n\n`,
+            `data: ${JSON.stringify({
+              id: "chatcmpl-omit",
+              object: "chat.completion.chunk",
+              choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+            })}\n\n`,
+            "data: [DONE]\n\n",
+          ].join(""),
+          { status: 200, headers: { "Content-Type": "text/event-stream" } },
+        ),
+    });
+
+    const result = await collectStream(adapter.stream(makeRequest()));
+    expect(result.replay.some((item) => item.type === "opaque")).toBe(false);
+    expect(result.warnings?.some((w) => w.code === "OPAQUE_REPLAY_OMITTED")).toBe(true);
+    expect(result.text).toBe(huge);
   });
 
   it("should reject invalid chat opaque messages shape", async () => {

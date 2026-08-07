@@ -164,7 +164,10 @@ export function buildStreamMetadata(options: {
   return metadata;
 }
 
-export function buildMessagesRequest(request: NormalizedRequest): MessagesAPIRequest {
+export function buildMessagesRequest(
+  request: NormalizedRequest,
+  options?: { maxOpaquePayloadBytes?: number },
+): MessagesAPIRequest {
   mapper.assertNoServerTools(request.serverTools);
 
   const messages: MessagesAPIMessage[] = [];
@@ -240,7 +243,9 @@ export function buildMessagesRequest(request: NormalizedRequest): MessagesAPIReq
       }
       case "opaque": {
         // assistant opaque 始终 replace 尾部（与 replaceCanonical 语义一致）
-        const payload = acceptOpaqueReplay(item, OPAQUE_SOURCE.MESSAGES);
+        const payload = acceptOpaqueReplay(item, OPAQUE_SOURCE.MESSAGES, {
+          maxBytes: options?.maxOpaquePayloadBytes,
+        });
         if (!payload) break;
         if (payload.role === "assistant" && "content" in payload) {
           assertMessagesReplayContent(payload.content);

@@ -107,6 +107,7 @@ export type GeminiAdapterStreamHost = {
   baseUrl: string;
   apiKey?: string;
   mergeHeaders: (headers: Record<string, string>) => Record<string, string>;
+  maxOpaquePayloadBytes: number;
 };
 
 export async function* mapGeminiStream(
@@ -205,6 +206,8 @@ export async function* mapGeminiStream(
     yield* finalizeStreamTurn(session, items, {
       stopReason: reason,
       rawResponseId,
+      factory,
+      maxOpaquePayloadBytes: host.maxOpaquePayloadBytes,
       opaque:
         replayParts.length > 0
           ? opaqueItem(OPAQUE_SOURCE.GEMINI, "replay", {

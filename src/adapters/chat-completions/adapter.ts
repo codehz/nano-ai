@@ -20,7 +20,9 @@ export class ChatCompletionsAdapter extends HttpAdapterBase {
   }
 
   protected buildRequest(request: NormalizedRequest): ChatRequest {
-    return this.withExtraBody(buildChatCompletionsRequest(request));
+    return this.withExtraBody(
+      buildChatCompletionsRequest(request, { maxOpaquePayloadBytes: this.maxOpaquePayloadBytes }),
+    );
   }
 
   protected async *runStream(
@@ -34,6 +36,7 @@ export class ChatCompletionsAdapter extends HttpAdapterBase {
         baseUrl: this.baseUrl,
         apiKey: this.apiKey,
         mergeHeaders: this.mergeHeaders.bind(this),
+        maxOpaquePayloadBytes: this.maxOpaquePayloadBytes,
       },
       providerRequest,
       factory,
