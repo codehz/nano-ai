@@ -84,7 +84,7 @@ export type ResponsesFunctionCall = {
 export type ResponsesFunctionCallOutput = {
   type: "function_call_output";
   call_id: string;
-  output: string;
+  output: string | ResponsesInputContentPart[];
   id?: string;
   status?: "in_progress" | "completed" | "incomplete";
 };

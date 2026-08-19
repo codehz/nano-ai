@@ -80,6 +80,23 @@ function mapResponsesMessageContent(
   });
 }
 
+function mapResponsesToolResultOutput(blocks: ContentBlock[], field: string): string | ResponsesInputContentPart[] {
+  mapper.ensureBlocks(blocks, field, ["text", "json", "image"], "only text/json/image blocks are supported");
+  if (!blocks.some((block) => block.type === "image")) {
+    return mapper.textFromBlocks(blocks, field);
+  }
+
+  return blocks.map((block): ResponsesInputContentPart => {
+    if (block.type === "text") return { type: "input_text", text: block.text };
+    if (block.type === "json") return { type: "input_text", text: JSON.stringify(block.json) };
+    if (block.type === "image") return { type: "input_image", image_url: block.imageUrl };
+    throw new AIRequestError(
+      `${mapper.kind} does not support ${field} block of type "${block.type}"; only text/json/image blocks are supported`,
+      "UNSUPPORTED_CONTENT_BLOCK",
+    );
+  });
+}
+
 function mapReasoningInput(item: ReasoningItem, index: number): ResponsesReasoningInput {
   const text = mapper.textFromBlocks(
     mapper.ensureReasoningBlocks(item.content, "reasoning content"),
@@ -208,7 +225,7 @@ function mapResponsesCore(
         break;
       }
       case "tool_result": {
-        const output = mapper.textFromBlocks(item.content, `tool_result ${item.callId} content`);
+        const output = mapResponsesToolResultOutput(item.content, `tool_result ${item.callId} content`);
         input.push({
           type: "function_call_output",
           call_id: item.callId,

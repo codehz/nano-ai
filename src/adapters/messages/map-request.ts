@@ -177,6 +177,14 @@ function mapMessagesUserContent(blocks: ContentBlock[], field: string): string |
   return blocks.map((block) => canonicalToMessagesBlock(block, field));
 }
 
+function mapMessagesToolResultContent(blocks: ContentBlock[], field: string): string | MessagesAPIContentBlock[] {
+  mapper.ensureBlocks(blocks, field, ["text", "json", "image"], "only text/json/image blocks are supported");
+  if (!blocks.some((block) => block.type === "image")) {
+    return mapper.textFromBlocks(blocks, field);
+  }
+  return blocks.map((block) => canonicalToMessagesBlock(block, field));
+}
+
 export function pickProviderHeaders(headers: Headers): Record<string, string> {
   const metadata: Record<string, string> = {};
 
@@ -284,7 +292,7 @@ export function buildMessagesRequest(
         break;
       }
       case "tool_result": {
-        const content = mapper.textFromBlocks(item.content, `tool_result ${item.callId} content`);
+        const content = mapMessagesToolResultContent(item.content, `tool_result ${item.callId} content`);
         const block: MessagesAPIContentBlock = {
           type: "tool_result",
           tool_use_id: item.callId,

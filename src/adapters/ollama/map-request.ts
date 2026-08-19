@@ -99,6 +99,23 @@ function mapOllamaUserMessage(blocks: ContentBlock[], field: string): Pick<Ollam
   };
 }
 
+function mapOllamaToolResultContent(blocks: ContentBlock[], field: string): Pick<OllamaMessage, "content" | "images"> {
+  mapper.ensureBlocks(blocks, field, ["text", "json", "image"], "only text/json/image blocks are supported");
+  const textBlocks: ContentBlock[] = [];
+  const images: string[] = [];
+  for (const block of blocks) {
+    if (block.type === "image") {
+      images.push(mapOllamaImageData(block.imageUrl, field));
+    } else {
+      textBlocks.push(block);
+    }
+  }
+  return {
+    content: contentBlocksToText(textBlocks),
+    ...(images.length > 0 ? { images } : {}),
+  };
+}
+
 export function buildOllamaRequest(
   request: NormalizedRequest,
   options?: { maxOpaquePayloadBytes?: number },
@@ -158,7 +175,7 @@ export function buildOllamaRequest(
         }
         messages.push({
           role: "tool",
-          content: mapper.textFromBlocks(item.content, `tool_result ${item.callId} content`),
+          ...mapOllamaToolResultContent(item.content, `tool_result ${item.callId} content`),
         });
         break;
       }

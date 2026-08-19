@@ -181,6 +181,23 @@ function mapChatUserContent(blocks: ContentBlock[], field: string): string | nul
   });
 }
 
+function mapChatToolResultContent(blocks: ContentBlock[], field: string): string | ChatContentPart[] {
+  mapper.ensureBlocks(blocks, field, ["text", "json", "image"], "only text/json/image blocks are supported");
+  if (!blocks.some((block) => block.type === "image")) {
+    return mapper.textFromBlocks(blocks, field);
+  }
+
+  return blocks.map((block): ChatContentPart => {
+    if (block.type === "text") return { type: "text", text: block.text };
+    if (block.type === "json") return { type: "text", text: JSON.stringify(block.json) };
+    if (block.type === "image") return { type: "image_url", image_url: { url: block.imageUrl } };
+    throw new AIRequestError(
+      `${mapper.kind} does not support ${field} block of type "${block.type}"; only text/json/image blocks are supported`,
+      "UNSUPPORTED_CONTENT_BLOCK",
+    );
+  });
+}
+
 function mapChatMessageContent(
   role: ChatMessage["role"],
   blocks: ContentBlock[],
@@ -239,7 +256,7 @@ export function buildChatCompletionsRequest(
           role: "tool",
           tool_call_id: item.callId,
           name: item.toolName,
-          content: mapper.textFromBlocks(item.content, `tool_result ${item.callId} content`),
+          content: mapChatToolResultContent(item.content, `tool_result ${item.callId} content`),
         });
         break;
       }

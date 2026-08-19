@@ -71,6 +71,38 @@ export function mapGeminiImagePart(imageUrl: string, field: string): GeminiPart 
   };
 }
 
+function mapGeminiToolResultContent(
+  blocks: ContentBlock[],
+  field: string,
+): {
+  response: Record<string, unknown>;
+  imageParts: GeminiPart[];
+} {
+  mapper.ensureBlocks(blocks, field, ["text", "json", "image"], "only text/json/image blocks are supported");
+  const textBlocks: ContentBlock[] = [];
+  const imageParts: GeminiPart[] = [];
+  for (const block of blocks) {
+    if (block.type === "image") {
+      imageParts.push(mapGeminiImagePart(block.imageUrl, field));
+    } else {
+      textBlocks.push(block);
+    }
+  }
+
+  const text = contentBlocksToText(textBlocks);
+  let response: Record<string, unknown>;
+  try {
+    const parsed: unknown = text ? JSON.parse(text) : {};
+    response =
+      parsed && typeof parsed === "object" && !Array.isArray(parsed)
+        ? (parsed as Record<string, unknown>)
+        : { result: text };
+  } catch {
+    response = { result: text };
+  }
+  return { response, imageParts };
+}
+
 export function textPartsFromBlocks(blocks: ContentBlock[], field: string): GeminiPart[] {
   const supported = mapper.ensureTextBlocks(blocks, field);
   return supported.map((block) => {
@@ -176,20 +208,7 @@ export function buildGeminiRequest(
         break;
       }
       case "tool_result": {
-        let response: Record<string, unknown>;
-        try {
-          const text = mapper.textFromBlocks(item.content, `tool_result ${item.callId} content`);
-          const parsed: unknown = text ? JSON.parse(text) : {};
-          response =
-            parsed && typeof parsed === "object" && !Array.isArray(parsed)
-              ? (parsed as Record<string, unknown>)
-              : { result: text };
-        } catch {
-          response = {
-            result: mapper.textFromBlocks(item.content, `tool_result ${item.callId} content`),
-          };
-        }
-
+        const { response, imageParts } = mapGeminiToolResultContent(item.content, `tool_result ${item.callId} content`);
         appendPart(contents, "user", {
           functionResponse: {
             id: item.callId,
@@ -197,6 +216,9 @@ export function buildGeminiRequest(
             response,
           },
         });
+        for (const imagePart of imageParts) {
+          appendPart(contents, "user", imagePart);
+        }
         break;
       }
       case "reasoning": {
