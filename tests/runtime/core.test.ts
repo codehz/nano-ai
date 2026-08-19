@@ -419,38 +419,18 @@ describe("normalizeRequest", () => {
     expect(result.input).toBe(customInput);
   });
 
-  it("should throw on invalid request after normalization", () => {
-    expect(() => normalizeRequest({ input: [] }, { model: "gpt-4" })).toThrow(AIRequestError);
-  });
-
-  it("should reject non-object request.include before merging", () => {
-    expect(() =>
-      normalizeRequest(validRequest({ include: "bad" as unknown as AIRequest["include"] }), { model: "gpt-4" }),
-    ).toThrow(AIRequestError);
-  });
-
-  it("should reject invalid request.include.usage before merging", () => {
-    expect(() =>
-      normalizeRequest(validRequest({ include: { usage: "invalid_mode" as "off" } }), { model: "gpt-4" }),
-    ).toThrow(AIRequestError);
-  });
-
-  it("should reject non-object defaults.include before merging", () => {
-    expect(() =>
-      normalizeRequest(validRequest(), {
-        model: "gpt-4",
-        defaults: { include: "bad" as unknown as AIRequest["include"] },
-      }),
-    ).toThrow(AIRequestError);
-  });
-
-  it("should reject invalid defaults.include.usage before merging", () => {
-    expect(() =>
-      normalizeRequest(validRequest(), {
-        model: "gpt-4",
-        defaults: { include: { usage: "invalid_mode" as "off" } },
-      }),
-    ).toThrow(AIRequestError);
+  it("should preserve values for the provider instead of validating them", () => {
+    const request = {
+      input: [],
+      temperature: 3,
+      maxOutputTokens: 0,
+      include: { usage: "provider_specific" },
+    } as unknown as AIRequest;
+    const result = normalizeRequest(request, { model: "gpt-4" });
+    expect(result.input).toBe(request.input);
+    expect(result.temperature).toBe(3);
+    expect(result.maxOutputTokens).toBe(0);
+    expect(result.include?.usage as string).toBe("provider_specific");
   });
 });
 
@@ -515,10 +495,19 @@ describe("createAIClient", () => {
     expect(captured!.maxOutputTokens).toBe(200);
   });
 
-  it("should reject invalid request via stream()", () => {
-    const client = createAIClient({ adapter: createMockAdapter(), model: "gpt-4" });
-    expect(() => {
-      client.stream({ input: [] });
-    }).toThrow(AIRequestError);
+  it("should pass requests through to the adapter without client validation", async () => {
+    let captured: NormalizedRequest | undefined;
+    const adapter: BackendAdapter = {
+      ...createMockAdapter(),
+      stream(request: NormalizedRequest): AsyncIterable<AIStreamEvent> {
+        captured = request;
+        return (async function* () {})();
+      },
+    };
+    const client = createAIClient({ adapter, model: "gpt-4" });
+    for await (const _ of client.stream({ input: [] })) {
+      // consume
+    }
+    expect(captured?.input).toEqual([]);
   });
 });

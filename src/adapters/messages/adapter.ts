@@ -22,9 +22,7 @@ export class MessagesAdapter extends HttpAdapterBase {
   }
 
   protected buildRequest(request: NormalizedRequest): MessagesAPIRequest {
-    return this.withExtraBody(
-      buildMessagesRequest(request, { maxOpaquePayloadBytes: this.maxOpaquePayloadBytes }),
-    );
+    return this.withExtraBody(buildMessagesRequest(request, { maxOpaquePayloadBytes: this.maxOpaquePayloadBytes }));
   }
 
   protected async *runStream(

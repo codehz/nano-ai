@@ -106,11 +106,7 @@ export abstract class AdapterBase implements BackendAdapter {
 
       if (err instanceof AIRecoverableError) {
         yield factory.responseWarning(err.message, err.code);
-        const payload = this.buildCompletedPayload(
-          request,
-          { replay: [], stopReason: err.stopReason },
-          factory,
-        );
+        const payload = this.buildCompletedPayload(request, { replay: [], stopReason: err.stopReason }, factory);
         yield factory.responseCompleted(payload);
         return;
       }

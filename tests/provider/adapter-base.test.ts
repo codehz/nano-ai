@@ -312,16 +312,13 @@ describe("AdapterBase", () => {
     }
 
     const adapter = new RecoverableAdapter();
-    const result = await collectStream(
-      adapter.stream({ model: "gpt-4", requestId: "recoverable-r", input: [] }),
-    );
+    const result = await collectStream(adapter.stream({ model: "gpt-4", requestId: "recoverable-r", input: [] }));
 
     expect(result.stopReason).toBe("error");
     expect(result.output).toEqual([]);
     expect(result.warnings).toEqual([
       {
-        message:
-          'test requires tool_call argumentsText to be a valid JSON object for tool_call "tc1" (search)',
+        message: 'test requires tool_call argumentsText to be a valid JSON object for tool_call "tc1" (search)',
         code: WarningCode.TOOL_CALL_ARGUMENTS_INVALID,
       },
     ]);

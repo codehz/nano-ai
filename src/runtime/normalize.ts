@@ -6,8 +6,7 @@
  */
 
 import type { AIRequest, NormalizedRequest } from "../types/index.js";
-import { assertValidRequest, validateInclude } from "./validation.js";
-import { AIRequestError } from "./errors.js";
+// Requests are typed client-side; provider-specific mapping owns wire compatibility.
 
 export type NormalizeOptions = {
   model: string;
@@ -25,23 +24,10 @@ const DEFAULT_INCLUDE = {
  * 1. 合并 defaults
  * 2. 填充 include 默认值
  * 3. 生成 requestId
- * 4. 校验请求合法性
+ * 4. 返回 provider 映射所需的归一化请求
  */
 export function normalizeRequest(request: AIRequest, options: NormalizeOptions): NormalizedRequest {
   const { model, defaults } = options;
-
-  // 在展开 include 前先校验，防止非法值被合并掩盖
-  const earlyIncludeIssues: { field: string; code: string; message: string }[] = [];
-  if (request.include !== undefined) {
-    validateInclude(request.include, earlyIncludeIssues);
-  }
-  if (defaults?.include !== undefined) {
-    validateInclude(defaults.include, earlyIncludeIssues);
-  }
-  const firstIncludeIssue = earlyIncludeIssues[0];
-  if (firstIncludeIssue) {
-    throw new AIRequestError(firstIncludeIssue.message, firstIncludeIssue.code, earlyIncludeIssues);
-  }
 
   // 合并 defaults（浅合并，input/tools 由 request 完全覆盖）
   const merged: AIRequest = {
@@ -53,9 +39,6 @@ export function normalizeRequest(request: AIRequest, options: NormalizeOptions):
       ...request.include,
     },
   };
-
-  // include 已在合并前校验；assertValidRequest 仍覆盖其余字段（含合并后的 include 形状）
-  assertValidRequest(merged);
 
   return {
     ...merged,

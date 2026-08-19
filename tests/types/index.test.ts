@@ -342,8 +342,6 @@ describe("exports", () => {
       "AdapterBase",
       "createEventFactory",
       "normalizeRequest",
-      "validateRequest",
-      "assertValidRequest",
       "aggregateEvents",
       "NormalizedRequestMapper",
       "IncrementalStreamParser",

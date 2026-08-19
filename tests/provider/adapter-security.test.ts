@@ -1,41 +1,10 @@
 import { describe, expect, it } from "bun:test";
 import {
-  clampOpaquePayloadLimit,
   extractProviderErrorMessage,
-  measureJsonDepth,
   providerHttpError,
   validateOpaqueReplayEnvelope,
-  DEFAULT_MAX_OPAQUE_PAYLOAD_BYTES,
-  HARD_MAX_OPAQUE_PAYLOAD_BYTES,
-  MAX_OPAQUE_JSON_DEPTH,
-  MAX_OPAQUE_PAYLOAD_BYTES,
 } from "../../src/provider/security.js";
 import { AIProviderError } from "../../src/runtime/errors.js";
-
-describe("measureJsonDepth", () => {
-  it("returns 0 for primitives", () => {
-    expect(measureJsonDepth(null)).toBe(0);
-    expect(measureJsonDepth("x")).toBe(0);
-    expect(measureJsonDepth(1)).toBe(0);
-  });
-
-  it("counts object and array nesting", () => {
-    expect(measureJsonDepth({ a: 1 })).toBe(1);
-    expect(measureJsonDepth({ a: { b: 1 } })).toBe(2);
-    expect(measureJsonDepth([{ a: 1 }])).toBe(2);
-  });
-});
-
-describe("clampOpaquePayloadLimit", () => {
-  it("defaults and clamps to hard ceiling", () => {
-    expect(clampOpaquePayloadLimit()).toBe(DEFAULT_MAX_OPAQUE_PAYLOAD_BYTES);
-    expect(clampOpaquePayloadLimit(Number.NaN)).toBe(DEFAULT_MAX_OPAQUE_PAYLOAD_BYTES);
-    expect(clampOpaquePayloadLimit(0)).toBe(DEFAULT_MAX_OPAQUE_PAYLOAD_BYTES);
-    expect(clampOpaquePayloadLimit(-1)).toBe(DEFAULT_MAX_OPAQUE_PAYLOAD_BYTES);
-    expect(clampOpaquePayloadLimit(1024)).toBe(1024);
-    expect(clampOpaquePayloadLimit(HARD_MAX_OPAQUE_PAYLOAD_BYTES + 1)).toBe(HARD_MAX_OPAQUE_PAYLOAD_BYTES);
-  });
-});
 
 describe("validateOpaqueReplayEnvelope", () => {
   it("rejects non-objects", () => {
@@ -47,47 +16,10 @@ describe("validateOpaqueReplayEnvelope", () => {
     expect(validateOpaqueReplayEnvelope({ role: "assistant", content: "hi" }).ok).toBe(true);
   });
 
-  it("accepts payloads larger than the legacy 64KiB under the default 1MiB limit", () => {
-    const mid = { blob: "x".repeat(70_000) };
-    expect(validateOpaqueReplayEnvelope(mid).ok).toBe(true);
-  });
-
-  it("rejects oversized payloads at the default limit", () => {
-    const big = { blob: "x".repeat(MAX_OPAQUE_PAYLOAD_BYTES) };
-    const result = validateOpaqueReplayEnvelope(big);
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.reason).toContain("exceeds max size");
-    }
-  });
-
-  it("honors a tighter custom maxBytes", () => {
-    const payload = { blob: "x".repeat(2000) };
-    expect(validateOpaqueReplayEnvelope(payload, { maxBytes: 500 }).ok).toBe(false);
-    expect(validateOpaqueReplayEnvelope(payload, { maxBytes: 10_000 }).ok).toBe(true);
-  });
-
-  it("cannot exceed the hard ceiling even if maxBytes is larger", () => {
-    const huge = { blob: "x".repeat(HARD_MAX_OPAQUE_PAYLOAD_BYTES) };
-    const result = validateOpaqueReplayEnvelope(huge, {
-      maxBytes: HARD_MAX_OPAQUE_PAYLOAD_BYTES * 2,
-    });
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.reason).toContain(`> ${HARD_MAX_OPAQUE_PAYLOAD_BYTES}`);
-    }
-  });
-
-  it("rejects deep nesting", () => {
-    let deep: unknown = { v: 1 };
-    for (let i = 0; i < MAX_OPAQUE_JSON_DEPTH + 2; i++) {
-      deep = { nested: deep };
-    }
-    const result = validateOpaqueReplayEnvelope(deep);
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.reason).toContain("nesting depth");
-    }
+  it("accepts large and deeply nested JSON payloads", () => {
+    let deep: unknown = { blob: "x".repeat(2_000_000) };
+    for (let i = 0; i < 32; i++) deep = { nested: deep };
+    expect(validateOpaqueReplayEnvelope(deep, { maxBytes: 1 }).ok).toBe(true);
   });
 });
 

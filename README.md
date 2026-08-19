@@ -25,11 +25,19 @@ type StreamWarning = { message: string; code?: WarningCode };
 
 入站 opaque 仅接受 `messages` 形（`{ messages: ChatMessage[] }`）。单条 `{ role, content }` 已 **deprecate**（有效 envelope 下未识别 shape 会被跳过，不再当完整 assistant turn 还原）。出站仍写 `messages: [assistantReplayMessage]`。
 
+opaque replay 只检查 object 和 JSON 可序列化性；客户端不再强制 1MiB/8MiB 大小或嵌套深度上限，也不会因这些通用限制丢弃 replay。实际请求大小和 provider 可接受的 payload 由 provider / transport 决定。
+
 ### 其余行为（0.6 一并落地，多为兼容增强）
 
 - HTTP adapter 错误码与 incomplete 流完成路径收敛；Chat Completions 支持 arguments-before-id 与 `function_call`/`tool_calls` 互斥 warning。
 - Aggregator 在 finalize 时从 `output` 派生 `text` / `toolCalls` / `serverTool*`；`argumentsText` 分块累积。
 - 四家厚 adapter 拆为 `map-request` / `map-stream`（对齐 `responses`）；opaque 恒尾置。
+
+### 请求校验边界
+
+`normalizeRequest` 和 `createAIClient` 不再自动运行通用 `validateRequest`。客户端只做默认值合并、`include` 归一化和 request id 生成；`temperature`、`maxOutputTokens`、tool 名称及其他 provider/model policy 交给目标 provider。adapter 仍保留构造合法 wire request 所需的 capability、shape 和 JSON object 检查。
+
+通用校验器不再从 runtime 入口导出；应用如果需要严格输入检查，应在自己的信任边界显式实现。
 
 ## 0.5.0 迁移说明（摘要）
 
@@ -86,7 +94,7 @@ type AIRequest = {
   tools?: ToolDefinition[]; // 客户端函数工具（由调用方执行）
   serverTools?: ServerToolDefinition[]; // Provider 托管工具（web_search / code_execution / mcp）
   toolChoice?: ToolChoice; // 客户端工具选择策略
-  temperature?: number; // 温度 (0–2)
+  temperature?: number; // provider/model-defined generation parameter
   maxOutputTokens?: number; // 最大输出 token
   reasoningLevel?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max"; // 可移植思考力度
   include?: { usage?; billing?; providerMetadata? };

@@ -20,9 +20,7 @@ export class GeminiAdapter extends HttpAdapterBase {
   }
 
   protected buildRequest(request: NormalizedRequest): GeminiGenerateContentRequest {
-    return this.withExtraBody(
-      buildGeminiRequest(request, { maxOpaquePayloadBytes: this.maxOpaquePayloadBytes }),
-    );
+    return this.withExtraBody(buildGeminiRequest(request, { maxOpaquePayloadBytes: this.maxOpaquePayloadBytes }));
   }
 
   protected async *runStream(

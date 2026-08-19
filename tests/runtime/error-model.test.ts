@@ -114,23 +114,17 @@ describe("WarningCode", () => {
 // ── 致命错误 ──────────────────────────────────────────────────
 
 describe("Fatal errors", () => {
-  it("should throw synchronously from createAIClient when input is empty", () => {
-    // 这个测试验证 validateRequest 在进入 adapter 前就抛错
-    expect(() => normalizeRequest({ input: [] }, { model: "gpt-4" })).toThrow(AIRequestError);
-  });
-
-  it("should throw when temperature is out of range", () => {
-    expect(() =>
-      normalizeRequest(
-        {
-          input: [
-            { type: "message" as const, role: "user" as const, content: [{ type: "text" as const, text: "hi" }] },
-          ],
-          temperature: 3,
-        },
-        { model: "gpt-4" },
-      ),
-    ).toThrow(AIRequestError);
+  it("should normalize provider-defined values without applying universal policy checks", () => {
+    const result = normalizeRequest(
+      {
+        input: [],
+        temperature: 3,
+        maxOutputTokens: 0,
+      } as never,
+      { model: "gpt-4" },
+    );
+    expect(result.temperature).toBe(3);
+    expect(result.maxOutputTokens).toBe(0);
   });
 
   it("aggregateEvents should throw when stream lacks response.completed", () => {

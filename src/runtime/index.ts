@@ -9,8 +9,6 @@ export { createAIClient } from "./client.js";
 export type { AIClient } from "./client.js";
 export { normalizeRequest } from "./normalize.js";
 export type { NormalizeOptions } from "./normalize.js";
-export { validateRequest, assertValidRequest } from "./validation.js";
-export type { ValidationIssue } from "./validation.js";
 export {
   AIError,
   AIRequestError,

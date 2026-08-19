@@ -964,34 +964,39 @@ describe("ChatCompletionsAdapter - error handling", () => {
     }
   });
 
-  it("should reject oversized opaque replay payloads", async () => {
+  it("should pass large opaque replay payloads to the provider", async () => {
+    let called = false;
     const adapter = new ChatCompletionsAdapter({
       apiKey: "test-key",
       maxOpaquePayloadBytes: 4096,
       fetch: async () => {
-        throw new Error("fetch should not be called");
+        called = true;
+        return new Response(
+          'data: {"id":"chatcmpl-large","choices":[{"index":0,"delta":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}\n\n' +
+            "data: [DONE]\n\n",
+          { status: 200, headers: { "Content-Type": "text/event-stream" } },
+        );
       },
     });
 
-    await expect(
-      collectStream(
-        adapter.stream(
-          makeRequest({
-            input: [
-              {
-                type: "opaque",
-                source: "chat.completions",
-                purpose: "replay",
-                payload: { messages: [{ role: "assistant", content: "x".repeat(70000) }] },
-              },
-            ],
-          }),
-        ),
+    await collectStream(
+      adapter.stream(
+        makeRequest({
+          input: [
+            {
+              type: "opaque",
+              source: "chat.completions",
+              purpose: "replay",
+              payload: { messages: [{ role: "assistant", content: "x".repeat(70000) }] },
+            },
+          ],
+        }),
       ),
-    ).rejects.toMatchObject({ name: "AIRequestError", code: "INVALID_OPAQUE_REPLAY" });
+    );
+    expect(called).toBe(true);
   });
 
-  it("should accept mid-size opaque replay under the default 1MiB limit", async () => {
+  it("should accept large opaque replay without a client size limit", async () => {
     let captured: object | null = null;
     const adapter = new ChatCompletionsAdapter({
       apiKey: "test-key",
@@ -1029,7 +1034,7 @@ describe("ChatCompletionsAdapter - error handling", () => {
     expect(body?.messages?.some((m) => m.role === "assistant" && m.content.length === 70_000)).toBe(true);
   });
 
-  it("should omit oversized outbound opaque with OPAQUE_REPLAY_OMITTED", async () => {
+  it("should retain large outbound opaque replay without omission warning", async () => {
     const huge = "y".repeat(5000);
     const adapter = new ChatCompletionsAdapter({
       apiKey: "test-key",
@@ -1054,8 +1059,8 @@ describe("ChatCompletionsAdapter - error handling", () => {
     });
 
     const result = await collectStream(adapter.stream(makeRequest()));
-    expect(result.replay.some((item) => item.type === "opaque")).toBe(false);
-    expect(result.warnings?.some((w) => w.code === "OPAQUE_REPLAY_OMITTED")).toBe(true);
+    expect(result.replay.some((item) => item.type === "opaque")).toBe(true);
+    expect(result.warnings?.some((w) => w.code === "OPAQUE_REPLAY_OMITTED")).not.toBe(true);
     expect(result.text).toBe(huge);
   });
 

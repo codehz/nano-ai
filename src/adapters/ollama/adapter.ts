@@ -20,9 +20,7 @@ export class OllamaAdapter extends HttpAdapterBase {
   }
 
   protected buildRequest(request: NormalizedRequest): OllamaChatRequest {
-    return this.withExtraBody(
-      buildOllamaRequest(request, { maxOpaquePayloadBytes: this.maxOpaquePayloadBytes }),
-    );
+    return this.withExtraBody(buildOllamaRequest(request, { maxOpaquePayloadBytes: this.maxOpaquePayloadBytes }));
   }
 
   protected async *runStream(

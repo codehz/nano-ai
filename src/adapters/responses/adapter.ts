@@ -43,9 +43,7 @@ export class ResponsesAdapter extends HttpAdapterBase implements ContextCompress
   }
 
   protected buildRequest(request: NormalizedRequest): ResponsesAPIRequest {
-    return this.withExtraBody(
-      buildResponsesRequest(request, { maxOpaquePayloadBytes: this.maxOpaquePayloadBytes }),
-    );
+    return this.withExtraBody(buildResponsesRequest(request, { maxOpaquePayloadBytes: this.maxOpaquePayloadBytes }));
   }
 
   /**
