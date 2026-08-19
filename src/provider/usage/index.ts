@@ -45,14 +45,16 @@ export function usageFromChatCompletions(raw: {
   prompt_tokens?: number;
   completion_tokens?: number;
   total_tokens?: number;
-  prompt_tokens_details?: { cached_tokens?: number; [key: string]: unknown };
+  prompt_tokens_details?: { cached_tokens?: number; cache_write_tokens?: number; [key: string]: unknown };
   completion_tokens_details?: { reasoning_tokens?: number; [key: string]: unknown };
+  cache_write_tokens?: number;
 }): Partial<Usage> {
   return withDerivedTotal({
     inputTokens: num(raw.prompt_tokens),
     outputTokens: num(raw.completion_tokens),
     totalTokens: num(raw.total_tokens),
     cachedInputTokens: num(raw.prompt_tokens_details?.cached_tokens),
+    cacheWriteInputTokens: num(raw.cache_write_tokens ?? raw.prompt_tokens_details?.cache_write_tokens),
     reasoningTokens: num(raw.completion_tokens_details?.reasoning_tokens),
   });
 }
@@ -62,8 +64,9 @@ export function usageFromOpenAIResponses(raw: {
   input_tokens?: number;
   output_tokens?: number;
   total_tokens?: number;
-  input_tokens_details?: { cached_tokens?: number; [key: string]: unknown };
+  input_tokens_details?: { cached_tokens?: number; cache_write_tokens?: number; [key: string]: unknown };
   output_tokens_details?: { reasoning_tokens?: number; [key: string]: unknown };
+  cache_write_tokens?: number;
   [key: string]: unknown;
 }): Partial<Usage> {
   return withDerivedTotal({
@@ -71,6 +74,7 @@ export function usageFromOpenAIResponses(raw: {
     outputTokens: num(raw.output_tokens),
     totalTokens: num(raw.total_tokens),
     cachedInputTokens: num(raw.input_tokens_details?.cached_tokens),
+    cacheWriteInputTokens: num(raw.cache_write_tokens ?? raw.input_tokens_details?.cache_write_tokens),
     reasoningTokens: num(raw.output_tokens_details?.reasoning_tokens),
   });
 }

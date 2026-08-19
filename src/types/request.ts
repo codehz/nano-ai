@@ -6,6 +6,7 @@
 
 import type { InstructionBlock } from "./content.js";
 import type { InputItem } from "./items.js";
+import type { PromptCacheSettings, ProviderCacheOptions } from "./cache.js";
 
 // ── 客户端工具定义 ────────────────────────────────────────────
 
@@ -106,6 +107,12 @@ export type AIRequest = {
    * Unsupported levels throw.
    */
   reasoningLevel?: ReasoningLevel;
+  /** Portable request-level prompt cache strategy and routing hint. */
+  cache?: PromptCacheSettings;
+  /** Typed provider-native cache extensions; unsupported fields are ignored by other adapters. */
+  providerOptions?: {
+    cache?: ProviderCacheOptions;
+  };
   /** AbortSignal 用于打断请求。abort 时 fetch 调用会被取消，流迭代器抛出 AbortError。 */
   signal?: AbortSignal;
 };

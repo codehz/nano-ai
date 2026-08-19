@@ -30,6 +30,9 @@ export type {
   ReplayItem,
 } from "./items.js";
 
+// Prompt cache controls
+export type { PromptCacheMode, PromptCacheSettings, ProviderCacheOptions, PromptCacheMetadata } from "./cache.js";
+
 // 请求模型
 export type {
   AIRequest,

@@ -28,6 +28,11 @@ export type ResponsesAPIRequest = {
   reasoning?: { effort: string };
   /** 服务端多轮续写；opaque replay 的 response id 映射到此字段，而非 item_reference */
   previous_response_id?: string;
+  prompt_cache_key?: string;
+  prompt_cache_options?: {
+    mode?: "implicit" | "explicit" | "off";
+    retention?: "in_memory" | "24h";
+  };
   stream: true;
 };
 
@@ -52,8 +57,9 @@ export type ResponsesCompactAPIResponse = {
     input_tokens?: number;
     output_tokens?: number;
     total_tokens?: number;
-    input_tokens_details?: { cached_tokens?: number; [key: string]: unknown };
+    input_tokens_details?: { cached_tokens?: number; cache_write_tokens?: number; [key: string]: unknown };
     output_tokens_details?: { reasoning_tokens?: number; [key: string]: unknown };
+    cache_write_tokens?: number;
     [key: string]: unknown;
   };
   [key: string]: unknown;

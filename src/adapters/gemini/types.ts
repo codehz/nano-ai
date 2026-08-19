@@ -54,6 +54,7 @@ export type GeminiFunctionCallingConfig = {
 
 export type GeminiGenerateContentRequest = {
   contents: GeminiContent[];
+  cachedContent?: string;
   systemInstruction?: { parts: Array<{ text: string }> };
   tools?: GeminiTool[];
   toolConfig?: { functionCallingConfig: GeminiFunctionCallingConfig };

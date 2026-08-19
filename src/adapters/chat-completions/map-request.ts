@@ -9,6 +9,7 @@ import { NormalizedRequestMapper } from "../../provider/request-mapper.js";
 import { mapChatCompletionsReasoningEffort } from "../../provider/reasoning.js";
 import { mapOpenAiFunctionTool } from "../../provider/openai-tools.js";
 import { OPAQUE_SOURCE } from "../../provider/opaque-sources.js";
+import { applyPromptCacheFields } from "../../provider/prompt-cache.js";
 
 import type { ContentBlock, NormalizedRequest } from "../../types/index.js";
 import {
@@ -309,5 +310,6 @@ export function buildChatCompletionsRequest(
     body.reasoning_effort = mapChatCompletionsReasoningEffort(request.reasoningLevel);
   }
 
+  applyPromptCacheFields(body as Record<string, unknown>, request, "chat-completions");
   return body;
 }

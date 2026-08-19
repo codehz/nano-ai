@@ -6,6 +6,7 @@
 
 import { AIRequestError } from "../../runtime/errors.js";
 import { acceptOpaqueReplay } from "../../provider/opaque-replay.js";
+import { applyPromptCacheFields } from "../../provider/prompt-cache.js";
 import { NormalizedRequestMapper } from "../../provider/request-mapper.js";
 import { mapResponsesReasoning } from "../../provider/reasoning.js";
 import { OPAQUE_SOURCE } from "../../provider/opaque-sources.js";
@@ -331,6 +332,7 @@ export function buildResponsesRequest(
     body.reasoning = mapResponsesReasoning(request.reasoningLevel);
   }
 
+  applyPromptCacheFields(body as Record<string, unknown>, request, "responses");
   return body;
 }
 

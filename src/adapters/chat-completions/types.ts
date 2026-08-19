@@ -21,6 +21,8 @@ export type ChatRequest = {
   max_tokens?: number;
   /** Portable reasoningLevel → reasoning_effort */
   reasoning_effort?: string;
+  prompt_cache_key?: string;
+  prompt_cache_retention?: "in_memory" | "24h";
   stream: true;
   n: 1;
 };
@@ -66,8 +68,9 @@ export type ChatChunk = {
     prompt_tokens: number;
     completion_tokens: number;
     total_tokens: number;
-    prompt_tokens_details?: { cached_tokens?: number };
+    prompt_tokens_details?: { cached_tokens?: number; cache_write_tokens?: number };
     completion_tokens_details?: { reasoning_tokens?: number };
+    cache_write_tokens?: number;
   };
 };
 

@@ -202,6 +202,9 @@ export async function* mapMessagesStream(
       "Content-Type": "application/json",
       "x-api-key": host.apiKey ?? "",
       "anthropic-version": host.apiVersion,
+      ...(request.providerOptions?.cache?.messages?.betaHeader
+        ? { "anthropic-beta": request.providerOptions.cache.messages.betaHeader }
+        : {}),
     }),
     body: providerRequest,
   });

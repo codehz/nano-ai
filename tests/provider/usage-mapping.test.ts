@@ -13,7 +13,7 @@ describe("usage-mapping", () => {
       prompt_tokens: 100,
       completion_tokens: 40,
       total_tokens: 140,
-      prompt_tokens_details: { cached_tokens: 30 },
+      prompt_tokens_details: { cached_tokens: 30, cache_write_tokens: 12 },
       completion_tokens_details: { reasoning_tokens: 10 },
     });
 
@@ -22,6 +22,7 @@ describe("usage-mapping", () => {
       outputTokens: 40,
       totalTokens: 140,
       cachedInputTokens: 30,
+      cacheWriteInputTokens: 12,
       reasoningTokens: 10,
     });
   });
@@ -31,11 +32,12 @@ describe("usage-mapping", () => {
       input_tokens: 50,
       output_tokens: 20,
       total_tokens: 70,
-      input_tokens_details: { cached_tokens: 5 },
+      input_tokens_details: { cached_tokens: 5, cache_write_tokens: 9 },
       output_tokens_details: { reasoning_tokens: 8 },
     });
 
     expect(usage.cachedInputTokens).toBe(5);
+    expect(usage.cacheWriteInputTokens).toBe(9);
     expect(usage.reasoningTokens).toBe(8);
   });
 

@@ -308,6 +308,12 @@ describe("MessagesAdapter - text streaming", () => {
 
     const providerMetadata = result.auxiliary?.providerMetadata as Record<string, unknown> | undefined;
     expect(providerMetadata?.apiVersion).toBe("2023-06-01");
+    expect(providerMetadata?.promptCache).toEqual({
+      requestedMode: "auto",
+      appliedMode: "implicit",
+      keyApplied: false,
+      ttlApplied: false,
+    });
 
     const headers = providerMetadata?.headers as Record<string, unknown> | undefined;
     expect(headers?.["request-id"]).toBe("req_hdr_123");

@@ -40,6 +40,7 @@ import {
 } from "../runtime/errors.js";
 import type { EventFactory } from "../stream/event-factory.js";
 import { AdapterAuxiliaryState } from "./auxiliary.js";
+import { promptCacheAdapterForKind, promptCacheMetadata } from "./prompt-cache.js";
 import { mergeAuxiliary } from "../stream/merge-auxiliary.js";
 
 // ── Adapter 解析中间结果 ──────────────────────────────────────
@@ -208,7 +209,14 @@ export abstract class AdapterBase implements BackendAdapter {
   }
 
   protected createAuxiliaryState(request: NormalizedRequest): AdapterAuxiliaryState {
-    return new AdapterAuxiliaryState(request);
+    const auxiliary = new AdapterAuxiliaryState(request);
+    const adapter = promptCacheAdapterForKind(this.kind);
+    if (adapter) {
+      auxiliary.recordProviderMetadata(undefined, {
+        promptCache: promptCacheMetadata(request, adapter),
+      });
+    }
+    return auxiliary;
   }
 }
 

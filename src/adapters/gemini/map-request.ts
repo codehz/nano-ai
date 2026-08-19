@@ -5,6 +5,7 @@
 import { AIRequestError } from "../../runtime/errors.js";
 import { contentBlocksToText } from "../../canonical/index.js";
 import { acceptOpaqueReplay } from "../../provider/opaque-replay.js";
+import { applyPromptCacheFields } from "../../provider/prompt-cache.js";
 import { parseImageDataUrl } from "../../provider/image-url.js";
 import { NormalizedRequestMapper } from "../../provider/request-mapper.js";
 import { mapGeminiThinking } from "../../provider/reasoning.js";
@@ -291,5 +292,6 @@ export function buildGeminiRequest(
     body.generationConfig = generationConfig;
   }
 
+  applyPromptCacheFields(body as Record<string, unknown>, request, "gemini");
   return body;
 }

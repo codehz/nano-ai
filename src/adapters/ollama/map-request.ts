@@ -7,6 +7,7 @@ import { contentBlocksToText } from "../../canonical/index.js";
 import { acceptOpaqueReplay } from "../../provider/opaque-replay.js";
 import { parseImageDataUrl } from "../../provider/image-url.js";
 import { NormalizedRequestMapper } from "../../provider/request-mapper.js";
+import { applyPromptCacheFields } from "../../provider/prompt-cache.js";
 import { mapOllamaThink } from "../../provider/reasoning.js";
 import { mapOpenAiFunctionTool } from "../../provider/openai-tools.js";
 import { OPAQUE_SOURCE } from "../../provider/opaque-sources.js";
@@ -254,5 +255,6 @@ export function buildOllamaRequest(
     body.think = mapOllamaThink(request.reasoningLevel);
   }
 
+  applyPromptCacheFields(body as Record<string, unknown>, request, "ollama");
   return body;
 }

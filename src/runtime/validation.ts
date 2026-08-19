@@ -19,6 +19,10 @@ const MESSAGE_ROLES = new Set(["user", "assistant"]);
 const REASONING_VISIBILITIES = new Set(["full", "summary", "redacted", "opaque"]);
 const TOOL_RESULT_OUTCOMES = new Set(["success", "error", "rejected"]);
 const INCLUDE_MODES = new Set(["off", "best_effort"]);
+const PROMPT_CACHE_MODES = new Set(["off", "auto", "explicit"]);
+const CACHE_RETENTION = new Set(["in_memory", "24h"]);
+
+const MAX_CACHE_STRING_LENGTH = 256;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -439,6 +443,143 @@ function validateServerTools(serverTools: unknown, issues: ValidationIssue[]): v
   }
 }
 
+function validatePromptCache(request: AIRequest, issues: ValidationIssue[]): void {
+  const cache = request.cache;
+  if (cache !== undefined) {
+    if (!isRecord(cache) || Array.isArray(cache)) {
+      pushIssue(issues, "cache", "CACHE_INVALID", "cache must be an object");
+    } else {
+      if (cache.mode !== undefined && (typeof cache.mode !== "string" || !PROMPT_CACHE_MODES.has(cache.mode))) {
+        pushIssue(issues, "cache.mode", "CACHE_MODE_INVALID", "cache.mode must be off, auto, or explicit");
+      }
+      if (
+        cache.key !== undefined &&
+        (typeof cache.key !== "string" || cache.key.length === 0 || cache.key.length > MAX_CACHE_STRING_LENGTH)
+      ) {
+        pushIssue(
+          issues,
+          "cache.key",
+          "CACHE_KEY_INVALID",
+          `cache.key must be a non-empty string of at most ${MAX_CACHE_STRING_LENGTH} characters`,
+        );
+      }
+      if (
+        cache.ttl !== undefined &&
+        (typeof cache.ttl !== "string" || cache.ttl.length === 0 || cache.ttl.length > MAX_CACHE_STRING_LENGTH)
+      ) {
+        pushIssue(
+          issues,
+          "cache.ttl",
+          "CACHE_TTL_INVALID",
+          `cache.ttl must be a non-empty string of at most ${MAX_CACHE_STRING_LENGTH} characters`,
+        );
+      }
+    }
+  }
+
+  const providerOptions = request.providerOptions;
+  if (providerOptions !== undefined) {
+    if (!isRecord(providerOptions) || Array.isArray(providerOptions)) {
+      pushIssue(issues, "providerOptions", "PROVIDER_OPTIONS_INVALID", "providerOptions must be an object");
+      return;
+    }
+    if (providerOptions.cache !== undefined) {
+      if (!isRecord(providerOptions.cache) || Array.isArray(providerOptions.cache)) {
+        pushIssue(issues, "providerOptions.cache", "PROVIDER_CACHE_INVALID", "providerOptions.cache must be an object");
+        return;
+      }
+      for (const [provider, value] of Object.entries(providerOptions.cache)) {
+        if (!isRecord(value) || Array.isArray(value)) {
+          pushIssue(
+            issues,
+            `providerOptions.cache.${provider}`,
+            "PROVIDER_CACHE_SECTION_INVALID",
+            `providerOptions.cache.${provider} must be an object`,
+          );
+          continue;
+        }
+        for (const [key, fieldValue] of Object.entries(value)) {
+          if (typeof fieldValue === "string" && fieldValue.length > MAX_CACHE_STRING_LENGTH) {
+            pushIssue(
+              issues,
+              `providerOptions.cache.${provider}.${key}`,
+              "PROVIDER_CACHE_VALUE_TOO_LONG",
+              `providerOptions.cache.${provider}.${key} is too long`,
+            );
+          }
+        }
+      }
+      const responses = providerOptions.cache.responses;
+      if (isRecord(responses)) {
+        if (
+          responses.promptCacheRetention !== undefined &&
+          (typeof responses.promptCacheRetention !== "string" || !CACHE_RETENTION.has(responses.promptCacheRetention))
+        ) {
+          pushIssue(
+            issues,
+            "providerOptions.cache.responses.promptCacheRetention",
+            "PROVIDER_CACHE_RETENTION_INVALID",
+            "promptCacheRetention must be in_memory or 24h",
+          );
+        }
+        if (
+          responses.promptCacheMode !== undefined &&
+          responses.promptCacheMode !== "implicit" &&
+          responses.promptCacheMode !== "explicit" &&
+          responses.promptCacheMode !== "off"
+        ) {
+          pushIssue(
+            issues,
+            "providerOptions.cache.responses.promptCacheMode",
+            "PROVIDER_CACHE_MODE_INVALID",
+            "promptCacheMode must be implicit, explicit, or off",
+          );
+        }
+      }
+      const messages = providerOptions.cache.messages;
+      if (
+        isRecord(messages) &&
+        messages.cacheTtl !== undefined &&
+        (typeof messages.cacheTtl !== "string" || (messages.cacheTtl !== "5m" && messages.cacheTtl !== "1h"))
+      ) {
+        pushIssue(
+          issues,
+          "providerOptions.cache.messages.cacheTtl",
+          "PROVIDER_CACHE_TTL_INVALID",
+          "cacheTtl must be 5m or 1h",
+        );
+      }
+      const gemini = providerOptions.cache.gemini;
+      if (
+        isRecord(gemini) &&
+        gemini.cachedContent !== undefined &&
+        (typeof gemini.cachedContent !== "string" || gemini.cachedContent.length === 0)
+      ) {
+        pushIssue(
+          issues,
+          "providerOptions.cache.gemini.cachedContent",
+          "PROVIDER_CACHE_REFERENCE_INVALID",
+          "cachedContent must be a non-empty string",
+        );
+      }
+      const ollama = providerOptions.cache.ollama;
+      if (
+        isRecord(ollama) &&
+        ollama.keepAlive !== undefined &&
+        typeof ollama.keepAlive !== "string" &&
+        typeof ollama.keepAlive !== "number"
+      ) {
+        pushIssue(
+          issues,
+          "providerOptions.cache.ollama.keepAlive",
+          "PROVIDER_CACHE_KEEP_ALIVE_INVALID",
+          "keepAlive must be a string or number",
+        );
+      }
+    }
+  }
+}
+
 function validateToolChoice(toolChoice: unknown, issues: ValidationIssue[]): void {
   if (toolChoice === undefined) return;
   if (toolChoice === "auto" || toolChoice === "none") return;
@@ -555,6 +696,8 @@ export function validateRequest(request: AIRequest): ValidationIssue[] {
   if (request.include !== undefined) {
     validateInclude(request.include, issues);
   }
+
+  validatePromptCache(request, issues);
 
   if (request.metadata !== undefined) {
     if (!isRecord(request.metadata)) {

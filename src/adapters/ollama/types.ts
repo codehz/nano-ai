@@ -15,6 +15,7 @@ export type OllamaChatRequest = {
   model: string;
   messages: OllamaMessage[];
   stream: true;
+  keep_alive?: string | number;
   tools?: OllamaTool[];
   /** Portable reasoningLevel → think；minimal/xhigh/max 不支持 */
   think?: boolean | "low" | "medium" | "high";

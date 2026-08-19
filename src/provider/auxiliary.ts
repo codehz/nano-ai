@@ -54,10 +54,10 @@ export class AdapterAuxiliaryState {
     this.collector.recordBilling(billing, source, raw);
   }
 
-  recordProviderMetadata(source: string, metadata: Record<string, unknown> | undefined): void {
+  recordProviderMetadata(source: string | undefined, metadata: Record<string, unknown> | undefined): void {
     if (this.request.include?.providerMetadata === "off" || !metadata || isEmptyRecord(metadata)) return;
     this.collector.recordMetadata(metadata);
-    this.metadataSources.add(source);
+    if (source) this.metadataSources.add(source);
   }
 
   async finalize(factory: EventFactory, options: AuxiliaryFinalizeOptions = {}): Promise<AuxiliaryFinalizeResult> {

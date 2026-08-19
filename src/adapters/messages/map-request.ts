@@ -8,6 +8,7 @@ import { acceptOpaqueReplay } from "../../provider/opaque-replay.js";
 import { isHttpOrHttpsUrl, parseImageDataUrl } from "../../provider/image-url.js";
 import { NormalizedRequestMapper } from "../../provider/request-mapper.js";
 import { mapMessagesThinking } from "../../provider/reasoning.js";
+import { mapAnthropicCacheTtl, requestedPromptCacheMode } from "../../provider/prompt-cache.js";
 import { OPAQUE_SOURCE } from "../../provider/opaque-sources.js";
 
 import type { NormalizedRequest, ContentBlock } from "../../types/index.js";
@@ -367,5 +368,44 @@ export function buildMessagesRequest(
     body.thinking = mapMessagesThinking(request.reasoningLevel, body.max_tokens);
   }
 
+  applyMessagesPromptCache(body, request, systemPrompt);
   return body;
+}
+
+function applyMessagesPromptCache(
+  body: MessagesAPIRequest,
+  request: NormalizedRequest,
+  systemPrompt: string | undefined,
+): void {
+  const requestedMode = requestedPromptCacheMode(request);
+  if (requestedMode === "off") return;
+  if (requestedMode !== "explicit" && request.providerOptions?.cache?.messages?.cacheTtl === undefined) return;
+
+  const ttl = request.providerOptions?.cache?.messages?.cacheTtl ?? mapAnthropicCacheTtl(request.cache?.ttl);
+  const cacheControl = {
+    type: "ephemeral" as const,
+    ...(ttl ? { ttl } : {}),
+  };
+
+  if (systemPrompt) {
+    body.system = [{ type: "text", text: systemPrompt, cache_control: cacheControl }];
+    return;
+  }
+
+  const lastMessage = body.messages[body.messages.length - 1];
+  if (lastMessage) {
+    if (typeof lastMessage.content === "string") {
+      lastMessage.content = [{ type: "text", text: lastMessage.content, cache_control: cacheControl }];
+      return;
+    }
+
+    const lastBlock = lastMessage.content[lastMessage.content.length - 1];
+    if (lastBlock) {
+      lastBlock.cache_control = cacheControl;
+      return;
+    }
+  }
+
+  const lastTool = body.tools?.[body.tools.length - 1];
+  if (lastTool) lastTool.cache_control = cacheControl;
 }
