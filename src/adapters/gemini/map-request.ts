@@ -5,6 +5,7 @@
 import { AIRequestError } from "../../runtime/errors.js";
 import { contentBlocksToText } from "../../canonical/index.js";
 import { acceptOpaqueReplay } from "../../provider/opaque-replay.js";
+import { parseImageDataUrl } from "../../provider/image-url.js";
 import { NormalizedRequestMapper } from "../../provider/request-mapper.js";
 import { mapGeminiThinking } from "../../provider/reasoning.js";
 import { OPAQUE_SOURCE } from "../../provider/opaque-sources.js";
@@ -54,11 +55,45 @@ export function appendPart(contents: GeminiContent[], role: "user" | "model", pa
   contents.push({ role, parts: [part] });
 }
 
+export function mapGeminiImagePart(imageUrl: string, field: string): GeminiPart {
+  const dataUrl = parseImageDataUrl(imageUrl);
+  if (!dataUrl) {
+    throw new AIRequestError(
+      `gemini cannot map ${field} imageUrl without fetching; only data:image/(jpeg|png|gif|webp);base64,... is supported`,
+      "UNSUPPORTED_CONTENT_BLOCK",
+    );
+  }
+  return {
+    inlineData: {
+      mimeType: dataUrl.mediaType,
+      data: dataUrl.data,
+    },
+  };
+}
+
 export function textPartsFromBlocks(blocks: ContentBlock[], field: string): GeminiPart[] {
   const supported = mapper.ensureTextBlocks(blocks, field);
   return supported.map((block) => {
     if (block.type === "text") return { text: block.text };
     if (block.type === "json") return { text: JSON.stringify(block.json) };
+    throw new AIRequestError(
+      `gemini does not support content block type "${block.type}" in ${field}`,
+      "UNSUPPORTED_CONTENT_BLOCK",
+    );
+  });
+}
+
+export function partsFromUserBlocks(blocks: ContentBlock[], field: string): GeminiPart[] {
+  mapper.ensureBlocks(blocks, field, ["text", "json", "image"], "only text/json/image blocks are supported");
+  const hasImage = blocks.some((block) => block.type === "image");
+  if (!hasImage) {
+    return textPartsFromBlocks(blocks, field);
+  }
+
+  return blocks.map((block) => {
+    if (block.type === "text") return { text: block.text };
+    if (block.type === "json") return { text: JSON.stringify(block.json) };
+    if (block.type === "image") return mapGeminiImagePart(block.imageUrl, field);
     throw new AIRequestError(
       `gemini does not support content block type "${block.type}" in ${field}`,
       "UNSUPPORTED_CONTENT_BLOCK",
@@ -120,8 +155,11 @@ export function buildGeminiRequest(
   for (const item of request.input) {
     switch (item.type) {
       case "message": {
+        const field = `input message (${item.role}) content`;
         const role = item.role === "assistant" ? "model" : "user";
-        for (const part of textPartsFromBlocks(item.content, `input message (${item.role}) content`)) {
+        const parts =
+          item.role === "user" ? partsFromUserBlocks(item.content, field) : textPartsFromBlocks(item.content, field);
+        for (const part of parts) {
           appendPart(contents, role, part);
         }
         break;

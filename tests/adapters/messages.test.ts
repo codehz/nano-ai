@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect } from "bun:test";
-import { AIProviderError, AIRequestError, MessagesAdapter, collectStream } from "../../src/index.js";
+import { AIProviderError, MessagesAdapter, collectStream } from "../../src/index.js";
 import type { NormalizedRequest, FetchFn } from "../../src/index.js";
 // ── Helpers ───────────────────────────────────────────────────
 
@@ -556,7 +556,85 @@ describe("MessagesAdapter - request building", () => {
     expect(body?.thinking).toEqual({ type: "enabled", budget_tokens: 8000 });
   });
 
-  it("should reject unsupported image content instead of coercing it to text", async () => {
+  it("should map user text+https image content to Anthropic image blocks", async () => {
+    const { captured, fetch } = captureRequest();
+    const adapter = new MessagesAdapter({ apiKey: "test-key", fetch });
+
+    await collectStream(
+      adapter.stream(
+        makeRequest({
+          input: [
+            {
+              type: "message" as const,
+              role: "user" as const,
+              content: [
+                { type: "text" as const, text: "What is in this image?" },
+                { type: "image" as const, imageUrl: "https://example.com/cat.png" },
+              ],
+            },
+          ],
+        }),
+      ),
+    );
+
+    const body = captured.current as Record<string, unknown> | null;
+    const messages = body?.messages as Array<Record<string, unknown>>;
+    expect(messages?.[0]?.content).toEqual([
+      { type: "text", text: "What is in this image?" },
+      { type: "image", source: { type: "url", url: "https://example.com/cat.png" } },
+    ]);
+  });
+
+  it("should map user data-URL image content to Anthropic base64 source", async () => {
+    const { captured, fetch } = captureRequest();
+    const adapter = new MessagesAdapter({ apiKey: "test-key", fetch });
+
+    await collectStream(
+      adapter.stream(
+        makeRequest({
+          input: [
+            {
+              type: "message" as const,
+              role: "user" as const,
+              content: [{ type: "image" as const, imageUrl: "data:image/png;base64,aGVsbG8=" }],
+            },
+          ],
+        }),
+      ),
+    );
+
+    const body = captured.current as Record<string, unknown> | null;
+    const messages = body?.messages as Array<Record<string, unknown>>;
+    expect(messages?.[0]?.content).toEqual([
+      {
+        type: "image",
+        source: { type: "base64", media_type: "image/png", data: "aGVsbG8=" },
+      },
+    ]);
+  });
+
+  it("should still reject assistant image content", async () => {
+    const { fetch } = captureRequest();
+    const adapter = new MessagesAdapter({ apiKey: "test-key", fetch });
+
+    await expect(
+      collectStream(
+        adapter.stream(
+          makeRequest({
+            input: [
+              {
+                type: "message" as const,
+                role: "assistant" as const,
+                content: [{ type: "image" as const, imageUrl: "https://example.com/cat.png" }],
+              },
+            ],
+          }),
+        ),
+      ),
+    ).rejects.toMatchObject({ code: "UNSUPPORTED_CONTENT_BLOCK" });
+  });
+
+  it("should reject malformed imageUrl that cannot be mapped safely", async () => {
     const { fetch } = captureRequest();
     const adapter = new MessagesAdapter({ apiKey: "test-key", fetch });
 
@@ -568,13 +646,13 @@ describe("MessagesAdapter - request building", () => {
               {
                 type: "message" as const,
                 role: "user" as const,
-                content: [{ type: "image" as const, imageUrl: "https://example.com/cat.png" }],
+                content: [{ type: "image" as const, imageUrl: "file:///tmp/cat.png" }],
               },
             ],
           }),
         ),
       ),
-    ).rejects.toBeInstanceOf(AIRequestError);
+    ).rejects.toMatchObject({ code: "UNSUPPORTED_CONTENT_BLOCK" });
   });
 
   it("should warn when request metadata is provided", async () => {

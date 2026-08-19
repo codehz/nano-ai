@@ -5,6 +5,7 @@
 import { AIRequestError } from "../../runtime/errors.js";
 import { contentBlocksToText } from "../../canonical/index.js";
 import { acceptOpaqueReplay } from "../../provider/opaque-replay.js";
+import { isHttpOrHttpsUrl, parseImageDataUrl } from "../../provider/image-url.js";
 import { NormalizedRequestMapper } from "../../provider/request-mapper.js";
 import { mapMessagesThinking } from "../../provider/reasoning.js";
 import { OPAQUE_SOURCE } from "../../provider/opaque-sources.js";
@@ -20,6 +21,26 @@ export function isMessagesReplayContentBlock(value: unknown): value is MessagesA
   switch (block.type) {
     case "text":
       return typeof block.text === "string";
+    case "image": {
+      const source = block.source;
+      if (!source || typeof source !== "object") return false;
+      const imageSource = source as Record<string, unknown>;
+      if (imageSource.type === "url") {
+        return typeof imageSource.url === "string" && imageSource.url.length > 0;
+      }
+      if (imageSource.type === "base64") {
+        return (
+          typeof imageSource.media_type === "string" &&
+          typeof imageSource.data === "string" &&
+          imageSource.data.length > 0 &&
+          (imageSource.media_type === "image/jpeg" ||
+            imageSource.media_type === "image/png" ||
+            imageSource.media_type === "image/gif" ||
+            imageSource.media_type === "image/webp")
+        );
+      }
+      return false;
+    }
     case "thinking":
       return (
         typeof block.thinking === "string" && (block.signature === undefined || typeof block.signature === "string")
@@ -105,13 +126,55 @@ export function synthesizeItemId(
 
 // ── Content block 映射 ─────────────────────────────────────────
 
-export function canonicalToMessagesBlock(b: ContentBlock): MessagesAPIContentBlock {
-  if (b.type === "text") return { type: "text", text: b.text };
-  if (b.type === "json") return { type: "text", text: JSON.stringify(b.json) };
+export function mapMessagesImageBlock(imageUrl: string, field: string): MessagesAPIContentBlock {
+  const dataUrl = parseImageDataUrl(imageUrl);
+  if (dataUrl) {
+    return {
+      type: "image",
+      source: {
+        type: "base64",
+        media_type: dataUrl.mediaType,
+        data: dataUrl.data,
+      },
+    };
+  }
+  if (isHttpOrHttpsUrl(imageUrl)) {
+    return {
+      type: "image",
+      source: {
+        type: "url",
+        url: imageUrl,
+      },
+    };
+  }
   throw new AIRequestError(
-    `messages does not support content block type "${b.type}" in canonical mapping`,
+    `messages cannot map ${field} imageUrl without a http(s) URL or data:image/(jpeg|png|gif|webp);base64,... payload`,
     "UNSUPPORTED_CONTENT_BLOCK",
   );
+}
+
+export function canonicalToMessagesBlock(b: ContentBlock, field = "canonical mapping"): MessagesAPIContentBlock {
+  if (b.type === "text") return { type: "text", text: b.text };
+  if (b.type === "json") return { type: "text", text: JSON.stringify(b.json) };
+  if (b.type === "image") return mapMessagesImageBlock(b.imageUrl, field);
+  throw new AIRequestError(
+    `messages does not support content block type "${b.type}" in ${field}`,
+    "UNSUPPORTED_CONTENT_BLOCK",
+  );
+}
+
+function mapMessagesUserContent(blocks: ContentBlock[], field: string): string | MessagesAPIContentBlock[] {
+  mapper.ensureBlocks(blocks, field, ["text", "json", "image"], "only text/json/image blocks are supported");
+  const hasImage = blocks.some((block) => block.type === "image");
+  if (!hasImage) {
+    const supportedContent = mapper.ensureTextBlocks(blocks, field);
+    if (supportedContent.length === 1 && supportedContent[0]?.type === "text") {
+      return supportedContent[0].text;
+    }
+    return supportedContent.map((block) => canonicalToMessagesBlock(block, field));
+  }
+
+  return blocks.map((block) => canonicalToMessagesBlock(block, field));
 }
 
 export function pickProviderHeaders(headers: Headers): Record<string, string> {
@@ -187,12 +250,19 @@ export function buildMessagesRequest(
 
     switch (item.type) {
       case "message": {
-        const role = item.role === "user" ? "user" : "assistant";
-        const supportedContent = mapper.ensureTextBlocks(item.content, `input message (${item.role}) content`);
+        const field = `input message (${item.role}) content`;
+        if (item.role === "user") {
+          messages.push({ role: "user", content: mapMessagesUserContent(item.content, field) });
+          break;
+        }
+        const supportedContent = mapper.ensureTextBlocks(item.content, field);
         if (supportedContent.length === 1 && supportedContent[0]?.type === "text") {
-          messages.push({ role, content: supportedContent[0].text });
+          messages.push({ role: "assistant", content: supportedContent[0].text });
         } else {
-          messages.push({ role, content: supportedContent.map(canonicalToMessagesBlock) });
+          messages.push({
+            role: "assistant",
+            content: supportedContent.map((block) => canonicalToMessagesBlock(block, field)),
+          });
         }
         break;
       }

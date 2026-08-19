@@ -5,12 +5,13 @@
 import { AIRequestError } from "../../runtime/errors.js";
 import { contentBlocksToText } from "../../canonical/index.js";
 import { acceptOpaqueReplay } from "../../provider/opaque-replay.js";
+import { parseImageDataUrl } from "../../provider/image-url.js";
 import { NormalizedRequestMapper } from "../../provider/request-mapper.js";
 import { mapOllamaThink } from "../../provider/reasoning.js";
 import { mapOpenAiFunctionTool } from "../../provider/openai-tools.js";
 import { OPAQUE_SOURCE } from "../../provider/opaque-sources.js";
 
-import type { NormalizedRequest } from "../../types/index.js";
+import type { ContentBlock, NormalizedRequest } from "../../types/index.js";
 import type { OllamaChatRequest, OllamaMessage, OllamaToolCall } from "./types.js";
 
 export const mapper = new NormalizedRequestMapper("ollama");
@@ -69,6 +70,35 @@ export function toWireOllamaToolCalls(toolCalls: OllamaReplayToolCall[]): Ollama
   }));
 }
 
+export function mapOllamaImageData(imageUrl: string, field: string): string {
+  const dataUrl = parseImageDataUrl(imageUrl);
+  if (!dataUrl) {
+    throw new AIRequestError(
+      `ollama cannot map ${field} imageUrl without fetching; only data:image/(jpeg|png|gif|webp);base64,... is supported`,
+      "UNSUPPORTED_CONTENT_BLOCK",
+    );
+  }
+  return dataUrl.data;
+}
+
+function mapOllamaUserMessage(blocks: ContentBlock[], field: string): Pick<OllamaMessage, "content" | "images"> {
+  mapper.ensureBlocks(blocks, field, ["text", "json", "image"], "only text/json/image blocks are supported");
+  const images: string[] = [];
+  const textBlocks: ContentBlock[] = [];
+  for (const block of blocks) {
+    if (block.type === "image") {
+      images.push(mapOllamaImageData(block.imageUrl, field));
+      continue;
+    }
+    textBlocks.push(block);
+  }
+
+  return {
+    content: contentBlocksToText(textBlocks),
+    ...(images.length > 0 ? { images } : {}),
+  };
+}
+
 export function buildOllamaRequest(
   request: NormalizedRequest,
   options?: { maxOpaquePayloadBytes?: number },
@@ -87,10 +117,17 @@ export function buildOllamaRequest(
   for (const item of request.input) {
     switch (item.type) {
       case "message": {
-        const role = item.role;
+        const field = `input message (${item.role}) content`;
+        if (item.role === "user") {
+          messages.push({
+            role: "user",
+            ...mapOllamaUserMessage(item.content, field),
+          });
+          break;
+        }
         messages.push({
-          role,
-          content: mapper.textFromBlocks(item.content, `input message (${item.role}) content`),
+          role: item.role,
+          content: mapper.textFromBlocks(item.content, field),
         });
         break;
       }

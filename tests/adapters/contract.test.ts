@@ -505,7 +505,7 @@ describe("Adapter contracts", () => {
     expect(new MockAdapter({ handler: async function* () {} }).isSyntheticStream).toBe(true);
   });
 
-  it("should map user image content on chat-completions and responses", async () => {
+  it("should map user https image content on chat-completions, responses, and messages", async () => {
     const request = makeRequest({
       input: [
         {
@@ -521,6 +521,7 @@ describe("Adapter contracts", () => {
 
     const chatCaptured: { current: object | null } = { current: null };
     const responsesCaptured: { current: object | null } = { current: null };
+    const messagesCaptured: { current: object | null } = { current: null };
 
     await Promise.all([
       collectStream(
@@ -546,6 +547,19 @@ describe("Adapter contracts", () => {
           },
         }).stream(request),
       ),
+      collectStream(
+        new MessagesAdapter({
+          apiKey: "test-key",
+          fetch: async (_url, init) => {
+            messagesCaptured.current = JSON.parse(init.body as string);
+            return sseResponse(
+              `event: message_start\ndata: ${JSON.stringify({ type: "message_start", message: { id: "m", type: "message", role: "assistant", content: [], stop_reason: null, usage: { input_tokens: 0, output_tokens: 0 } } })}\n\n`,
+              `event: message_delta\ndata: ${JSON.stringify({ type: "message_delta", delta: { stop_reason: "end_turn", stop_sequence: null }, usage: { input_tokens: 1, output_tokens: 1 } })}\n\n`,
+              `event: message_stop\ndata: {"type":"message_stop"}\n\n`,
+            );
+          },
+        }).stream(request),
+      ),
     ]);
 
     const chatBody = chatCaptured.current as Record<string, unknown> | null;
@@ -566,9 +580,75 @@ describe("Adapter contracts", () => {
         ],
       },
     ]);
+
+    const messagesBody = messagesCaptured.current as Record<string, unknown> | null;
+    const messages = messagesBody?.messages as Array<Record<string, unknown>>;
+    expect(messages?.[0]?.content).toEqual([
+      { type: "text", text: "look" },
+      { type: "image", source: { type: "url", url: "https://example.com/cat.png" } },
+    ]);
   });
 
-  it("should reject unsupported image content on adapters without vision mapping", async () => {
+  it("should map user data-URL images on gemini and ollama", async () => {
+    const request = makeRequest({
+      input: [
+        {
+          type: "message",
+          role: "user",
+          content: [
+            { type: "text", text: "look" },
+            { type: "image", imageUrl: "data:image/png;base64,aGVsbG8=" },
+          ],
+        },
+      ],
+    });
+
+    const geminiCaptured: { current: object | null } = { current: null };
+    const ollamaCaptured: { current: object | null } = { current: null };
+
+    await Promise.all([
+      collectStream(
+        new GeminiAdapter({
+          apiKey: "test-key",
+          fetch: async (_url, init) => {
+            geminiCaptured.current = JSON.parse(init.body as string);
+            return sseResponse(
+              'data: {"responseId":"g","candidates":[{"content":{"role":"model","parts":[{"text":"ok"}]},"finishReason":"STOP","index":0}]}\n',
+            );
+          },
+        }).stream(request),
+      ),
+      collectStream(
+        new OllamaAdapter({
+          fetch: async (_url, init) => {
+            ollamaCaptured.current = JSON.parse(init.body as string);
+            return ndjsonResponse(
+              '{"model":"llama3.2","created_at":"2024-01-01T00:00:00Z","message":{"role":"assistant","content":"ok"},"done":true,"done_reason":"stop"}\n',
+            );
+          },
+        }).stream(request),
+      ),
+    ]);
+
+    const geminiBody = geminiCaptured.current as Record<string, unknown> | null;
+    expect(geminiBody?.contents).toEqual([
+      {
+        role: "user",
+        parts: [{ text: "look" }, { inlineData: { mimeType: "image/png", data: "aGVsbG8=" } }],
+      },
+    ]);
+
+    const ollamaBody = ollamaCaptured.current as Record<string, unknown> | null;
+    expect(ollamaBody?.messages).toEqual([
+      {
+        role: "user",
+        content: "look",
+        images: ["aGVsbG8="],
+      },
+    ]);
+  });
+
+  it("should reject remote image URLs on adapters that cannot map them without fetching", async () => {
     const request = makeRequest({
       input: [
         {
@@ -580,9 +660,17 @@ describe("Adapter contracts", () => {
     });
 
     const adapters = [
-      new MessagesAdapter({ apiKey: "test-key", fetch: mockFetch(() => sseResponse("")) }),
-      new OllamaAdapter({ fetch: mockFetch(() => ndjsonResponse("")) }),
-      new GeminiAdapter({ apiKey: "test-key", fetch: mockFetch(() => sseResponse("")) }),
+      new OllamaAdapter({
+        fetch: async () => {
+          throw new Error("should not fetch");
+        },
+      }),
+      new GeminiAdapter({
+        apiKey: "test-key",
+        fetch: async () => {
+          throw new Error("should not fetch");
+        },
+      }),
     ];
 
     const results = await Promise.allSettled(adapters.map(async (adapter) => collectStream(adapter.stream(request))));

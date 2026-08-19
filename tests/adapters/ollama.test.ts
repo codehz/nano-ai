@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect } from "bun:test";
-import { AIProviderError, AIRequestError, OllamaAdapter, collectStream } from "../../src/index.js";
+import { AIProviderError, OllamaAdapter, collectStream } from "../../src/index.js";
 import type { NormalizedRequest, FetchFn } from "../../src/index.js";
 // ── Helpers ───────────────────────────────────────────────────
 
@@ -465,12 +465,11 @@ describe("OllamaAdapter - request building", () => {
     expect(JSON.parse(capturedBody!).tools).toBeUndefined();
   });
 
-  it("should reject unsupported image content instead of dropping it", async () => {
+  it("should reject remote image URLs instead of fetching them", async () => {
     const adapter = new OllamaAdapter({
-      fetch: async () =>
-        ndjsonResponse(
-          `{"model":"llama3.2","created_at":"2024-01-01T00:00:00Z","message":{"role":"assistant","content":"OK"},"done":true,"done_reason":"stop"}\n`,
-        ),
+      fetch: async () => {
+        throw new Error("should not fetch");
+      },
     });
 
     await expect(
@@ -487,7 +486,69 @@ describe("OllamaAdapter - request building", () => {
           }),
         ),
       ),
-    ).rejects.toBeInstanceOf(AIRequestError);
+    ).rejects.toMatchObject({ code: "UNSUPPORTED_CONTENT_BLOCK" });
+  });
+
+  it("should map user data-URL images onto the Ollama images array", async () => {
+    let capturedBody: string | undefined;
+    const adapter = new OllamaAdapter({
+      fetch: async (_url, init) => {
+        capturedBody = init.body as string;
+        return ndjsonResponse(
+          `{"model":"llama3.2","created_at":"2024-01-01T00:00:00Z","message":{"role":"assistant","content":"OK"},"done":true,"done_reason":"stop"}\n`,
+        );
+      },
+    });
+
+    await collectStream(
+      adapter.stream(
+        makeRequest({
+          input: [
+            {
+              type: "message" as const,
+              role: "user" as const,
+              content: [
+                { type: "text" as const, text: "What is in this image?" },
+                { type: "image" as const, imageUrl: "data:image/png;base64,aGVsbG8=" },
+              ],
+            },
+          ],
+        }),
+      ),
+    );
+
+    const body = JSON.parse(capturedBody!);
+    expect(body.messages).toEqual([
+      {
+        role: "user",
+        content: "What is in this image?",
+        images: ["aGVsbG8="],
+      },
+    ]);
+  });
+
+  it("should still reject assistant image content", async () => {
+    const adapter = new OllamaAdapter({
+      fetch: async () => {
+        throw new Error("should not fetch");
+      },
+    });
+
+    await expect(
+      collectStream(
+        adapter.stream(
+          makeRequest({
+            input: [
+              {
+                type: "message" as const,
+                role: "assistant" as const,
+                content: [{ type: "image" as const, imageUrl: "data:image/png;base64,aGVsbG8=" }],
+              },
+            ],
+          }),
+        ),
+      ),
+    ).rejects.toMatchObject({ code: "UNSUPPORTED_CONTENT_BLOCK" });
   });
 
   it("should warn when request metadata is provided", async () => {

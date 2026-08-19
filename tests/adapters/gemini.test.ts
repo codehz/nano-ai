@@ -610,7 +610,7 @@ describe("GeminiAdapter - request building", () => {
     expect(capturedHeaders?.["X-Custom"]).toBe("yes");
   });
 
-  it("should reject unsupported image content blocks", async () => {
+  it("should reject remote image URLs instead of fetching them", async () => {
     const adapter = new GeminiAdapter({
       apiKey: "test-key",
       fetch: async () => {
@@ -627,6 +627,78 @@ describe("GeminiAdapter - request building", () => {
                 type: "message",
                 role: "user",
                 content: [{ type: "image", imageUrl: "https://example.com/a.png" }],
+              },
+            ],
+          }),
+        ),
+      ),
+    ).rejects.toMatchObject({ code: "UNSUPPORTED_CONTENT_BLOCK" });
+  });
+
+  it("should map user data-URL image content to inlineData parts", async () => {
+    let capturedBody: Record<string, unknown> | undefined;
+    const adapter = new GeminiAdapter({
+      apiKey: "test-key",
+      fetch: async (_url, init) => {
+        capturedBody = JSON.parse(init.body as string) as Record<string, unknown>;
+        return sseResponse(
+          dataLine({
+            responseId: "resp-img",
+            candidates: [
+              {
+                content: { role: "model", parts: [{ text: "ok" }] },
+                finishReason: "STOP",
+                index: 0,
+              },
+            ],
+          }),
+        );
+      },
+    });
+
+    await collectStream(
+      adapter.stream(
+        makeRequest({
+          input: [
+            {
+              type: "message",
+              role: "user",
+              content: [
+                { type: "text", text: "describe" },
+                { type: "image", imageUrl: "data:image/png;base64,aGVsbG8=" },
+              ],
+            },
+          ],
+        }),
+      ),
+    );
+
+    const contents = capturedBody?.contents as Array<{ role: string; parts: Array<Record<string, unknown>> }>;
+    expect(contents).toEqual([
+      {
+        role: "user",
+        parts: [{ text: "describe" }, { inlineData: { mimeType: "image/png", data: "aGVsbG8=" } }],
+      },
+    ]);
+  });
+
+  it("should still reject assistant image content", async () => {
+    const adapter = new GeminiAdapter({
+      apiKey: "test-key",
+      fetch: async () => {
+        throw new Error("should not fetch");
+      },
+    });
+
+    await expect(
+      collectStream(
+        adapter.stream(
+          makeRequest({
+            input: [
+              {
+                type: "message",
+                role: "assistant",
+                content: [{ type: "image", imageUrl: "data:image/png;base64,aGVsbG8=" }],
               },
             ],
           }),

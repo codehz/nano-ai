@@ -15,6 +15,10 @@ export type GeminiPart = {
   text?: string;
   thought?: boolean;
   thoughtSignature?: string;
+  inlineData?: {
+    mimeType: string;
+    data: string;
+  };
   functionCall?: {
     name: string;
     args?: Record<string, unknown>;

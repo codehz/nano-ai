@@ -30,8 +30,15 @@ export type MessagesAPIMessage = {
   content: string | MessagesAPIContentBlock[];
 };
 
+export type MessagesAPIImageMediaType = "image/jpeg" | "image/png" | "image/gif" | "image/webp";
+
+export type MessagesAPIImageSource =
+  | { type: "base64"; media_type: MessagesAPIImageMediaType; data: string }
+  | { type: "url"; url: string };
+
 export type MessagesAPIContentBlock =
   | { type: "text"; text: string }
+  | { type: "image"; source: MessagesAPIImageSource }
   | { type: "thinking"; thinking: string; signature?: string }
   | { type: "redacted_thinking"; data: string }
   | { type: "tool_use"; id: string; name: string; input: Record<string, unknown> }

@@ -745,9 +745,7 @@ describe("ChatCompletionsAdapter - request building", () => {
 
     const body = captured.current as Record<string, unknown> | null;
     const messages = body?.messages as Array<Record<string, unknown>>;
-    expect(messages?.[0]?.content).toEqual([
-      { type: "image_url", image_url: { url: "https://example.com/cat.png" } },
-    ]);
+    expect(messages?.[0]?.content).toEqual([{ type: "image_url", image_url: { url: "https://example.com/cat.png" } }]);
   });
 
   it("should keep text-only user content as a string", async () => {

@@ -94,7 +94,13 @@ export function isChatReplayMessage(value: unknown): value is ChatMessage {
     return false;
   }
   const content = msg.content;
-  if (!(content === null || typeof content === "string" || (Array.isArray(content) && content.every(isChatReplayContentPart)))) {
+  if (
+    !(
+      content === null ||
+      typeof content === "string" ||
+      (Array.isArray(content) && content.every(isChatReplayContentPart))
+    )
+  ) {
     return false;
   }
   if (msg.tool_calls !== undefined) {
