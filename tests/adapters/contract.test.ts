@@ -505,7 +505,70 @@ describe("Adapter contracts", () => {
     expect(new MockAdapter({ handler: async function* () {} }).isSyntheticStream).toBe(true);
   });
 
-  it("should reject unsupported image content consistently across adapters", async () => {
+  it("should map user image content on chat-completions and responses", async () => {
+    const request = makeRequest({
+      input: [
+        {
+          type: "message",
+          role: "user",
+          content: [
+            { type: "text", text: "look" },
+            { type: "image", imageUrl: "https://example.com/cat.png" },
+          ],
+        },
+      ],
+    });
+
+    const chatCaptured: { current: object | null } = { current: null };
+    const responsesCaptured: { current: object | null } = { current: null };
+
+    await Promise.all([
+      collectStream(
+        new ChatCompletionsAdapter({
+          apiKey: "test-key",
+          fetch: async (_url, init) => {
+            chatCaptured.current = JSON.parse(init.body as string);
+            return sseResponse(
+              'data: {"id":"chatcmpl-r","choices":[{"index":0,"delta":{"content":"ok"},"finish_reason":"stop"}]}\n',
+              "data: [DONE]\n",
+            );
+          },
+        }).stream(request),
+      ),
+      collectStream(
+        new ResponsesAdapter({
+          apiKey: "test-key",
+          fetch: async (_url, init) => {
+            responsesCaptured.current = JSON.parse(init.body as string);
+            return sseResponse(
+              `event: response.completed\ndata: ${JSON.stringify({ response: { id: "r", model: "gpt-4o", output: [] } })}\n\n`,
+            );
+          },
+        }).stream(request),
+      ),
+    ]);
+
+    const chatBody = chatCaptured.current as Record<string, unknown> | null;
+    const chatMessages = chatBody?.messages as Array<Record<string, unknown>>;
+    expect(chatMessages?.[0]?.content).toEqual([
+      { type: "text", text: "look" },
+      { type: "image_url", image_url: { url: "https://example.com/cat.png" } },
+    ]);
+
+    const responsesBody = responsesCaptured.current as Record<string, unknown> | null;
+    expect(responsesBody?.input).toEqual([
+      {
+        type: "message",
+        role: "user",
+        content: [
+          { type: "input_text", text: "look" },
+          { type: "input_image", image_url: "https://example.com/cat.png" },
+        ],
+      },
+    ]);
+  });
+
+  it("should reject unsupported image content on adapters without vision mapping", async () => {
     const request = makeRequest({
       input: [
         {
@@ -517,8 +580,6 @@ describe("Adapter contracts", () => {
     });
 
     const adapters = [
-      new ResponsesAdapter({ apiKey: "test-key", fetch: mockFetch(() => sseResponse("")) }),
-      new ChatCompletionsAdapter({ apiKey: "test-key", fetch: mockFetch(() => sseResponse("")) }),
       new MessagesAdapter({ apiKey: "test-key", fetch: mockFetch(() => sseResponse("")) }),
       new OllamaAdapter({ fetch: mockFetch(() => ndjsonResponse("")) }),
       new GeminiAdapter({ apiKey: "test-key", fetch: mockFetch(() => sseResponse("")) }),

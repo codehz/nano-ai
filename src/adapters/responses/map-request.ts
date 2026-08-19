@@ -21,6 +21,8 @@ import { mapServerTools } from "./map-server-tools.js";
 import type {
   ResponsesAPIRequest,
   ResponsesCompactAPIRequest,
+  ResponsesEasyMessage,
+  ResponsesInputContentPart,
   ResponsesInputItem,
   ResponsesReasoningInput,
   ResponsesTool,
@@ -46,9 +48,36 @@ function readNonEmptyString(value: unknown, maxLen = 256): string | undefined {
   return value;
 }
 
-/** 将 canonical text/json blocks 压成 EasyInputMessage 的 string content。 */
-function messageContentAsString(blocks: ContentBlock[], field: string): string {
-  return mapper.textFromBlocks(blocks, field);
+/**
+ * EasyInputMessage content：
+ * - 非 user：继续 text/json → string
+ * - user 且含 image：input_text / input_image parts（不发 detail）
+ * - user 纯 text/json：仍发 string，避免无谓 shape churn
+ */
+function mapResponsesMessageContent(
+  role: ResponsesEasyMessage["role"],
+  blocks: ContentBlock[],
+  field: string,
+): string | ResponsesInputContentPart[] {
+  if (role !== "user") {
+    return mapper.textFromBlocks(blocks, field);
+  }
+
+  mapper.ensureBlocks(blocks, field, ["text", "json", "image"], "only text/json/image blocks are supported");
+  const hasImage = blocks.some((block) => block.type === "image");
+  if (!hasImage) {
+    return mapper.textFromBlocks(blocks, field);
+  }
+
+  return blocks.map((block): ResponsesInputContentPart => {
+    if (block.type === "text") return { type: "input_text", text: block.text };
+    if (block.type === "json") return { type: "input_text", text: JSON.stringify(block.json) };
+    if (block.type === "image") return { type: "input_image", image_url: block.imageUrl };
+    throw new AIRequestError(
+      `${mapper.kind} does not support ${field} block of type "${block.type}"; only text/json/image blocks are supported`,
+      "UNSUPPORTED_CONTENT_BLOCK",
+    );
+  });
 }
 
 function mapReasoningInput(item: ReasoningItem, index: number): ResponsesReasoningInput {
@@ -155,12 +184,12 @@ function mapResponsesCore(
   for (const item of request.input) {
     switch (item.type) {
       case "message": {
-        // EasyInputMessage：string content 对 user/assistant 都合法，且最不易触发 ModelInput 反序列化失败。
+        // EasyInputMessage：纯 text/json 仍发 string；含 image 时才升格为 input_* parts。
         // 切勿发送 { type: "text" } —— 官方 content part 是 input_text / output_text。
         input.push({
           type: "message",
           role: item.role,
-          content: messageContentAsString(item.content, `input message (${item.role}) content`),
+          content: mapResponsesMessageContent(item.role, item.content, `input message (${item.role}) content`),
         });
         break;
       }

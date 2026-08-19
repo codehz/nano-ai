@@ -25,9 +25,18 @@ export type ChatRequest = {
   n: 1;
 };
 
+export type ChatTextPart = { type: "text"; text: string };
+
+export type ChatImagePart = {
+  type: "image_url";
+  image_url: { url: string; detail?: "auto" | "low" | "high" };
+};
+
+export type ChatContentPart = ChatTextPart | ChatImagePart;
+
 export type ChatMessage = {
   role: "system" | "user" | "assistant" | "tool";
-  content: string | null;
+  content: string | null | ChatContentPart[];
   tool_calls?: ChatToolCall[];
   tool_call_id?: string;
   name?: string;

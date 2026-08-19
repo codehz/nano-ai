@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect } from "bun:test";
-import { AIProviderError, AIRequestError, ResponsesAdapter, collectStream } from "../../src/index.js";
+import { AIProviderError, ResponsesAdapter, collectStream } from "../../src/index.js";
 import type { NormalizedRequest, FetchFn } from "../../src/index.js";
 // ── Helpers ───────────────────────────────────────────────────
 
@@ -651,7 +651,78 @@ describe("ResponsesAdapter - request building", () => {
     ]);
   });
 
-  it("should reject unsupported image content instead of sending empty text", async () => {
+  it("should map user text+image content to input_text and input_image parts", async () => {
+    const { captured, fetch } = captureRequest();
+    const adapter = new ResponsesAdapter({ apiKey: "test-key", fetch });
+
+    await collectStream(
+      adapter.stream(
+        makeRequest({
+          input: [
+            {
+              type: "message" as const,
+              role: "user" as const,
+              content: [
+                { type: "text" as const, text: "What is in this image?" },
+                { type: "image" as const, imageUrl: "https://example.com/cat.png" },
+              ],
+            },
+          ],
+        }),
+      ),
+    );
+
+    const body = captured.current as Record<string, unknown> | null;
+    expect(body?.input).toEqual([
+      {
+        type: "message",
+        role: "user",
+        content: [
+          { type: "input_text", text: "What is in this image?" },
+          { type: "input_image", image_url: "https://example.com/cat.png" },
+        ],
+      },
+    ]);
+  });
+
+  it("should map image-only user content to a single input_image part", async () => {
+    const { captured, fetch } = captureRequest();
+    const adapter = new ResponsesAdapter({ apiKey: "test-key", fetch });
+
+    await collectStream(
+      adapter.stream(
+        makeRequest({
+          input: [
+            {
+              type: "message" as const,
+              role: "user" as const,
+              content: [{ type: "image" as const, imageUrl: "https://example.com/cat.png" }],
+            },
+          ],
+        }),
+      ),
+    );
+
+    const body = captured.current as Record<string, unknown> | null;
+    expect(body?.input).toEqual([
+      {
+        type: "message",
+        role: "user",
+        content: [{ type: "input_image", image_url: "https://example.com/cat.png" }],
+      },
+    ]);
+  });
+
+  it("should keep text-only user content as a string", async () => {
+    const { captured, fetch } = captureRequest();
+    const adapter = new ResponsesAdapter({ apiKey: "test-key", fetch });
+
+    await collectStream(adapter.stream(makeRequest()));
+    const body = captured.current as Record<string, unknown> | null;
+    expect(body?.input).toEqual([{ type: "message", role: "user", content: "Hello" }]);
+  });
+
+  it("should still reject assistant image content", async () => {
     const { fetch } = captureRequest();
     const adapter = new ResponsesAdapter({ apiKey: "test-key", fetch });
 
@@ -662,14 +733,57 @@ describe("ResponsesAdapter - request building", () => {
             input: [
               {
                 type: "message" as const,
-                role: "user" as const,
+                role: "assistant" as const,
                 content: [{ type: "image" as const, imageUrl: "https://example.com/cat.png" }],
               },
             ],
           }),
         ),
       ),
-    ).rejects.toBeInstanceOf(AIRequestError);
+    ).rejects.toMatchObject({ code: "UNSUPPORTED_CONTENT_BLOCK" });
+  });
+
+  it("should map user image content the same way for compact requests", async () => {
+    let capturedBody: Record<string, unknown> | undefined;
+    const adapter = new ResponsesAdapter({
+      apiKey: "test-key",
+      fetch: async (_url, init) => {
+        capturedBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        return new Response(
+          JSON.stringify({
+            id: "resp_compact_img",
+            object: "response.compaction",
+            output: [{ type: "message", role: "assistant", content: "ok" }],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      },
+    });
+
+    await adapter.compress({
+      model: "gpt-4o",
+      input: [
+        {
+          type: "message",
+          role: "user",
+          content: [
+            { type: "text", text: "Describe" },
+            { type: "image", imageUrl: "https://example.com/cat.png" },
+          ],
+        },
+      ],
+    });
+
+    expect(capturedBody?.input).toEqual([
+      {
+        type: "message",
+        role: "user",
+        content: [
+          { type: "input_text", text: "Describe" },
+          { type: "input_image", image_url: "https://example.com/cat.png" },
+        ],
+      },
+    ]);
   });
 
   it("should prefer canonical replay items over opaque previous_response_id", async () => {

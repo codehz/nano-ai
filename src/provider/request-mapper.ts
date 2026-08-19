@@ -91,7 +91,7 @@ export class NormalizedRequestMapper {
     return undefined;
   }
 
-  private ensureBlocks(
+  ensureBlocks(
     blocks: ContentBlock[],
     field: string,
     supportedTypes: ReadonlyArray<ContentBlock["type"]>,

@@ -3,17 +3,19 @@
  */
 
 import { AIRequestError } from "../../runtime/errors.js";
+import { contentBlocksToText } from "../../canonical/index.js";
 import { acceptOpaqueReplay } from "../../provider/opaque-replay.js";
 import { NormalizedRequestMapper } from "../../provider/request-mapper.js";
 import { mapChatCompletionsReasoningEffort } from "../../provider/reasoning.js";
 import { mapOpenAiFunctionTool } from "../../provider/openai-tools.js";
 import { OPAQUE_SOURCE } from "../../provider/opaque-sources.js";
 
-import type { NormalizedRequest } from "../../types/index.js";
+import type { ContentBlock, NormalizedRequest } from "../../types/index.js";
 import {
   REASONING_FIELDS,
   type ChatRequest,
   type ChatMessage,
+  type ChatContentPart,
   type ChatToolCall,
   type ChatChunkChoice,
   type PendingToolCall,
@@ -55,6 +57,25 @@ export function extractReasoningDeltas(
   return deltas;
 }
 
+function isChatReplayContentPart(value: unknown): value is ChatContentPart {
+  if (!value || typeof value !== "object") return false;
+  const part = value as Record<string, unknown>;
+  if (part.type === "text") {
+    return typeof part.text === "string";
+  }
+  if (part.type === "image_url") {
+    const imageUrl = part.image_url;
+    if (!imageUrl || typeof imageUrl !== "object") return false;
+    const image = imageUrl as Record<string, unknown>;
+    if (typeof image.url !== "string") return false;
+    if (image.detail !== undefined && image.detail !== "auto" && image.detail !== "low" && image.detail !== "high") {
+      return false;
+    }
+    return true;
+  }
+  return false;
+}
+
 export function isChatReplayToolCall(value: unknown): value is ChatToolCall {
   if (!value || typeof value !== "object") return false;
   const entry = value as Record<string, unknown>;
@@ -72,7 +93,8 @@ export function isChatReplayMessage(value: unknown): value is ChatMessage {
   if (role !== "system" && role !== "user" && role !== "assistant" && role !== "tool") {
     return false;
   }
-  if (!(msg.content === null || typeof msg.content === "string")) {
+  const content = msg.content;
+  if (!(content === null || typeof content === "string" || (Array.isArray(content) && content.every(isChatReplayContentPart)))) {
     return false;
   }
   if (msg.tool_calls !== undefined) {
@@ -134,6 +156,37 @@ export function buildAssistantReplayMessage(params: {
   return replayMessage;
 }
 
+function mapChatUserContent(blocks: ContentBlock[], field: string): string | null | ChatContentPart[] {
+  mapper.ensureBlocks(blocks, field, ["text", "json", "image"], "only text/json/image blocks are supported");
+  const hasImage = blocks.some((block) => block.type === "image");
+  if (!hasImage) {
+    const text = contentBlocksToText(blocks);
+    return text || null;
+  }
+
+  return blocks.map((block): ChatContentPart => {
+    if (block.type === "text") return { type: "text", text: block.text };
+    if (block.type === "json") return { type: "text", text: JSON.stringify(block.json) };
+    if (block.type === "image") return { type: "image_url", image_url: { url: block.imageUrl } };
+    throw new AIRequestError(
+      `${mapper.kind} does not support ${field} block of type "${block.type}"; only text/json/image blocks are supported`,
+      "UNSUPPORTED_CONTENT_BLOCK",
+    );
+  });
+}
+
+function mapChatMessageContent(
+  role: ChatMessage["role"],
+  blocks: ContentBlock[],
+  field: string,
+): string | null | ChatContentPart[] {
+  if (role === "user") {
+    return mapChatUserContent(blocks, field);
+  }
+  const text = mapper.textFromBlocks(blocks, field);
+  return text || null;
+}
+
 export function buildChatCompletionsRequest(
   request: NormalizedRequest,
   options?: { maxOpaquePayloadBytes?: number },
@@ -151,8 +204,10 @@ export function buildChatCompletionsRequest(
     switch (item.type) {
       case "message": {
         const role = item.role;
-        const text = mapper.textFromBlocks(item.content, `input message (${item.role}) content`);
-        messages.push({ role, content: text || null });
+        messages.push({
+          role,
+          content: mapChatMessageContent(role, item.content, `input message (${item.role}) content`),
+        });
         break;
       }
       case "tool_call": {

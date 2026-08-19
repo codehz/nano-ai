@@ -691,7 +691,105 @@ describe("ChatCompletionsAdapter - request building", () => {
     expect(capturedBody?.temperature).toBe(0.1);
   });
 
-  it("should reject unsupported image content instead of silently dropping it", async () => {
+  it("should map user text+image content to chat content parts", async () => {
+    const { captured, fetch } = captureRequest();
+    const adapter = new ChatCompletionsAdapter({ apiKey: "test-key", fetch });
+
+    await collectStream(
+      adapter.stream(
+        makeRequest({
+          input: [
+            {
+              type: "message" as const,
+              role: "user" as const,
+              content: [
+                { type: "text" as const, text: "What is in this image?" },
+                { type: "image" as const, imageUrl: "https://example.com/cat.png" },
+              ],
+            },
+          ],
+        }),
+      ),
+    );
+
+    const body = captured.current as Record<string, unknown> | null;
+    const messages = body?.messages as Array<Record<string, unknown>>;
+    expect(messages).toEqual([
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "What is in this image?" },
+          { type: "image_url", image_url: { url: "https://example.com/cat.png" } },
+        ],
+      },
+    ]);
+  });
+
+  it("should map image-only user content to a single image_url part", async () => {
+    const { captured, fetch } = captureRequest();
+    const adapter = new ChatCompletionsAdapter({ apiKey: "test-key", fetch });
+
+    await collectStream(
+      adapter.stream(
+        makeRequest({
+          input: [
+            {
+              type: "message" as const,
+              role: "user" as const,
+              content: [{ type: "image" as const, imageUrl: "https://example.com/cat.png" }],
+            },
+          ],
+        }),
+      ),
+    );
+
+    const body = captured.current as Record<string, unknown> | null;
+    const messages = body?.messages as Array<Record<string, unknown>>;
+    expect(messages?.[0]?.content).toEqual([
+      { type: "image_url", image_url: { url: "https://example.com/cat.png" } },
+    ]);
+  });
+
+  it("should keep text-only user content as a string", async () => {
+    const { captured, fetch } = captureRequest();
+    const adapter = new ChatCompletionsAdapter({ apiKey: "test-key", fetch });
+
+    await collectStream(adapter.stream(makeRequest()));
+    const body = captured.current as Record<string, unknown> | null;
+    const messages = body?.messages as Array<Record<string, unknown>>;
+    expect(messages?.[0]?.content).toBe("Hello");
+  });
+
+  it("should stringify json blocks into text parts when an image is present", async () => {
+    const { captured, fetch } = captureRequest();
+    const adapter = new ChatCompletionsAdapter({ apiKey: "test-key", fetch });
+
+    await collectStream(
+      adapter.stream(
+        makeRequest({
+          input: [
+            {
+              type: "message" as const,
+              role: "user" as const,
+              content: [
+                { type: "json" as const, json: { ask: "describe" } },
+                { type: "image" as const, imageUrl: "https://example.com/cat.png" },
+              ],
+            },
+          ],
+        }),
+      ),
+    );
+
+    const body = captured.current as Record<string, unknown> | null;
+    const messages = body?.messages as Array<Record<string, unknown>>;
+    expect(messages?.[0]?.content).toEqual([
+      { type: "text", text: '{"ask":"describe"}' },
+      { type: "image_url", image_url: { url: "https://example.com/cat.png" } },
+    ]);
+  });
+
+  it("should still reject assistant image content", async () => {
     const { fetch } = captureRequest();
     const adapter = new ChatCompletionsAdapter({ apiKey: "test-key", fetch });
 
@@ -702,14 +800,95 @@ describe("ChatCompletionsAdapter - request building", () => {
             input: [
               {
                 type: "message" as const,
-                role: "user" as const,
+                role: "assistant" as const,
                 content: [{ type: "image" as const, imageUrl: "https://example.com/cat.png" }],
               },
             ],
           }),
         ),
       ),
-    ).rejects.toBeInstanceOf(AIRequestError);
+    ).rejects.toMatchObject({ code: "UNSUPPORTED_CONTENT_BLOCK" });
+  });
+
+  it("should accept multimodal parts in opaque chat replay messages", async () => {
+    const { captured, fetch } = captureRequest();
+    const adapter = new ChatCompletionsAdapter({ apiKey: "test-key", fetch });
+
+    await collectStream(
+      adapter.stream(
+        makeRequest({
+          input: [
+            {
+              type: "opaque" as const,
+              source: "chat.completions",
+              purpose: "replay",
+              payload: {
+                messages: [
+                  {
+                    role: "user",
+                    content: [
+                      { type: "text", text: "see this" },
+                      { type: "image_url", image_url: { url: "https://example.com/cat.png" } },
+                    ],
+                  },
+                ],
+              },
+            },
+            {
+              type: "message" as const,
+              role: "user" as const,
+              content: [{ type: "text" as const, text: "follow up" }],
+            },
+          ],
+        }),
+      ),
+    );
+
+    const body = captured.current as Record<string, unknown> | null;
+    const messages = body?.messages as Array<Record<string, unknown>>;
+    expect(messages).toEqual([
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "see this" },
+          { type: "image_url", image_url: { url: "https://example.com/cat.png" } },
+        ],
+      },
+      { role: "user", content: "follow up" },
+    ]);
+  });
+
+  it("should reject opaque chat replay with bare-string image_url", async () => {
+    const adapter = new ChatCompletionsAdapter({
+      apiKey: "test-key",
+      fetch: async () => {
+        throw new Error("fetch should not be called");
+      },
+    });
+
+    await expect(
+      collectStream(
+        adapter.stream(
+          makeRequest({
+            input: [
+              {
+                type: "opaque" as const,
+                source: "chat.completions",
+                purpose: "replay",
+                payload: {
+                  messages: [
+                    {
+                      role: "user",
+                      content: [{ type: "image_url", image_url: "https://example.com/cat.png" }],
+                    },
+                  ],
+                },
+              },
+            ],
+          }),
+        ),
+      ),
+    ).rejects.toMatchObject({ code: "INVALID_OPAQUE_REPLAY" });
   });
 
   it("should replace canonical replay with raw assistant turn when opaque replay is present", async () => {
