@@ -101,13 +101,13 @@ export class AdapterAuxiliaryState {
       );
     }
 
-    if (this.request.include?.usage !== "off" && !built.usage) {
+    if (this.request.include?.usage === "required" && !built.usage) {
       events.push(
         factory.responseWarning("Usage information was not provided by the provider", WarningCode.USAGE_MISSING),
       );
     }
 
-    if (this.request.include?.billing !== "off") {
+    if (this.request.include?.billing === "required") {
       if (!built.billing) {
         events.push(
           factory.responseWarning("Billing information was not provided by the provider", WarningCode.BILLING_MISSING),
@@ -115,6 +115,8 @@ export class AdapterAuxiliaryState {
       } else if (built.billing.isEstimated) {
         events.push(factory.responseWarning("Billing amount is an estimate", WarningCode.BILLING_ESTIMATED));
       }
+    } else if (built.billing?.isEstimated) {
+      events.push(factory.responseWarning("Billing amount is an estimate", WarningCode.BILLING_ESTIMATED));
     }
 
     return {

@@ -683,22 +683,21 @@ describe("Adapter contracts", () => {
     });
   });
 
-  it("should suppress billing warnings consistently when include.billing is off", async () => {
+  it("should suppress missing usage and billing warnings in best-effort mode", async () => {
     const results = await Promise.all(
-      buildMissingUsageAdapters().map(async ({ adapter }) =>
-        collectStream(adapter.stream(makeRequest({ include: { billing: "off" } }))),
-      ),
+      buildMissingUsageAdapters().map(async ({ adapter }) => collectStream(adapter.stream(makeRequest()))),
     );
 
     results.forEach((result) => {
-      expect(result.warnings?.some((warning) => warning.message.includes("Billing information"))).toBeFalsy();
+      expect(result.warnings?.some((warning) => warning.code === WarningCode.USAGE_MISSING)).toBeFalsy();
+      expect(result.warnings?.some((warning) => warning.code === WarningCode.BILLING_MISSING)).toBeFalsy();
     });
   });
 
-  it("should emit stable missing usage and billing warning codes across adapters", async () => {
+  it("should emit required missing usage and billing warning codes across adapters", async () => {
     const eventsList = await Promise.all(
       buildMissingUsageAdapters().map(async ({ adapter }) =>
-        collectEvents(adapter.stream(makeRequest({ include: { providerMetadata: "off" } }))),
+        collectEvents(adapter.stream(makeRequest({ include: { usage: "required", billing: "required" } }))),
       ),
     );
 
@@ -709,8 +708,20 @@ describe("Adapter contracts", () => {
         )
         .map((event) => event.code);
 
-      expect(warningCodes).toContain("USAGE_MISSING");
-      expect(warningCodes).toContain("BILLING_MISSING");
+      expect(warningCodes).toContain(WarningCode.USAGE_MISSING);
+      expect(warningCodes).toContain(WarningCode.BILLING_MISSING);
+    });
+  });
+
+  it("should suppress billing warnings consistently when include.billing is off", async () => {
+    const results = await Promise.all(
+      buildMissingUsageAdapters().map(async ({ adapter }) =>
+        collectStream(adapter.stream(makeRequest({ include: { billing: "off" } }))),
+      ),
+    );
+
+    results.forEach((result) => {
+      expect(result.warnings?.some((warning) => warning.message.includes("Billing information"))).toBeFalsy();
     });
   });
 

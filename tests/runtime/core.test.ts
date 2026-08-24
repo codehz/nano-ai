@@ -135,6 +135,10 @@ describe("validateRequest", () => {
     const issues = validateRequest(validRequest({ include: "bad" as unknown as AIRequest["include"] }));
     expect(issues.some((i) => i.code === "INCLUDE_INVALID")).toBe(true);
   });
+  it("should accept required usage and billing include modes", () => {
+    const issues = validateRequest(validRequest({ include: { usage: "required", billing: "required" } }));
+    expect(issues.filter((issue) => issue.field.startsWith("include."))).toHaveLength(0);
+  });
 
   it("should detect invalid metadata object", () => {
     const issues = validateRequest(validRequest({ metadata: "bad" as unknown as AIRequest["metadata"] }));
@@ -391,6 +395,16 @@ describe("normalizeRequest", () => {
     expect(result.include).toEqual({
       usage: "best_effort",
       billing: "best_effort",
+      providerMetadata: "best_effort",
+    });
+  });
+  it("should preserve required include modes", () => {
+    const result = normalizeRequest(validRequest({ include: { usage: "required", billing: "required" } }), {
+      model: "gpt-4",
+    });
+    expect(result.include).toEqual({
+      usage: "required",
+      billing: "required",
       providerMetadata: "best_effort",
     });
   });

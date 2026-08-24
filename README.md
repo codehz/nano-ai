@@ -97,7 +97,11 @@ type AIRequest = {
   temperature?: number; // provider/model-defined generation parameter
   maxOutputTokens?: number; // 最大输出 token
   reasoningLevel?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max"; // 可移植思考力度
-  include?: { usage?; billing?; providerMetadata? };
+  include?: {
+    usage?: "off" | "best_effort" | "required";
+    billing?: "off" | "best_effort" | "required";
+    providerMetadata?: "off" | "best_effort";
+  };
 };
 ```
 
@@ -530,7 +534,9 @@ const r2 = await collectStream(client.stream({ input, tools }));
 
 ## 辅助信息采集
 
-usage / billing / providerMetadata 由 adapter 在流结束时经 `response.auxiliary` 与 `AIResponse` 字段交付。`AuxiliaryCollector` 是 provider 内部实现细节，`0.5.0` 起不再从根入口导出。`lookup` / `postprocessBilling` 为 experimental 扩展点，库内 HTTP adapter 默认未接线。
+`usage` / `billing` / `providerMetadata` 由 adapter 在流结束时经 `response.auxiliary` 与 `AIResponse` 字段交付。`AuxiliaryCollector` 是 provider 内部实现细节，`0.5.0` 起不再从根入口导出。`lookup` / `postprocessBilling` 为 experimental 扩展点，库内 HTTP adapter 默认未接线。
+
+`usage` 与 `billing` 的 `include` 支持三种模式：`off` 表示不采集；`best_effort`（默认）表示尽可能采集，缺失时静默；`required` 表示缺失时发出 `USAGE_MISSING` 或 `BILLING_MISSING` warning。估算 billing 仍会发出 `BILLING_ESTIMATED` warning。
 
 ## 开发命令
 

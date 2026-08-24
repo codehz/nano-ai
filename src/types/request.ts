@@ -63,8 +63,8 @@ export type ServerToolDefinition = WebSearchServerTool | CodeExecutionServerTool
 // ── include 控制 ──────────────────────────────────────────────
 
 export type IncludeSettings = {
-  usage?: "off" | "best_effort";
-  billing?: "off" | "best_effort";
+  usage?: "off" | "best_effort" | "required";
+  billing?: "off" | "best_effort" | "required";
   providerMetadata?: "off" | "best_effort";
 };
 

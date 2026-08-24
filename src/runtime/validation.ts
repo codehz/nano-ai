@@ -18,7 +18,7 @@ export type ValidationIssue = {
 const MESSAGE_ROLES = new Set(["user", "assistant"]);
 const REASONING_VISIBILITIES = new Set(["full", "summary", "redacted", "opaque"]);
 const TOOL_RESULT_OUTCOMES = new Set(["success", "error", "rejected"]);
-const INCLUDE_MODES = new Set(["off", "best_effort"]);
+const INCLUDE_MODES = new Set(["off", "best_effort", "required"]);
 const PROMPT_CACHE_MODES = new Set(["off", "auto", "explicit"]);
 const CACHE_RETENTION = new Set(["in_memory", "24h"]);
 
@@ -599,15 +599,22 @@ export function validateInclude(include: unknown, issues: ValidationIssue[]): vo
     pushIssue(issues, "include", "INCLUDE_INVALID", "include must be an object");
     return;
   }
-  if (include.usage !== undefined && (typeof include.usage !== "string" || !INCLUDE_MODES.has(include.usage))) {
-    pushIssue(issues, "include.usage", "INCLUDE_USAGE_INVALID", "include.usage must be off or best_effort");
-  }
-  if (include.billing !== undefined && (typeof include.billing !== "string" || !INCLUDE_MODES.has(include.billing))) {
-    pushIssue(issues, "include.billing", "INCLUDE_BILLING_INVALID", "include.billing must be off or best_effort");
+  for (const [field, value] of [
+    ["usage", include.usage],
+    ["billing", include.billing],
+  ] as const) {
+    if (value !== undefined && (typeof value !== "string" || !INCLUDE_MODES.has(value))) {
+      pushIssue(
+        issues,
+        `include.${field}`,
+        `INCLUDE_${field.toUpperCase()}_INVALID`,
+        `include.${field} must be off, best_effort, or required`,
+      );
+    }
   }
   if (
     include.providerMetadata !== undefined &&
-    (typeof include.providerMetadata !== "string" || !INCLUDE_MODES.has(include.providerMetadata))
+    (typeof include.providerMetadata !== "string" || !["off", "best_effort"].includes(include.providerMetadata))
   ) {
     pushIssue(
       issues,
