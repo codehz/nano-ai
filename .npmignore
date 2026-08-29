@@ -16,6 +16,9 @@ e2e/
 # 示例
 examples/
 
+# 本地调试
+scripts/
+
 # 文档
 docs/
 
