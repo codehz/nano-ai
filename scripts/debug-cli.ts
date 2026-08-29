@@ -17,6 +17,7 @@ import {
   AIProviderError,
   AIRequestError,
   ChatCompletionsAdapter,
+  DeltaCompletionsAdapter,
   GeminiAdapter,
   MessagesAdapter,
   OllamaAdapter,
@@ -38,10 +39,18 @@ import type {
   ToolDefinition,
 } from "../src/index.js";
 
-const HTTP_KINDS = ["chat-completions", "messages", "responses", "ollama", "gemini"] as const;
+const HTTP_KINDS = [
+  "delta-completions",
+  "chat-completions",
+  "messages",
+  "responses",
+  "ollama",
+  "gemini",
+] as const;
 type HttpKind = (typeof HTTP_KINDS)[number];
 
 const KIND_ALIASES: Record<string, HttpKind> = {
+  "delta-completions": "delta-completions",
   "chat-completions": "chat-completions",
   chat: "chat-completions",
   openai: "chat-completions",
@@ -91,7 +100,9 @@ function envJson(name: string): unknown {
   try {
     return JSON.parse(raw);
   } catch (error) {
-    fail(`${name} is not valid JSON: ${error instanceof Error ? error.message : String(error)}`);
+    fail(
+      `${name} is not valid JSON: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
 }
 
@@ -129,10 +140,15 @@ function requireApiKey(kind: HttpKind, apiKey: string | undefined): string {
 }
 
 function resolveKind(raw: string | undefined): HttpKind {
-  if (raw == null) fail("NANO_AI_KIND is required (chat-completions | messages | responses | ollama | gemini)");
+  if (raw == null)
+    fail(
+      "NANO_AI_KIND is required (chat-completions | messages | responses | ollama | gemini)",
+    );
   const kind = KIND_ALIASES[raw.toLowerCase()];
   if (kind == null) {
-    fail(`unknown NANO_AI_KIND=${raw}; expected ${HTTP_KINDS.join(" | ")} (or aliases chat/anthropic/gemini/...)`);
+    fail(
+      `unknown NANO_AI_KIND=${raw}; expected ${HTTP_KINDS.join(" | ")} (or aliases chat/anthropic/gemini/...)`,
+    );
   }
   return kind;
 }
@@ -191,7 +207,8 @@ function loadConfig(): DebugConfig {
     reasoningLevel: resolveReasoningLevel(),
     include: resolveInclude(),
     tools: envJson("NANO_AI_TOOLS") as ToolDefinition[] | undefined,
-    serverTools: envJson("NANO_AI_SERVER_TOOLS") as ServerToolDefinition[] | undefined,
+    serverTools: envJson("NANO_AI_SERVER_TOOLS") as
+      ServerToolDefinition[] | undefined,
   };
 }
 
@@ -204,10 +221,25 @@ function createAdapter(config: DebugConfig): BackendAdapter {
   };
 
   switch (config.kind) {
+    case "delta-completions":{
+      const baseUrl = http.baseUrl;
+      if (!baseUrl) throw new Error("delta-completions requires baseUrl")
+      return new DeltaCompletionsAdapter({
+        ...http,
+        baseUrl,
+        apiKey: requireApiKey(config.kind, config.apiKey),
+      });
+    }
     case "chat-completions":
-      return new ChatCompletionsAdapter({ ...http, apiKey: requireApiKey(config.kind, config.apiKey) });
+      return new ChatCompletionsAdapter({
+        ...http,
+        apiKey: requireApiKey(config.kind, config.apiKey),
+      });
     case "responses":
-      return new ResponsesAdapter({ ...http, apiKey: requireApiKey(config.kind, config.apiKey) });
+      return new ResponsesAdapter({
+        ...http,
+        apiKey: requireApiKey(config.kind, config.apiKey),
+      });
     case "messages":
       return new MessagesAdapter({
         ...http,
@@ -215,7 +247,10 @@ function createAdapter(config: DebugConfig): BackendAdapter {
         apiVersion: config.apiVersion,
       });
     case "gemini":
-      return new GeminiAdapter({ ...http, apiKey: requireApiKey(config.kind, config.apiKey) });
+      return new GeminiAdapter({
+        ...http,
+        apiKey: requireApiKey(config.kind, config.apiKey),
+      });
     case "ollama":
       return new OllamaAdapter(http);
   }
@@ -357,7 +392,11 @@ async function repl(config: DebugConfig, client: AIClient): Promise<void> {
   let abort: AbortController | undefined;
   let running = false;
 
-  const rl = readline.createInterface({ input: stdin, output: stdout, terminal: stdin.isTTY });
+  const rl = readline.createInterface({
+    input: stdin,
+    output: stdout,
+    terminal: stdin.isTTY,
+  });
 
   rl.on("SIGINT", () => {
     if (running && abort && !abort.signal.aborted) {
@@ -368,7 +407,9 @@ async function repl(config: DebugConfig, client: AIClient): Promise<void> {
     rl.close();
   });
 
-  stdout.write(`nano-ai debug-cli  kind=${config.kind}  model=${config.model}\n`);
+  stdout.write(
+    `nano-ai debug-cli  kind=${config.kind}  model=${config.model}\n`,
+  );
   stdout.write(`type a prompt, or /help\n`);
 
   const handleLine = async (line: string): Promise<boolean> => {
