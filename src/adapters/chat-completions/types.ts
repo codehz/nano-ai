@@ -4,13 +4,14 @@
 
 import type { HttpAdapterOptions } from "../../provider/http-adapter.js";
 
-/** apiKey 必填；默认 baseUrl https://api.openai.com/v1 */
+/** OpenAI Chat Completions adapter 配置；apiKey 必填。 */
 export type ChatCompletionsAdapterOptions = HttpAdapterOptions & {
   apiKey: string;
 };
 
 // ── Chat API 请求类型 ─────────────────────────────────────────
 
+/** OpenAI Chat Completions API 的流式请求体。 */
 export type ChatRequest = {
   model: string;
   messages: ChatMessage[];
@@ -27,15 +28,19 @@ export type ChatRequest = {
   n: 1;
 };
 
+/** Chat Completions 文本内容 part。 */
 export type ChatTextPart = { type: "text"; text: string };
 
+/** Chat Completions 图片内容 part。 */
 export type ChatImagePart = {
   type: "image_url";
   image_url: { url: string; detail?: "auto" | "low" | "high" };
 };
 
+/** Chat Completions 内容 part 联合。 */
 export type ChatContentPart = ChatTextPart | ChatImagePart;
 
+/** Chat Completions 消息。 */
 export type ChatMessage = {
   role: "system" | "user" | "assistant" | "tool";
   content: string | null | ChatContentPart[];
@@ -45,12 +50,14 @@ export type ChatMessage = {
   [key: string]: unknown;
 };
 
+/** Chat Completions 工具调用。 */
 export type ChatToolCall = {
   id: string;
   type: "function";
   function: { name: string; arguments: string };
 };
 
+/** Chat Completions 客户端工具。 */
 export type ChatTool = {
   type: "function";
   function: { name: string; description?: string; parameters: Record<string, unknown> };

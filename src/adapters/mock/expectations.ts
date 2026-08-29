@@ -6,6 +6,7 @@ import { AIRequestError } from "../../runtime/errors.js";
 import type { ContentBlock, InputItem, NormalizedRequest, ReplayItem, ToolResultItem } from "../../types/index.js";
 import type { MockHandlerContext, MockInputExpectation, MockRequestExpectation } from "./types.js";
 
+/** 按 MockRequestExpectation 校验规范化请求；失败时抛出断言错误。 */
 export function assertMockRequest(
   request: NormalizedRequest,
   expectation: MockRequestExpectation,
@@ -78,6 +79,7 @@ export function assertMockRequest(
     }
   }
 }
+/** 断言上一轮 replay 按顺序包含在当前输入中。 */
 
 export function assertReplayIncluded(input: readonly InputItem[], replay: readonly ReplayItem[], prefix: string): void {
   const fingerprints = input.map(fingerprintItem);
@@ -95,6 +97,7 @@ export function assertReplayIncluded(input: readonly InputItem[], replay: readon
     cursor = foundIndex + 1;
   }
 }
+/** 按顺序匹配输入 item。 */
 
 export function assertOrderedItems(
   input: readonly InputItem[],
@@ -123,6 +126,7 @@ export function assertOrderedItems(
     }
   }
 }
+/** 无序匹配输入 item。 */
 
 export function assertUnorderedItems(
   input: readonly InputItem[],
@@ -139,6 +143,7 @@ export function assertUnorderedItems(
     }
   }
 }
+/** 判断输入 item 是否满足指定条件。 */
 
 export function matchesItemExpectation(item: InputItem, expected: MockInputExpectation): boolean {
   if (item.type !== expected.type) {
@@ -192,6 +197,7 @@ export function matchesItemExpectation(item: InputItem, expected: MockInputExpec
       );
   }
 }
+/** 判断内容块文本是否包含指定片段。 */
 
 export function matchesText(blocks: readonly ContentBlock[], textIncludes: string | undefined): boolean {
   if (textIncludes === undefined) {
@@ -204,10 +210,12 @@ export function matchesText(blocks: readonly ContentBlock[], textIncludes: strin
     return false;
   });
 }
+/** 为 item 生成稳定的 JSON 指纹。 */
 
 export function fingerprintItem(item: InputItem): string {
   return JSON.stringify(item);
 }
+/** 将 Mock 断言条件格式化为可读文本。 */
 
 export function describeExpectation(expectation: MockInputExpectation): string {
   const parts = [`type=${expectation.type}`];
@@ -218,6 +226,7 @@ export function describeExpectation(expectation: MockInputExpectation): string {
   if (expectation.textIncludes) parts.push(`textIncludes=${JSON.stringify(expectation.textIncludes)}`);
   return `{ ${parts.join(", ")} }`;
 }
+/** 深复制 Mock 测试数据。 */
 
 export function cloneItem<T>(item: T): T {
   return structuredClone(item);

@@ -8,6 +8,7 @@
 import type { AIRequest, NormalizedRequest } from "../types/index.js";
 // Requests are typed client-side; provider-specific mapping owns wire compatibility.
 
+/** 请求归一化选项。 */
 export type NormalizeOptions = {
   model: string;
   defaults?: Partial<AIRequest>;
@@ -18,13 +19,8 @@ const DEFAULT_INCLUDE = {
   billing: "best_effort" as const,
   providerMetadata: "best_effort" as const,
 };
-
 /**
- * 归一化请求：
- * 1. 合并 defaults
- * 2. 填充 include 默认值
- * 3. 生成 requestId
- * 4. 返回 provider 映射所需的归一化请求
+ * 归一化请求：合并 defaults、填充 include 默认值并生成 requestId。
  */
 export function normalizeRequest(request: AIRequest, options: NormalizeOptions): NormalizedRequest {
   const { model, defaults } = options;

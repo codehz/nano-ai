@@ -9,6 +9,7 @@ import type { ContentBlock, InputItem, MessageItem, OutputItem, ReplayItem } fro
  * 简单场景下 replay 与 output 一致。
  * 复杂场景（需要 opaque continuation）由 adapter 自行扩展。
  */
+/** 从 output items 构建 replay；opaque continuation 可由 adapter 额外扩展。 */
 export function replayFromOutput(output: readonly OutputItem[]): ReplayItem[] {
   return output.map((item): InputItem => {
     switch (item.type) {
@@ -28,6 +29,7 @@ export function replayFromOutput(output: readonly OutputItem[]): ReplayItem[] {
 /**
  * 从 OutputItem 数组中提取所有 message 类型 item 的文本内容。
  */
+/** 从 output 中提取所有消息 item 的文本内容。 */
 export function extractText(output: OutputItem[]): string {
   return output
     .filter((item): item is MessageItem => item.type === "message")

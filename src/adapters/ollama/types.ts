@@ -4,13 +4,12 @@
 
 import type { HttpAdapterOptions } from "../../provider/http-adapter.js";
 
-/**
- * apiKey 可选（代理鉴权）；默认 baseUrl http://localhost:11434
- */
+/** Ollama adapter 配置；apiKey 可选，默认连接本地服务。 */
 export type OllamaAdapterOptions = HttpAdapterOptions;
 
 // ── Ollama Chat API 类型 ──────────────────────────────────────
 
+/** Ollama Chat API 的流式请求体。 */
 export type OllamaChatRequest = {
   model: string;
   messages: OllamaMessage[];
@@ -26,6 +25,7 @@ export type OllamaChatRequest = {
   };
 };
 
+/** Ollama 消息。 */
 export type OllamaMessage = {
   role: "system" | "user" | "assistant" | "tool";
   content: string;
@@ -33,6 +33,7 @@ export type OllamaMessage = {
   tool_calls?: OllamaToolCall[];
 };
 
+/** Ollama 工具调用。 */
 export type OllamaToolCall = {
   function: {
     name: string;
@@ -40,6 +41,7 @@ export type OllamaToolCall = {
   };
 };
 
+/** Ollama 客户端工具。 */
 export type OllamaTool = {
   type: "function";
   function: {

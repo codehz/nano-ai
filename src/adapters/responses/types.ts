@@ -15,6 +15,7 @@ export type ResponsesAdapterOptions = HttpAdapterOptions & {
 // 每个 InputItem 也必须命中官方 variant，否则会 422：
 //   "data did not match any variant of untagged enum ModelInput"
 
+/** OpenAI Responses API 的流式请求体。 */
 export type ResponsesAPIRequest = {
   model: string;
   input: ResponsesInputItem[];
@@ -40,6 +41,7 @@ export type ResponsesAPIRequest = {
  * POST /responses/compact 请求体（非流式）。
  * 仅保留 compact 相关字段；不设 stream / tools / temperature 等生成参数。
  */
+/** POST /responses/compact 请求体。 */
 export type ResponsesCompactAPIRequest = {
   model: string;
   input: ResponsesInputItem[];
@@ -47,7 +49,7 @@ export type ResponsesCompactAPIRequest = {
   previous_response_id?: string;
 };
 
-/** POST /responses/compact 响应（response.compaction） */
+/** POST /responses/compact 响应体。 */
 export type ResponsesCompactAPIResponse = {
   id?: string;
   object?: string;
@@ -65,19 +67,20 @@ export type ResponsesCompactAPIResponse = {
   [key: string]: unknown;
 };
 
-/** EasyInputMessage：content 可为 string，或 input_* content parts */
+/** Responses API 的消息输入 item。 */
 export type ResponsesEasyMessage = {
   type: "message";
   role: "user" | "assistant" | "system" | "developer";
   content: string | ResponsesInputContentPart[];
 };
 
+/** Responses API 的输入内容 part。 */
 export type ResponsesInputContentPart =
   | { type: "input_text"; text: string }
   | { type: "input_image"; image_url: string; detail?: "auto" | "low" | "high" }
   | { type: "input_file"; file_url?: string; file_id?: string; filename?: string };
 
-/** function_call：call_id 必填；id 是可选的 item id */
+/** Responses API 的客户端 function call item。 */
 export type ResponsesFunctionCall = {
   type: "function_call";
   call_id: string;
@@ -87,6 +90,7 @@ export type ResponsesFunctionCall = {
   status?: "in_progress" | "completed" | "incomplete";
 };
 
+/** Responses API 的 function call 结果 item。 */
 export type ResponsesFunctionCallOutput = {
   type: "function_call_output";
   call_id: string;
@@ -128,6 +132,7 @@ export type ResponsesWirePassthroughItem = {
   [key: string]: unknown;
 };
 
+/** Responses API 可接受的输入 item 联合。 */
 export type ResponsesInputItem =
   | ResponsesEasyMessage
   | ResponsesFunctionCall
@@ -137,6 +142,7 @@ export type ResponsesInputItem =
   | ResponsesCompactionInput
   | ResponsesWirePassthroughItem;
 
+/** Responses API 的客户端 function 工具。 */
 export type ResponsesFunctionTool = {
   type: "function";
   name: string;
@@ -145,6 +151,7 @@ export type ResponsesFunctionTool = {
   strict?: boolean | null;
 };
 
+/** Responses API 的 Web Search 工具。 */
 export type ResponsesWebSearchTool = {
   type: "web_search";
   filters?: {
@@ -161,6 +168,7 @@ export type ResponsesWebSearchTool = {
   search_context_size?: "low" | "medium" | "high";
 };
 
+/** Responses API 的代码解释器工具。 */
 export type ResponsesCodeInterpreterTool = {
   type: "code_interpreter";
   container:
@@ -172,6 +180,7 @@ export type ResponsesCodeInterpreterTool = {
       };
 };
 
+/** Responses API 的 MCP 工具。 */
 export type ResponsesMcpTool = {
   type: "mcp";
   server_label: string;
@@ -182,7 +191,7 @@ export type ResponsesMcpTool = {
   require_approval: "never";
 };
 
-/** Responses API tools 联合：客户端 function + 内置 server tools */
+/** Responses API 的工具联合。 */
 export type ResponsesTool =
   | ResponsesFunctionTool
   | ResponsesWebSearchTool
@@ -191,6 +200,7 @@ export type ResponsesTool =
 
 // ── Responses API 响应 / SSE 类型 ──────────────────────────────
 
+/** Responses API 输出 item。 */
 export type ResponsesAPIOutputItem = {
   id: string;
   type: "message" | "reasoning" | "function_call" | string;
@@ -205,6 +215,7 @@ export type ResponsesAPIOutputItem = {
   [key: string]: unknown;
 };
 
+/** Responses API 响应体。 */
 export type ResponsesAPIResponse = {
   id: string;
   model: string;

@@ -10,16 +10,19 @@ import type { PromptCacheSettings, ProviderCacheOptions } from "./cache.js";
 
 // ── 客户端工具定义 ────────────────────────────────────────────
 
+/** 客户端工具声明；`inputSchema` 使用 JSON Schema 对象。 */
 export type ToolDefinition = {
   name: string;
   description?: string;
   inputSchema: Record<string, unknown>;
 };
 
+/** 客户端工具选择策略。 */
 export type ToolChoice = "auto" | "none" | { type: "tool"; name: string };
 
 // ── 服务端工具定义 ────────────────────────────────────────────
 
+/** Web 搜索的近似用户位置。 */
 export type WebSearchUserLocation = {
   type: "approximate";
   country?: string;
@@ -28,6 +31,7 @@ export type WebSearchUserLocation = {
   timezone?: string;
 };
 
+/** Provider 托管的 Web 搜索工具配置。 */
 export type WebSearchServerTool = {
   type: "web_search";
   allowedDomains?: string[];
@@ -36,6 +40,7 @@ export type WebSearchServerTool = {
   searchContextSize?: "low" | "medium" | "high";
 };
 
+/** Provider 托管的代码执行工具配置。 */
 export type CodeExecutionServerTool = {
   type: "code_execution";
   container?: {
@@ -45,6 +50,7 @@ export type CodeExecutionServerTool = {
   };
 };
 
+/** MCP 远端工具服务配置。authorization 仅用于当前请求。 */
 export type McpServerTool = {
   type: "mcp";
   serverLabel: string;
@@ -53,15 +59,16 @@ export type McpServerTool = {
   /** 每请求由调用方提供；不得写入日志或 opaque 回放。 */
   authorization?: string;
   allowedTools?: string[];
-  /** 首版仅支持 never */
+  /** 首版仅支持 never。 */
   requireApproval: "never";
 };
 
-/** Provider 托管执行的工具声明（不进客户端 tool loop） */
+/** Provider 托管执行的工具声明（不进客户端 tool loop）。 */
 export type ServerToolDefinition = WebSearchServerTool | CodeExecutionServerTool | McpServerTool;
 
 // ── include 控制 ──────────────────────────────────────────────
 
+/** 控制 usage、billing 和 provider metadata 的返回策略。 */
 export type IncludeSettings = {
   usage?: "off" | "best_effort" | "required";
   billing?: "off" | "best_effort" | "required";
@@ -70,7 +77,7 @@ export type IncludeSettings = {
 
 // ── reasoning level ───────────────────────────────────────────
 
-/** Portable reasoning / thinking effort. Mapped per-adapter to provider wire fields. */
+/** Portable reasoning/thinking effort；由各 adapter 映射到 provider 字段。 */
 export type ReasoningLevel = "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 
 /** 可移植 reasoning level 枚举（单源；validation / provider 共用）。 */
@@ -89,6 +96,7 @@ export const REASONING_LEVEL_SET: ReadonlySet<string> = new Set(REASONING_LEVELS
 
 // ── 统一请求 ──────────────────────────────────────────────────
 
+/** 统一 AI 请求；`input` 为当前请求携带的规范化历史和用户输入。 */
 export type AIRequest = {
   instructions?: string | InstructionBlock[];
   input: InputItem[];

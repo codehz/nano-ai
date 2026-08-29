@@ -11,6 +11,7 @@ import type { MessagesAdapterOptions, MessagesAPIRequest } from "./types.js";
 import { buildMessagesRequest } from "./map-request.js";
 import { mapMessagesStream } from "./map-stream.js";
 
+/** Anthropic Messages API 适配器。 */
 export class MessagesAdapter extends HttpAdapterBase {
   readonly kind = "messages" as const;
   readonly isSyntheticStream = false;

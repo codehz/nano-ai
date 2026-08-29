@@ -51,6 +51,7 @@ import {
   resolveStepStreamOptions,
 } from "./streaming.js";
 
+/** 用于测试和本地场景的确定性模拟适配器。 */
 export class MockAdapter extends AdapterBase implements ContextCompressCapable {
   readonly kind = "mock" as const;
   readonly isSyntheticStream = true;

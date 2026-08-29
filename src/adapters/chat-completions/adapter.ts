@@ -11,6 +11,7 @@ import type { ChatCompletionsAdapterOptions, ChatRequest } from "./types.js";
 import { buildChatCompletionsRequest } from "./map-request.js";
 import { mapChatCompletionsStream } from "./map-stream.js";
 
+/** OpenAI Chat Completions API 适配器。 */
 export class ChatCompletionsAdapter extends HttpAdapterBase {
   readonly kind = "chat-completions" as const;
   readonly isSyntheticStream = false;

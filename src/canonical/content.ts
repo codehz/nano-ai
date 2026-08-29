@@ -4,18 +4,22 @@
 
 import type { ContentBlock } from "../types/index.js";
 
+/** 创建文本内容块。 */
 export function textBlock(text: string): ContentBlock & { type: "text" } {
   return { type: "text", text };
 }
 
+/** 创建 JSON 内容块。 */
 export function jsonBlock(json: unknown): ContentBlock & { type: "json" } {
   return { type: "json", json };
 }
 
+/** 创建图片内容块；imageUrl 可为 URL 或 data URL。 */
 export function imageBlock(imageUrl: string): ContentBlock & { type: "image" } {
   return { type: "image", imageUrl };
 }
 
+/** 创建 provider 专有 opaque 内容块。 */
 export function opaqueBlock(payload: unknown): ContentBlock & { type: "opaque" } {
   return { type: "opaque", payload };
 }

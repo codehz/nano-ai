@@ -24,6 +24,7 @@ import type {
   Usage,
 } from "../../types/index.js";
 
+/** Mock handler 对单个输入 item 的匹配条件。 */
 export type MockInputExpectation = {
   type: InputItem["type"];
   id?: string;
@@ -38,6 +39,7 @@ export type MockInputExpectation = {
   textIncludes?: string;
 };
 
+/** Mock 请求整体的断言条件。 */
 export type MockRequestExpectation = {
   minItems?: number;
   maxItems?: number;
@@ -50,6 +52,7 @@ export type MockRequestExpectation = {
   items?: MockInputExpectation[];
 };
 
+/** Mock adapter 记录的一轮请求历史。 */
 export type MockHistoryRecord = {
   turnIndex: number;
   requestId: string;
@@ -57,6 +60,7 @@ export type MockHistoryRecord = {
   toolCalls: ToolCallItem[];
 };
 
+/** Mock handler 可读取的当前回合上下文。 */
 export type MockHandlerContext = {
   turnIndex: number;
   previousReplay: ReplayItem[];
@@ -68,12 +72,14 @@ export type MockHandlerContext = {
   reasoningLevel?: ReasoningLevel;
 };
 
+/** 在 Mock 流中发出 warning。 */
 export type MockWarningStep = {
   type: "warning";
   message: string;
   code?: string;
 };
 
+/** 在 Mock 流中发出辅助响应信息。 */
 export type MockAuxiliaryStep = {
   type: "auxiliary";
   usage?: Usage;
@@ -81,6 +87,7 @@ export type MockAuxiliaryStep = {
   auxiliary?: Partial<AuxiliaryInfo>;
 };
 
+/** Mock 文本/参数增量的切分和延迟配置。 */
 export type MockTextStreamOptions = {
   /**
    * 每秒吐出的字符数。未设置时仍会按 chunk 拆分，但不会额外等待。
@@ -96,6 +103,7 @@ export type MockTextStreamOptions = {
   initialDelayMs?: number;
 };
 
+/** 在 Mock 流中发出消息 item。 */
 export type MockMessageStep = {
   type: "message";
   id?: string;
@@ -104,6 +112,7 @@ export type MockMessageStep = {
   stream?: MockTextStreamOptions | false;
 };
 
+/** 在 Mock 流中发出 provider 托管工具调用。 */
 export type MockServerToolCallStep = {
   type: "server_tool_call";
   id: string;
@@ -117,16 +126,19 @@ export type MockServerToolCallStep = {
   stream?: MockTextStreamOptions | false;
 };
 
+/** 在 Mock 流中发出 provider 托管工具结果。 */
 export type MockServerToolResultStep = {
   type: "server_tool_result";
   item: ServerToolResultItem;
 };
 
+/** 在 Mock 流中发出 provider 工具发现列表。 */
 export type MockServerToolDiscoveryStep = {
   type: "server_tool_discovery";
   item: ServerToolDiscoveryItem;
 };
 
+/** 在 Mock 流中发出 reasoning item。 */
 export type MockReasoningStep = {
   type: "reasoning";
   id?: string;
@@ -135,6 +147,7 @@ export type MockReasoningStep = {
   stream?: MockTextStreamOptions | false;
 };
 
+/** 在 Mock 流中发出客户端工具调用。 */
 export type MockToolCallStep = {
   type: "tool_call";
   id: string;
@@ -144,12 +157,14 @@ export type MockToolCallStep = {
   stream?: MockTextStreamOptions | false;
 };
 
+/** 在 Mock 流中直接发出完整 output item。 */
 export type MockOutputStep = {
   type: "output";
   item: Extract<OutputItem, { type: "message" | "reasoning" | "tool_call" }>;
   stream?: MockTextStreamOptions | false;
 };
 
+/** 在 Mock 流中完成当前响应并提供完成元数据。 */
 export type MockCompleteStep = {
   type: "complete";
   stopReason?: StopReason;
@@ -162,6 +177,7 @@ export type MockCompleteStep = {
   warnings?: import("../../types/index.js").StreamWarning[];
 };
 
+/** 在 Mock 流中发出可恢复错误。 */
 export type MockErrorStep = {
   type: "error";
   message: string;
@@ -170,15 +186,18 @@ export type MockErrorStep = {
   providerMetadata?: Record<string, unknown>;
 };
 
+/** 在 Mock 流中模拟中断。 */
 export type MockInterruptStep = {
   type: "interrupt";
 };
 
+/** 在 Mock 流中抛出异常。 */
 export type MockThrowStep = {
   type: "throw";
   error: string | Error;
 };
 
+/** Mock handler 可发出的所有步骤。 */
 export type MockStep =
   | MockWarningStep
   | MockAuxiliaryStep
@@ -194,10 +213,13 @@ export type MockStep =
   | MockInterruptStep
   | MockThrowStep;
 
+/** 按规范化请求和上下文生成 Mock 流步骤。 */
 export type MockHandler = (request: NormalizedRequest, context: MockHandlerContext) => AsyncIterable<MockStep>;
 
+/** 可同步或异步消费的 Mock 步骤来源。 */
 export type MockHandlerSource = Iterable<MockStep> | AsyncIterable<MockStep>;
 
+/** 可返回同步/异步步骤来源的 Mock handler。 */
 export type MockStaticHandler = (
   request: NormalizedRequest,
   context: MockHandlerContext,
@@ -206,6 +228,7 @@ export type MockStaticHandler = (
 /** Mock compress 夹具；未配置时 compress() 抛 MOCK_COMPRESS_NOT_CONFIGURED */
 export type MockCompressHandler = (request: CompressRequest) => CompressResult | Promise<CompressResult>;
 
+/** Mock adapter 的构造选项。 */
 export type MockAdapterOptions = {
   handler: MockHandler;
   providerMetadata?: Record<string, unknown>;

@@ -4,6 +4,7 @@
  * runtime.errors 与 events 均从此导出，避免手工双表漂移。
  */
 
+/** 标准 warning 代码常量；事件和响应均可携带这些代码。 */
 export const WarningCode = {
   /** replay fidelity 低于预期 */
   REPLAY_FIDELITY_LOW: "REPLAY_FIDELITY_LOW",

@@ -34,10 +34,12 @@ const STOP_REASON_MAP: Record<string, StopReason> = {
   error: "error",
 };
 
+/** 将 provider stop/finish reason 映射为规范化 StopReason。 */
 export function mapStopReason(providerReason: string): StopReason {
   return STOP_REASON_MAP[providerReason] ?? "unknown";
 }
 
+/** 根据 thinking 和 redacted 标记推断 reasoning 可见性。 */
 export function mapReasoningVisibility(hasThinking: boolean, hasRedacted: boolean): ReasoningItem["visibility"] {
   if (hasRedacted) return "redacted";
   if (hasThinking) return "full";

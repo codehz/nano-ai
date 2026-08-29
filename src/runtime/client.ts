@@ -7,6 +7,7 @@
 import type { AIRequest, AIStreamEvent, AIClient, CreateAIClientOptions } from "../types/index.js";
 import { normalizeRequest } from "./normalize.js";
 
+/** 创建统一 AI 客户端；请求级字段覆盖 defaults，signal 可在客户端级设置。 */
 export function createAIClient(options: CreateAIClientOptions): AIClient {
   const { adapter, model, defaults, signal: defaultSignal } = options;
 

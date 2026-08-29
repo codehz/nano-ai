@@ -34,6 +34,7 @@ import type {
   ResponsesSSEEvent,
 } from "./types.js";
 
+/** OpenAI Responses API 适配器；支持原生流式响应和上下文压缩。 */
 export class ResponsesAdapter extends HttpAdapterBase implements ContextCompressCapable {
   readonly kind = "responses" as const;
   readonly isSyntheticStream = false;

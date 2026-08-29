@@ -11,6 +11,7 @@ import type { OllamaAdapterOptions, OllamaChatRequest } from "./types.js";
 import { buildOllamaRequest } from "./map-request.js";
 import { mapOllamaStream } from "./map-stream.js";
 
+/** Ollama Chat API 适配器。 */
 export class OllamaAdapter extends HttpAdapterBase {
   readonly kind = "ollama" as const;
   readonly isSyntheticStream = false;

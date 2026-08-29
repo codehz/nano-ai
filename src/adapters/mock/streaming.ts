@@ -27,6 +27,7 @@ import type {
   ResolvedMockTextStreamOptions,
 } from "./types.js";
 
+/** 为静态 Mock handler 添加可配置的文本/参数流式切分。 */
 export function withMockStreaming(handler: MockStaticHandler, options: MockTextStreamOptions): MockHandler {
   const defaults = resolveMockTextStreamOptions(options, "mock stream wrapper");
   if (!defaults) {

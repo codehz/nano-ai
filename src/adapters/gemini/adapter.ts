@@ -11,6 +11,7 @@ import type { GeminiAdapterOptions, GeminiGenerateContentRequest } from "./types
 import { buildGeminiRequest } from "./map-request.js";
 import { mapGeminiStream } from "./map-stream.js";
 
+/** Google Gemini generateContent API 适配器。 */
 export class GeminiAdapter extends HttpAdapterBase {
   readonly kind = "gemini" as const;
   readonly isSyntheticStream = false;

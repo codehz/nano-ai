@@ -45,8 +45,10 @@ export type KnownErrorCode =
   | "MOCK_MESSAGE_ID_MISSING"
   | "MOCK_REASONING_ID_MISSING";
 
+/** 错误码；内置错误码之外允许 provider 或扩展使用字符串。 */
 export type ErrorCode = KnownErrorCode | (string & {});
 
+/** 所有运行时错误的基类。 */
 export class AIError extends Error {
   override readonly name: string;
 
