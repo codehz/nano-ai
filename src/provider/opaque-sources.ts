@@ -5,6 +5,7 @@
 
 export const OPAQUE_SOURCE = {
   CHAT_COMPLETIONS: "chat.completions",
+  DELTA_COMPLETIONS: "delta.completions",
   MESSAGES: "messages",
   OLLAMA: "ollama",
   GEMINI: "gemini",

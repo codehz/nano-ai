@@ -1,7 +1,7 @@
 /**
  * HTTP adapter 共享基类与构造选项
  *
- * 收敛五家真实后端 adapter 的：
+ * 收敛真实 HTTP adapter 的：
  * - apiKey / baseUrl / fetch / headers / extraBody 字段赋值
  * - 默认 baseUrl 解析
  * - beginJsonStream：open → batches → complete session

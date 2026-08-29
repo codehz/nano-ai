@@ -6,7 +6,15 @@
  */
 
 /** 内置 adapter kind 列表。 */
-export const KNOWN_ADAPTER_KINDS = ["chat-completions", "messages", "responses", "ollama", "gemini", "mock"] as const;
+export const KNOWN_ADAPTER_KINDS = [
+  "chat-completions",
+  "delta-completions",
+  "messages",
+  "responses",
+  "ollama",
+  "gemini",
+  "mock",
+] as const;
 
 /** 内置 adapter kind 的字面量联合。 */
 export type KnownAdapterKind = (typeof KNOWN_ADAPTER_KINDS)[number];

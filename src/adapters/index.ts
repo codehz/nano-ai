@@ -5,6 +5,7 @@
  * - responses
  * - messages
  * - chat.completions
+ * - delta.completions
  * - ollama
  * - gemini
  * - mock
@@ -18,6 +19,8 @@ export { MessagesAdapter } from "./messages/index.js";
 export type { MessagesAdapterOptions } from "./messages/index.js";
 export { ChatCompletionsAdapter } from "./chat-completions/index.js";
 export type { ChatCompletionsAdapterOptions } from "./chat-completions/index.js";
+export { DeltaCompletionsAdapter } from "./delta-completions/index.js";
+export type { DeltaCompletionsAdapterOptions } from "./delta-completions/index.js";
 export { OllamaAdapter } from "./ollama/index.js";
 export type { OllamaAdapterOptions } from "./ollama/index.js";
 export { GeminiAdapter } from "./gemini/index.js";

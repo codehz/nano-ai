@@ -23,7 +23,7 @@ HTTP adapters must **not** maintain a parallel `OutputItem[]` content ledger alo
 
 Full `AIResponse` (`output` / `text` / `toolCalls` / …) is produced only by `collectStream` / the aggregator; `response.completed` carries replay + completion metadata only. Opaque items are **always trailing** in `output` (from `response.completed.opaqueOutput`).
 
-Thick HTTP adapters split like `responses`: thin `adapter.ts` + `map-request.ts` + `map-stream.ts` (chat-completions / messages / ollama / gemini).
+Thick HTTP adapters split like `responses`: thin `adapter.ts` + `map-request.ts` + `map-stream.ts` (chat-completions / delta-completions / messages / ollama / gemini).
 
 ### Opaque replay protocol
 
