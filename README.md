@@ -43,7 +43,7 @@ opaque replay 只检查 object 和 JSON 可序列化性；客户端不再强制 
 
 `0.5.0` 收紧了根入口公开面：`AdapterBase`、`createEventFactory`、`aggregateEvents`、`normalizeRequest`、transport / `syntheticStream` 等**不再**从 `@codehz/ai` 根导出（内部模块）。
 
-**仍从根导出：** `createAIClient`、`collectStream`、错误类型与 `WarningCode`、全部 adapters 与 Mock 夹具、canonical 构造、`REASONING_LEVELS`，以及 canonical 类型。自定义 adapter 请实现 `BackendAdapter`。
+**仍从根导出：** `createAIClient`、`collectStream`、错误类型与 `WarningCode`、全部 adapters 与 Mock 夹具、canonical 构造、`REASONING_LEVELS`、`SERVICE_TIERS`，以及 canonical 类型。自定义 adapter 请实现 `BackendAdapter`。
 
 ### 错误通道语义
 
@@ -97,6 +97,7 @@ type AIRequest = {
   temperature?: number; // provider/model-defined generation parameter
   maxOutputTokens?: number; // 最大输出 token
   reasoningLevel?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max"; // 可移植思考力度
+  serviceTier?: "auto" | "default" | "flex" | "fast" | "priority"; // 可移植处理档位（如 Fast mode）
   include?: {
     usage?: "off" | "best_effort" | "required";
     billing?: "off" | "best_effort" | "required";
@@ -117,6 +118,17 @@ type AIRequest = {
 | `OllamaAdapter`          | `think: false \| "low" \| "medium" \| "high"`                                                                                      |
 | `GeminiAdapter`          | `generationConfig.thinkingConfig`（`none` 关闭 thoughts；`minimal`/`low`/`medium`/`high` → `thinkingLevel`；`xhigh`/`max` 不支持） |
 | `MockAdapter`            | 透传到 `MockHandlerContext.reasoningLevel`                                                                                         |
+
+`serviceTier` 是 portable 枚举，由支持的 adapter 映射到 provider 原生 `service_tier`；未设置时不写该字段。OpenAI Fast mode 可用 `fast`（或兼容别名 `priority`）。adapter 无法映射时抛 `AIRequestError`（`UNSUPPORTED_SERVICE_TIER`）。构造期 `extraBody` 仍可覆盖同名顶层键。provider 实际使用的档位（例如 Fast 因 ramp 限流降为 `default`）写入 `auxiliary.providerMetadata.serviceTier`。
+
+| Adapter                           | 映射                                                                                                   |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `ResponsesAdapter`                | 顶层 `service_tier`（`auto` / `default` / `flex` / `fast` / `priority` 原样）                          |
+| `ChatCompletionsAdapter`          | 顶层 `service_tier`（同上）                                                                            |
+| `MessagesAdapter`                 | 顶层 `service_tier`：`auto` / `fast` / `priority` → `auto`；`default` → `standard_only`；`flex` 不支持 |
+| `OllamaAdapter` / `GeminiAdapter` | 不支持，抛 `UNSUPPORTED_SERVICE_TIER`                                                                  |
+| `DeltaCompletionsAdapter`         | 忽略并 warning `CAPABILITY_DOWNGRADE`                                                                  |
+| `MockAdapter`                     | 透传到 `MockHandlerContext.serviceTier`                                                                |
 
 `input` 是 item 数组，每个 item 可以是：
 

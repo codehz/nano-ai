@@ -23,6 +23,8 @@ export type MessagesAPIRequest = {
   tool_choice?: { type: "auto" | "none" } | { type: "tool"; name: string };
   temperature?: number;
   thinking?: { type: "enabled"; budget_tokens: number } | { type: "disabled" };
+  /** Portable serviceTier → auto / standard_only */
+  service_tier?: "auto" | "standard_only";
   stream: true;
 };
 

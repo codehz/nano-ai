@@ -22,6 +22,8 @@ export type ChatRequest = {
   max_tokens?: number;
   /** Portable reasoningLevel → reasoning_effort */
   reasoning_effort?: string;
+  /** Portable serviceTier → service_tier（auto / default / flex / fast / priority） */
+  service_tier?: string;
   prompt_cache_key?: string;
   prompt_cache_retention?: "in_memory" | "24h";
   stream: true;
@@ -71,6 +73,7 @@ export type ChatChunk = {
   created: number;
   model: string;
   choices: ChatChunkChoice[];
+  service_tier?: string;
   usage?: {
     prompt_tokens: number;
     completion_tokens: number;

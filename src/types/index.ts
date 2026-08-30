@@ -40,13 +40,14 @@ export type {
   ToolChoice,
   IncludeSettings,
   ReasoningLevel,
+  ServiceTier,
   ServerToolDefinition,
   WebSearchServerTool,
   CodeExecutionServerTool,
   McpServerTool,
   WebSearchUserLocation,
 } from "./request.js";
-export { REASONING_LEVELS, REASONING_LEVEL_SET } from "./request.js";
+export { REASONING_LEVELS, REASONING_LEVEL_SET, SERVICE_TIERS, SERVICE_TIER_SET } from "./request.js";
 
 // 响应模型
 export type { AIResponse, StopReason, Usage, BillingInfo, AuxiliaryInfo, BackendTrace } from "./response.js";

@@ -9,6 +9,7 @@ import { applyPromptCacheFields } from "../../provider/prompt-cache.js";
 import { parseImageDataUrl } from "../../provider/image-url.js";
 import { NormalizedRequestMapper } from "../../provider/request-mapper.js";
 import { mapGeminiThinking } from "../../provider/reasoning.js";
+import { assertUnsupportedServiceTier } from "../../provider/service-tier.js";
 import { OPAQUE_SOURCE } from "../../provider/opaque-sources.js";
 
 import type { NormalizedRequest, ContentBlock } from "../../types/index.js";
@@ -175,6 +176,7 @@ export function buildGeminiRequest(
   options?: { maxOpaquePayloadBytes?: number },
 ): GeminiGenerateContentRequest {
   mapper.assertNoServerTools(request.serverTools);
+  assertUnsupportedServiceTier(request.serviceTier, "gemini");
 
   const contents: GeminiContent[] = [];
   let systemInstruction: GeminiGenerateContentRequest["systemInstruction"];

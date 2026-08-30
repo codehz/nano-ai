@@ -75,6 +75,26 @@ describe("MessagesAdapter - text streaming", () => {
     expect(result.stopReason).toBe("end_turn");
   });
 
+  it("should record applied service_tier from message_delta usage", async () => {
+    const sse = [
+      `event: message_start\ndata: ${JSON.stringify({ type: "message_start", message: { id: "msg_1", type: "message", role: "assistant", model: "claude-3-opus", content: [], stop_reason: null, usage: { input_tokens: 10, output_tokens: 0 } } })}\n\n`,
+      `event: content_block_start\ndata: ${JSON.stringify({ type: "content_block_start", index: 0, content_block: { type: "text", text: "" } })}\n\n`,
+      `event: content_block_delta\ndata: ${JSON.stringify({ type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "ok" } })}\n\n`,
+      `event: content_block_stop\ndata: ${JSON.stringify({ type: "content_block_stop", index: 0 })}\n\n`,
+      `event: message_delta\ndata: ${JSON.stringify({ type: "message_delta", delta: { stop_reason: "end_turn", stop_sequence: null }, usage: { input_tokens: 10, output_tokens: 1, service_tier: "priority" } })}\n\n`,
+      messageStopSSE(),
+    ];
+
+    const adapter = new MessagesAdapter({
+      apiKey: "test-key",
+      fetch: mockFetch(sseResponse(...sse)),
+    });
+
+    const result = await collectStream(adapter.stream(makeRequest({ serviceTier: "fast" })));
+    expect(result.text).toBe("ok");
+    expect(result.auxiliary?.providerMetadata?.serviceTier).toBe("priority");
+  });
+
   it("should map cache token fields from message_delta usage", async () => {
     const sse = [
       `event: message_start\ndata: ${JSON.stringify({
@@ -560,6 +580,53 @@ describe("MessagesAdapter - request building", () => {
     await collectStream(adapter.stream(makeRequest({ reasoningLevel: "high", maxOutputTokens: 16000 })));
     const body = captured.current as Record<string, unknown> | null;
     expect(body?.thinking).toEqual({ type: "enabled", budget_tokens: 8000 });
+  });
+
+  it("should omit service_tier when serviceTier is unset", async () => {
+    const { captured, fetch } = captureRequest();
+    const adapter = new MessagesAdapter({ apiKey: "test-key", fetch });
+
+    await collectStream(adapter.stream(makeRequest()));
+    const body = captured.current as Record<string, unknown> | null;
+    expect(body).not.toHaveProperty("service_tier");
+  });
+
+  it("should map serviceTier auto/fast/priority to auto and default to standard_only", async () => {
+    const { captured, fetch } = captureRequest();
+    const adapter = new MessagesAdapter({ apiKey: "test-key", fetch });
+
+    await collectStream(adapter.stream(makeRequest({ serviceTier: "fast" })));
+    expect((captured.current as Record<string, unknown> | null)?.service_tier).toBe("auto");
+
+    await collectStream(adapter.stream(makeRequest({ serviceTier: "default" })));
+    expect((captured.current as Record<string, unknown> | null)?.service_tier).toBe("standard_only");
+  });
+
+  it("should reject serviceTier flex for messages", async () => {
+    const adapter = new MessagesAdapter({
+      apiKey: "test-key",
+      fetch: async () => {
+        throw new Error("should not fetch");
+      },
+    });
+
+    await expect(collectStream(adapter.stream(makeRequest({ serviceTier: "flex" })))).rejects.toMatchObject({
+      name: "AIRequestError",
+      code: "UNSUPPORTED_SERVICE_TIER",
+    });
+  });
+
+  it("should let extraBody override mapped service_tier", async () => {
+    const { captured, fetch } = captureRequest();
+    const adapter = new MessagesAdapter({
+      apiKey: "test-key",
+      fetch,
+      extraBody: { service_tier: "standard_only" },
+    });
+
+    await collectStream(adapter.stream(makeRequest({ serviceTier: "fast" })));
+    const body = captured.current as Record<string, unknown> | null;
+    expect(body?.service_tier).toBe("standard_only");
   });
 
   it("should map user text+https image content to Anthropic image blocks", async () => {

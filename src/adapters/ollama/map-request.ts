@@ -9,6 +9,7 @@ import { parseImageDataUrl } from "../../provider/image-url.js";
 import { NormalizedRequestMapper } from "../../provider/request-mapper.js";
 import { applyPromptCacheFields } from "../../provider/prompt-cache.js";
 import { mapOllamaThink } from "../../provider/reasoning.js";
+import { assertUnsupportedServiceTier } from "../../provider/service-tier.js";
 import { mapOpenAiFunctionTool } from "../../provider/openai-tools.js";
 import { OPAQUE_SOURCE } from "../../provider/opaque-sources.js";
 
@@ -122,6 +123,7 @@ export function buildOllamaRequest(
   options?: { maxOpaquePayloadBytes?: number },
 ): OllamaChatRequest {
   mapper.assertNoServerTools(request.serverTools);
+  assertUnsupportedServiceTier(request.serviceTier, "ollama");
 
   const messages: OllamaMessage[] = [];
   /** Local-only name → call id queue for best-effort tool_result association (not sent to Ollama). */

@@ -94,6 +94,20 @@ export const REASONING_LEVELS = [
 /** 用于校验任意字符串 membership；值域与 REASONING_LEVELS 一致。 */
 export const REASONING_LEVEL_SET: ReadonlySet<string> = new Set(REASONING_LEVELS);
 
+// ── service tier ──────────────────────────────────────────────
+
+/**
+ * Portable processing tier。Adapters map this to provider-native `service_tier`.
+ * OpenAI Fast mode accepts both `fast` and the legacy alias `priority`.
+ */
+export type ServiceTier = "auto" | "default" | "flex" | "fast" | "priority";
+
+/** 可移植 service tier 枚举（单源；validation / provider 共用）。 */
+export const SERVICE_TIERS = ["auto", "default", "flex", "fast", "priority"] as const satisfies readonly ServiceTier[];
+
+/** 用于校验任意字符串 membership；值域与 SERVICE_TIERS 一致。 */
+export const SERVICE_TIER_SET: ReadonlySet<string> = new Set(SERVICE_TIERS);
+
 // ── 统一请求 ──────────────────────────────────────────────────
 
 /** 统一 AI 请求；`input` 为当前请求携带的规范化历史和用户输入。 */
@@ -115,6 +129,12 @@ export type AIRequest = {
    * Unsupported levels throw.
    */
   reasoningLevel?: ReasoningLevel;
+  /**
+   * Portable processing tier. Adapters map this to provider-native `service_tier`
+   * (e.g. OpenAI Responses/Chat Completions `service_tier`, Messages `service_tier`).
+   * Unsupported adapters or values throw.
+   */
+  serviceTier?: ServiceTier;
   /** Portable request-level prompt cache strategy and routing hint. */
   cache?: PromptCacheSettings;
   /** Typed provider-native cache extensions; unsupported fields are ignored by other adapters. */

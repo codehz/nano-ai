@@ -8,6 +8,7 @@ import { acceptOpaqueReplay } from "../../provider/opaque-replay.js";
 import { isHttpOrHttpsUrl, parseImageDataUrl } from "../../provider/image-url.js";
 import { NormalizedRequestMapper } from "../../provider/request-mapper.js";
 import { mapMessagesThinking } from "../../provider/reasoning.js";
+import { mapMessagesServiceTier } from "../../provider/service-tier.js";
 import { mapAnthropicCacheTtl, requestedPromptCacheMode } from "../../provider/prompt-cache.js";
 import { OPAQUE_SOURCE } from "../../provider/opaque-sources.js";
 
@@ -366,6 +367,9 @@ export function buildMessagesRequest(
   if (request.temperature !== undefined) body.temperature = request.temperature;
   if (request.reasoningLevel !== undefined) {
     body.thinking = mapMessagesThinking(request.reasoningLevel, body.max_tokens);
+  }
+  if (request.serviceTier !== undefined) {
+    body.service_tier = mapMessagesServiceTier(request.serviceTier);
   }
 
   applyMessagesPromptCache(body, request, systemPrompt);

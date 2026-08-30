@@ -42,6 +42,7 @@ export type {
   ProviderCacheOptions,
   PromptCacheMetadata,
   ReasoningLevel,
+  ServiceTier,
   ServerToolDefinition,
   WebSearchServerTool,
   CodeExecutionServerTool,
@@ -135,8 +136,8 @@ export {
   extractText,
 } from "./canonical/index.js";
 
-// ── Portable reasoning level constants (types 单源) ───────────
-export { REASONING_LEVELS, REASONING_LEVEL_SET } from "./types/request.js";
+// ── Portable reasoning / service-tier constants (types 单源) ──
+export { REASONING_LEVELS, REASONING_LEVEL_SET, SERVICE_TIERS, SERVICE_TIER_SET } from "./types/request.js";
 
 // ── Adapters ─────────────────────────────────────────────────
 export {

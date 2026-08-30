@@ -288,6 +288,7 @@ export class MockAdapter extends AdapterBase implements ContextCompressCapable {
       })),
       signal: request.signal,
       reasoningLevel: request.reasoningLevel,
+      serviceTier: request.serviceTier,
     };
   }
 }

@@ -27,6 +27,8 @@ export type ResponsesAPIRequest = {
   max_output_tokens?: number;
   /** Portable reasoningLevel → effort；summary 等特化字段不在此层 */
   reasoning?: { effort: string };
+  /** Portable serviceTier → service_tier（auto / default / flex / fast / priority） */
+  service_tier?: string;
   /** 服务端多轮续写；opaque replay 的 response id 映射到此字段，而非 item_reference */
   previous_response_id?: string;
   prompt_cache_key?: string;
@@ -224,6 +226,7 @@ export type ResponsesAPIResponse = {
   incomplete_details?: { reason?: string | null } | null;
   error?: { message?: string; code?: string } | null;
   failure?: { message?: string; code?: string } | null;
+  service_tier?: string;
   usage?: {
     input_tokens: number;
     output_tokens: number;

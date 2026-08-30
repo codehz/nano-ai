@@ -22,6 +22,7 @@ import {
   MessagesAdapter,
   OllamaAdapter,
   REASONING_LEVEL_SET,
+  SERVICE_TIER_SET,
   ResponsesAdapter,
   createAIClient,
   messageItem,
@@ -36,17 +37,11 @@ import type {
   ReasoningLevel,
   ReplayItem,
   ServerToolDefinition,
+  ServiceTier,
   ToolDefinition,
 } from "../src/index.js";
 
-const HTTP_KINDS = [
-  "delta-completions",
-  "chat-completions",
-  "messages",
-  "responses",
-  "ollama",
-  "gemini",
-] as const;
+const HTTP_KINDS = ["delta-completions", "chat-completions", "messages", "responses", "ollama", "gemini"] as const;
 type HttpKind = (typeof HTTP_KINDS)[number];
 
 const KIND_ALIASES: Record<string, HttpKind> = {
@@ -77,6 +72,7 @@ type DebugConfig = {
   temperature: number | undefined;
   maxOutputTokens: number | undefined;
   reasoningLevel: ReasoningLevel | undefined;
+  serviceTier: ServiceTier | undefined;
   include: IncludeSettings;
   tools: ToolDefinition[] | undefined;
   serverTools: ServerToolDefinition[] | undefined;
@@ -100,9 +96,7 @@ function envJson(name: string): unknown {
   try {
     return JSON.parse(raw);
   } catch (error) {
-    fail(
-      `${name} is not valid JSON: ${error instanceof Error ? error.message : String(error)}`,
-    );
+    fail(`${name} is not valid JSON: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
@@ -140,15 +134,10 @@ function requireApiKey(kind: HttpKind, apiKey: string | undefined): string {
 }
 
 function resolveKind(raw: string | undefined): HttpKind {
-  if (raw == null)
-    fail(
-      "NANO_AI_KIND is required (chat-completions | messages | responses | ollama | gemini)",
-    );
+  if (raw == null) fail("NANO_AI_KIND is required (chat-completions | messages | responses | ollama | gemini)");
   const kind = KIND_ALIASES[raw.toLowerCase()];
   if (kind == null) {
-    fail(
-      `unknown NANO_AI_KIND=${raw}; expected ${HTTP_KINDS.join(" | ")} (or aliases chat/anthropic/gemini/...)`,
-    );
+    fail(`unknown NANO_AI_KIND=${raw}; expected ${HTTP_KINDS.join(" | ")} (or aliases chat/anthropic/gemini/...)`);
   }
   return kind;
 }
@@ -188,6 +177,15 @@ function resolveReasoningLevel(): ReasoningLevel | undefined {
   return raw as ReasoningLevel;
 }
 
+function resolveServiceTier(): ServiceTier | undefined {
+  const raw = env("NANO_AI_SERVICE_TIER");
+  if (raw == null) return undefined;
+  if (!SERVICE_TIER_SET.has(raw)) {
+    fail(`unknown NANO_AI_SERVICE_TIER=${raw}`);
+  }
+  return raw as ServiceTier;
+}
+
 function loadConfig(): DebugConfig {
   const kind = resolveKind(env("NANO_AI_KIND"));
   const model = env("NANO_AI_MODEL");
@@ -205,10 +203,10 @@ function loadConfig(): DebugConfig {
     temperature: envNumber("NANO_AI_TEMPERATURE"),
     maxOutputTokens: envNumber("NANO_AI_MAX_OUTPUT_TOKENS"),
     reasoningLevel: resolveReasoningLevel(),
+    serviceTier: resolveServiceTier(),
     include: resolveInclude(),
     tools: envJson("NANO_AI_TOOLS") as ToolDefinition[] | undefined,
-    serverTools: envJson("NANO_AI_SERVER_TOOLS") as
-      ServerToolDefinition[] | undefined,
+    serverTools: envJson("NANO_AI_SERVER_TOOLS") as ServerToolDefinition[] | undefined,
   };
 }
 
@@ -221,9 +219,9 @@ function createAdapter(config: DebugConfig): BackendAdapter {
   };
 
   switch (config.kind) {
-    case "delta-completions":{
+    case "delta-completions": {
       const baseUrl = http.baseUrl;
-      if (!baseUrl) throw new Error("delta-completions requires baseUrl")
+      if (!baseUrl) throw new Error("delta-completions requires baseUrl");
       return new DeltaCompletionsAdapter({
         ...http,
         baseUrl,
@@ -279,6 +277,7 @@ function publicConfig(config: DebugConfig): Record<string, unknown> {
     temperature: config.temperature,
     maxOutputTokens: config.maxOutputTokens,
     reasoningLevel: config.reasoningLevel,
+    serviceTier: config.serviceTier,
     include: config.include,
     tools: config.tools,
     serverTools: config.serverTools,
@@ -345,6 +344,7 @@ env:
   NANO_AI_TEMPERATURE       number
   NANO_AI_MAX_OUTPUT_TOKENS number
   NANO_AI_REASONING_LEVEL   none | minimal | low | medium | high | xhigh | max
+  NANO_AI_SERVICE_TIER      auto | default | flex | fast | priority
   NANO_AI_INCLUDE           JSON IncludeSettings (default best_effort for usage/billing/providerMetadata)
   NANO_AI_TOOLS             JSON ToolDefinition[]
   NANO_AI_SERVER_TOOLS      JSON ServerToolDefinition[]
@@ -407,9 +407,7 @@ async function repl(config: DebugConfig, client: AIClient): Promise<void> {
     rl.close();
   });
 
-  stdout.write(
-    `nano-ai debug-cli  kind=${config.kind}  model=${config.model}\n`,
-  );
+  stdout.write(`nano-ai debug-cli  kind=${config.kind}  model=${config.model}\n`);
   stdout.write(`type a prompt, or /help\n`);
 
   const handleLine = async (line: string): Promise<boolean> => {
@@ -486,6 +484,7 @@ const client = createAIClient({
     temperature: config.temperature,
     maxOutputTokens: config.maxOutputTokens,
     reasoningLevel: config.reasoningLevel,
+    serviceTier: config.serviceTier,
     include: config.include,
     tools: config.tools,
     serverTools: config.serverTools,

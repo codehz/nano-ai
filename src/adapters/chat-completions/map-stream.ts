@@ -6,6 +6,7 @@ import { WarningCode } from "../../runtime/errors.js";
 import { textBlock, opaqueItem, mapStopReason } from "../../canonical/index.js";
 import { createStreamingItemSession } from "../../provider/streaming-item-session.js";
 import { usageFromChatCompletions } from "../../provider/usage/index.js";
+import { serviceTierMetadata } from "../../provider/service-tier.js";
 import { createDataLineSseParser } from "../../provider/transport/parser.js";
 import { finalizeStreamTurn } from "../../provider/finalize-stream-turn.js";
 import { OPAQUE_SOURCE } from "../../provider/opaque-sources.js";
@@ -161,6 +162,7 @@ export async function* mapChatCompletionsStream(
       if (chunk.usage) {
         auxiliary.recordUsage(usageFromChatCompletions(chunk.usage), "final", chunk.usage);
       }
+      auxiliary.recordProviderMetadata("stream", serviceTierMetadata(chunk.service_tier));
 
       for (const choice of chunk.choices) {
         if (choice.index !== 0) {

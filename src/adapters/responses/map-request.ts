@@ -9,6 +9,7 @@ import { acceptOpaqueReplay } from "../../provider/opaque-replay.js";
 import { applyPromptCacheFields } from "../../provider/prompt-cache.js";
 import { NormalizedRequestMapper } from "../../provider/request-mapper.js";
 import { mapResponsesReasoning } from "../../provider/reasoning.js";
+import { mapOpenAiServiceTier } from "../../provider/service-tier.js";
 import { OPAQUE_SOURCE } from "../../provider/opaque-sources.js";
 import type {
   CompressRequest,
@@ -330,6 +331,9 @@ export function buildResponsesRequest(
   if (request.metadata) body.metadata = request.metadata;
   if (request.reasoningLevel !== undefined) {
     body.reasoning = mapResponsesReasoning(request.reasoningLevel);
+  }
+  if (request.serviceTier !== undefined) {
+    body.service_tier = mapOpenAiServiceTier(request.serviceTier);
   }
 
   applyPromptCacheFields(body as Record<string, unknown>, request, "responses");

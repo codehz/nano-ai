@@ -322,6 +322,7 @@ describe("exports", () => {
     expect(publicApi.messageItem).toBeFunction();
     expect(publicApi.ResponsesAdapter).toBeFunction();
     expect(publicApi.REASONING_LEVELS).toContain("high");
+    expect(publicApi.SERVICE_TIERS).toContain("fast");
   });
 
   it("should accept custom AdapterKind on BackendAdapter", () => {

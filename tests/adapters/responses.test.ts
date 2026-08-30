@@ -89,6 +89,29 @@ describe("ResponsesAdapter - text streaming", () => {
     expect(result.backend.rawResponseId).toBe("resp-123");
   });
 
+  it("should record applied service_tier from the completed response", async () => {
+    const sse = [
+      'event: response.output_item.added\ndata: {"item":{"id":"m1","type":"message"}}\n\n',
+      'event: response.output_text.done\ndata: {"item_id":"m1","text":"ok"}\n\n',
+      `event: response.completed\ndata: ${JSON.stringify({
+        response: {
+          id: "resp-fast",
+          model: "gpt-4o",
+          output: [{ id: "m1", type: "message" }],
+          service_tier: "priority",
+        },
+      })}\n\n`,
+    ];
+
+    const adapter = new ResponsesAdapter({
+      apiKey: "test-key",
+      fetch: mockFetch(sseResponse(...sse)),
+    });
+
+    const result = await collectStream(adapter.stream(makeRequest({ serviceTier: "fast" })));
+    expect(result.auxiliary?.providerMetadata?.serviceTier).toBe("priority");
+  });
+
   it("should preserve UTF-8 characters split across transport chunks", async () => {
     const encoder = new TextEncoder();
     const prefix = encoder.encode(
@@ -562,6 +585,37 @@ describe("ResponsesAdapter - request building", () => {
     await collectStream(adapter.stream(makeRequest({ reasoningLevel: "high" })));
     const body = captured.current as Record<string, unknown> | null;
     expect(body?.reasoning).toEqual({ effort: "medium", summary: "detailed" });
+  });
+
+  it("should omit service_tier when serviceTier is unset", async () => {
+    const { captured, fetch } = captureRequest();
+    const adapter = new ResponsesAdapter({ apiKey: "test-key", fetch });
+
+    await collectStream(adapter.stream(makeRequest()));
+    const body = captured.current as Record<string, unknown> | null;
+    expect(body).not.toHaveProperty("service_tier");
+  });
+
+  it("should map serviceTier to service_tier", async () => {
+    const { captured, fetch } = captureRequest();
+    const adapter = new ResponsesAdapter({ apiKey: "test-key", fetch });
+
+    await collectStream(adapter.stream(makeRequest({ serviceTier: "fast" })));
+    const body = captured.current as Record<string, unknown> | null;
+    expect(body?.service_tier).toBe("fast");
+  });
+
+  it("should let extraBody override mapped service_tier", async () => {
+    const { captured, fetch } = captureRequest();
+    const adapter = new ResponsesAdapter({
+      apiKey: "test-key",
+      fetch,
+      extraBody: { service_tier: "flex" },
+    });
+
+    await collectStream(adapter.stream(makeRequest({ serviceTier: "fast" })));
+    const body = captured.current as Record<string, unknown> | null;
+    expect(body?.service_tier).toBe("flex");
   });
 
   it("should include temperature and max_output_tokens", async () => {

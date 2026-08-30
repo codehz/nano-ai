@@ -394,6 +394,18 @@ describe("OllamaAdapter - request building", () => {
     });
   });
 
+  it("should reject serviceTier for ollama", async () => {
+    const adapter = new OllamaAdapter({
+      fetch: async () => {
+        throw new Error("should not fetch");
+      },
+    });
+
+    await expect(collectStream(adapter.stream(makeRequest({ serviceTier: "fast" })))).rejects.toMatchObject({
+      code: "UNSUPPORTED_SERVICE_TIER",
+    });
+  });
+
   it("should pass temperature and maxOutputTokens as options", async () => {
     let capturedBody: string | undefined;
 

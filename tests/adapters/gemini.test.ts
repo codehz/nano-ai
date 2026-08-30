@@ -579,6 +579,20 @@ describe("GeminiAdapter - request building", () => {
     );
   });
 
+  it("should reject serviceTier", async () => {
+    const adapter = new GeminiAdapter({
+      apiKey: "test-key",
+      fetch: async () => {
+        throw new Error("should not fetch");
+      },
+    });
+
+    await expect(collectStream(adapter.stream(makeRequest({ serviceTier: "fast" })))).rejects.toMatchObject({
+      name: "AIRequestError",
+      code: "UNSUPPORTED_SERVICE_TIER",
+    });
+  });
+
   it("should apply headers and extraBody overrides", async () => {
     let capturedBody: Record<string, unknown> | undefined;
     let capturedHeaders: Record<string, string> | undefined;

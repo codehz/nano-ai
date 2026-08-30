@@ -80,6 +80,7 @@ export type MessagesSSEEvent =
           output_tokens: number;
           cache_creation_input_tokens?: number;
           cache_read_input_tokens?: number;
+          service_tier?: string;
         };
       };
     }
@@ -95,7 +96,7 @@ export type MessagesAPIMessageResponse = {
   content: MessagesAPIContentBlock[];
   stop_reason?: "end_turn" | "max_tokens" | "tool_use" | string;
   stop_sequence?: string | null;
-  usage: { input_tokens: number; output_tokens: number };
+  usage: { input_tokens: number; output_tokens: number; service_tier?: string };
 };
 
 /** 用 response 级别的命名空间合成 content block 的 item ID，避免多轮工具循环 ID 碰撞 */
@@ -143,8 +144,9 @@ export function buildStreamMetadata(options: {
   message?: MessagesAPIMessageResponse;
   stopReason?: string;
   stopSequence?: string | null;
+  serviceTier?: string;
 }): Record<string, unknown> {
-  const { apiVersion, message, stopReason, stopSequence } = options;
+  const { apiVersion, message, stopReason, stopSequence, serviceTier } = options;
   const metadata: Record<string, unknown> = {
     apiVersion,
   };
@@ -164,6 +166,8 @@ export function buildStreamMetadata(options: {
       sequence: stopSequence,
     };
   }
+
+  if (serviceTier) metadata.serviceTier = serviceTier;
 
   return metadata;
 }
@@ -226,6 +230,7 @@ export async function* mapMessagesStream(
   let stopReason: string | undefined;
   let stopSequence: string | null | undefined;
   let rawResponseId = "";
+  let appliedServiceTier: string | undefined;
 
   if (request.include?.providerMetadata !== "off") {
     const headerMetadata = pickProviderHeaders(headers);
@@ -261,6 +266,9 @@ export async function* mapMessagesStream(
         case "message_start": {
           messageResponse = sseEvent.data.message;
           rawResponseId = messageResponse.id;
+          if (typeof messageResponse.usage.service_tier === "string") {
+            appliedServiceTier = messageResponse.usage.service_tier;
+          }
           continue;
         }
 
@@ -369,6 +377,9 @@ export async function* mapMessagesStream(
           const u = sseEvent.data.usage;
           if (u) {
             auxiliary.recordUsage(usageFromAnthropicMessages(u), "stream", u);
+            if (typeof u.service_tier === "string") {
+              appliedServiceTier = u.service_tier;
+            }
           }
           continue;
         }
@@ -388,6 +399,7 @@ export async function* mapMessagesStream(
         message: messageResponse,
         stopReason,
         stopSequence,
+        serviceTier: appliedServiceTier,
       }),
     );
   }

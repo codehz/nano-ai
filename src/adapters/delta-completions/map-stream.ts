@@ -46,6 +46,12 @@ export async function* mapDeltaCompletionsStream(
       WarningCode.CAPABILITY_DOWNGRADE,
     );
   }
+  if (request.serviceTier !== undefined) {
+    yield factory.responseWarning(
+      "Request serviceTier is not supported by the Delta Completions adapter",
+      WarningCode.CAPABILITY_DOWNGRADE,
+    );
+  }
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",

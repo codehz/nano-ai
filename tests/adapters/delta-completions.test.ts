@@ -163,6 +163,17 @@ describe("DeltaCompletionsAdapter", () => {
     expect(result.warnings?.some((w) => w.code === WarningCode.CAPABILITY_DOWNGRADE)).toBe(true);
   });
 
+  it("warns and omits request serviceTier", async () => {
+    const result = await collectStream(
+      adapter(mockFetch(sseResponse('data: {"choices":[{"delta":{"content":"ok"}}]}\n'))).stream(
+        makeRequest({ serviceTier: "fast" }),
+      ),
+    );
+    expect(result.text).toBe("ok");
+    expect(result.warnings?.some((w) => w.code === WarningCode.CAPABILITY_DOWNGRADE)).toBe(true);
+    expect(result.warnings?.some((w) => w.message.includes("serviceTier"))).toBe(true);
+  });
+
   it("rejects tools in the request so ChatCompletionsAdapter is not silently substituted", async () => {
     await expect(
       collectStream(

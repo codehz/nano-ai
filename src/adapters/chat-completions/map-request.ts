@@ -7,6 +7,7 @@ import { contentBlocksToText } from "../../canonical/index.js";
 import { acceptOpaqueReplay } from "../../provider/opaque-replay.js";
 import { NormalizedRequestMapper } from "../../provider/request-mapper.js";
 import { mapChatCompletionsReasoningEffort } from "../../provider/reasoning.js";
+import { mapOpenAiServiceTier } from "../../provider/service-tier.js";
 import { mapOpenAiFunctionTool } from "../../provider/openai-tools.js";
 import { OPAQUE_SOURCE } from "../../provider/opaque-sources.js";
 import { applyPromptCacheFields } from "../../provider/prompt-cache.js";
@@ -308,6 +309,9 @@ export function buildChatCompletionsRequest(
   if (request.metadata) body.metadata = request.metadata;
   if (request.reasoningLevel !== undefined) {
     body.reasoning_effort = mapChatCompletionsReasoningEffort(request.reasoningLevel);
+  }
+  if (request.serviceTier !== undefined) {
+    body.service_tier = mapOpenAiServiceTier(request.serviceTier);
   }
 
   applyPromptCacheFields(body as Record<string, unknown>, request, "chat-completions");

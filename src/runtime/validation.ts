@@ -6,7 +6,7 @@
  */
 
 import type { AIRequest } from "../types/index.js";
-import { REASONING_LEVEL_SET } from "../types/request.js";
+import { REASONING_LEVEL_SET, SERVICE_TIER_SET } from "../types/request.js";
 import { AIRequestError } from "./errors.js";
 
 export type ValidationIssue = {
@@ -696,6 +696,18 @@ export function validateRequest(request: AIRequest): ValidationIssue[] {
         "reasoningLevel",
         "REASONING_LEVEL_INVALID",
         "reasoningLevel must be one of: none, minimal, low, medium, high, xhigh, max",
+      );
+    }
+  }
+
+  // serviceTier 枚举
+  if (request.serviceTier !== undefined) {
+    if (typeof request.serviceTier !== "string" || !SERVICE_TIER_SET.has(request.serviceTier)) {
+      pushIssue(
+        issues,
+        "serviceTier",
+        "SERVICE_TIER_INVALID",
+        "serviceTier must be one of: auto, default, flex, fast, priority",
       );
     }
   }

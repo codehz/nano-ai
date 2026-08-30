@@ -79,6 +79,15 @@ export type {
   GeminiThinkingLevel,
   GeminiThinkingConfig,
 } from "./reasoning.js";
+export {
+  SERVICE_TIERS,
+  SERVICE_TIER_SET,
+  assertUnsupportedServiceTier,
+  mapOpenAiServiceTier,
+  mapMessagesServiceTier,
+  serviceTierMetadata,
+} from "./service-tier.js";
+export type { OpenAIServiceTier, MessagesServiceTier } from "./service-tier.js";
 export { NormalizedRequestMapper } from "./request-mapper.js";
 export { parseJsonLooseObject, parseJsonStrictObject } from "./json-parse.js";
 export { mapOpenAiFunctionTool } from "./openai-tools.js";

@@ -9,6 +9,7 @@
 import { HttpAdapterBase } from "../../provider/http-adapter.js";
 import { opaqueItem } from "../../canonical/index.js";
 import { usageFromOpenAIResponses } from "../../provider/usage/index.js";
+import { serviceTierMetadata } from "../../provider/service-tier.js";
 import { createSseJsonParser } from "../../provider/transport/parser.js";
 import { postProviderJson } from "../../provider/transport/open-stream.js";
 import { finalizeStreamTurn } from "../../provider/finalize-stream-turn.js";
@@ -146,6 +147,7 @@ export class ResponsesAdapter extends HttpAdapterBase implements ContextCompress
       if (completedResponse.usage) {
         auxiliary.recordUsage(usageFromOpenAIResponses(completedResponse.usage), "final", completedResponse.usage);
       }
+      auxiliary.recordProviderMetadata("stream", serviceTierMetadata(completedResponse.service_tier));
     }
 
     const stopReason = completedResponse ? inferResponsesStopReason(completedResponse) : undefined;

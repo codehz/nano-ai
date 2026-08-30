@@ -261,6 +261,17 @@ describe("validateRequest", () => {
     expect(issues.some((i) => i.code === "REASONING_LEVEL_INVALID")).toBe(true);
   });
 
+  it("should accept all valid serviceTier values", () => {
+    for (const tier of ["auto", "default", "flex", "fast", "priority"] as const) {
+      expect(validateRequest(validRequest({ serviceTier: tier }))).toHaveLength(0);
+    }
+  });
+
+  it("should detect invalid serviceTier", () => {
+    const issues = validateRequest(validRequest({ serviceTier: "turbo" as "fast" }));
+    expect(issues.some((i) => i.code === "SERVICE_TIER_INVALID")).toBe(true);
+  });
+
   it("should accept valid serverTools", () => {
     expect(
       validateRequest(
@@ -388,6 +399,20 @@ describe("normalizeRequest", () => {
       defaults: { reasoningLevel: "low" },
     });
     expect(fromRequest.reasoningLevel).toBe("high");
+  });
+
+  it("should merge serviceTier defaults with request winning", () => {
+    const fromDefaults = normalizeRequest(validRequest(), {
+      model: "gpt-4",
+      defaults: { serviceTier: "flex" },
+    });
+    expect(fromDefaults.serviceTier).toBe("flex");
+
+    const fromRequest = normalizeRequest(validRequest({ serviceTier: "fast" }), {
+      model: "gpt-4",
+      defaults: { serviceTier: "flex" },
+    });
+    expect(fromRequest.serviceTier).toBe("fast");
   });
 
   it("should fill include defaults when not provided", () => {

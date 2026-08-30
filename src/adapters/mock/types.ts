@@ -18,6 +18,7 @@ import type {
   ServerToolCallItem,
   ServerToolDiscoveryItem,
   ServerToolResultItem,
+  ServiceTier,
   StopReason,
   ToolCallItem,
   ToolResultItem,
@@ -70,6 +71,8 @@ export type MockHandlerContext = {
   signal?: AbortSignal;
   /** 当前请求的 portable reasoningLevel（若设置）。 */
   reasoningLevel?: ReasoningLevel;
+  /** 当前请求的 portable serviceTier（若设置）。 */
+  serviceTier?: ServiceTier;
 };
 
 /** 在 Mock 流中发出 warning。 */

@@ -83,6 +83,22 @@ describe("ChatCompletionsAdapter - text streaming", () => {
     expect(result.stopReason).toBe("end_turn");
   });
 
+  it("should record applied service_tier from stream chunks", async () => {
+    const chunks = [
+      'data: {"id":"chatcmpl-tier","choices":[{"index":0,"delta":{"content":"ok"},"finish_reason":"stop"}],"service_tier":"default"}\n',
+      "data: [DONE]\n",
+    ];
+
+    const adapter = new ChatCompletionsAdapter({
+      apiKey: "test-key",
+      fetch: async () => sseResponse(...chunks),
+    });
+
+    const result = await collectStream(adapter.stream(makeRequest({ serviceTier: "fast" })));
+    expect(result.text).toBe("ok");
+    expect(result.auxiliary?.providerMetadata?.serviceTier).toBe("default");
+  });
+
   it("should handle streaming without explicit role chunk", async () => {
     const chunks = [
       'data: {"id":"chatcmpl-124","choices":[{"index":0,"delta":{"content":"Hi"},"finish_reason":null}]}\n',
@@ -657,6 +673,37 @@ describe("ChatCompletionsAdapter - request building", () => {
     await collectStream(adapter.stream(makeRequest({ reasoningLevel: "high" })));
     const body = captured.current as Record<string, unknown> | null;
     expect(body?.reasoning_effort).toBe("medium");
+  });
+
+  it("should omit service_tier when serviceTier is unset", async () => {
+    const { captured, fetch } = captureRequest();
+    const adapter = new ChatCompletionsAdapter({ apiKey: "test-key", fetch });
+
+    await collectStream(adapter.stream(makeRequest()));
+    const body = captured.current as Record<string, unknown> | null;
+    expect(body).not.toHaveProperty("service_tier");
+  });
+
+  it("should map serviceTier to service_tier", async () => {
+    const { captured, fetch } = captureRequest();
+    const adapter = new ChatCompletionsAdapter({ apiKey: "test-key", fetch });
+
+    await collectStream(adapter.stream(makeRequest({ serviceTier: "priority" })));
+    const body = captured.current as Record<string, unknown> | null;
+    expect(body?.service_tier).toBe("priority");
+  });
+
+  it("should let extraBody override mapped service_tier", async () => {
+    const { captured, fetch } = captureRequest();
+    const adapter = new ChatCompletionsAdapter({
+      apiKey: "test-key",
+      fetch,
+      extraBody: { service_tier: "default" },
+    });
+
+    await collectStream(adapter.stream(makeRequest({ serviceTier: "fast" })));
+    const body = captured.current as Record<string, unknown> | null;
+    expect(body?.service_tier).toBe("default");
   });
 
   it("should merge custom headers and extraBody from constructor options", async () => {

@@ -34,6 +34,27 @@ describe("MockAdapter", () => {
     expect(seen).toBe("high");
   });
 
+  it("should expose serviceTier in handler context", async () => {
+    let seen: string | undefined;
+    const adapter = new MockAdapter({
+      handler: async function* (_request, context) {
+        seen = context.serviceTier;
+        yield { type: "message", content: "ok" };
+      },
+    });
+
+    await collectStream(
+      adapter.stream({
+        model: "mock-model",
+        requestId: "mock-service-tier",
+        serviceTier: "fast",
+        input: [{ type: "message", role: "user", content: [textBlock("hi")] }],
+      }),
+    );
+
+    expect(seen).toBe("fast");
+  });
+
   it("should script a tool-calling turn and expose turn metadata", async () => {
     const adapter = new MockAdapter({
       handler: async function* (request, context) {
