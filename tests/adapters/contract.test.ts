@@ -115,6 +115,42 @@ function canonicalLedgerFromReplay(replay: readonly ReplayItem[]): OutputItem[] 
   return replay.filter((item): item is OutputItem => item.type !== "opaque") as OutputItem[];
 }
 
+/**
+ * 对照公式（E 强制）：collectStream.output ≡ replay 去掉 opaque 的子集；
+ * text / toolCalls / serverTool* 由 output 派生一致。
+ * response.completed 故意不带 output（非 bug）；完整 AIResponse 以 collectStream 为准。
+ */
+function assertDualTrack(result: Awaited<ReturnType<typeof collectStream>>, label: string) {
+  const ledger = canonicalLedgerFromReplay(result.replay);
+  expect(result.output, `${label} output ≡ non-opaque replay`).toEqual(ledger);
+  expect(result.toolCalls, `${label} toolCalls`).toEqual(result.output.filter((item) => item.type === "tool_call"));
+  expect(result.text, `${label} text`).toBe(extractText(result.output));
+  expect(result.serverToolCalls ?? [], `${label} serverToolCalls`).toEqual(
+    result.output.filter((item) => item.type === "server_tool_call"),
+  );
+  expect(result.serverToolResults ?? [], `${label} serverToolResults`).toEqual(
+    result.output.filter((item) => item.type === "server_tool_result"),
+  );
+}
+
+/**
+ * opaque 续接材料挂在 replay 末尾；output 不含 opaque（除非 response.completed.opaqueOutput）。
+ * 契约：replay 中 opaque 仅允许出现在所有非 opaque item 之后（恒尾置）。
+ */
+function assertOpaqueTrailingInReplay(result: Awaited<ReturnType<typeof collectStream>>, label: string) {
+  const types = result.replay.map((item) => item.type);
+  const firstOpaque = types.indexOf("opaque");
+  if (firstOpaque === -1) return;
+  expect(
+    types.slice(firstOpaque).every((type) => type === "opaque"),
+    `${label} opaque must be trailing in replay`,
+  ).toBe(true);
+  expect(
+    result.output.every((item) => item.type !== "opaque"),
+    `${label} output must not include replay opaque envelopes`,
+  ).toBe(true);
+}
+
 function countTrailingRole(messages: Array<{ role?: string }>, role: string): number {
   let count = 0;
   for (let i = messages.length - 1; i >= 0; i--) {
@@ -1225,24 +1261,6 @@ describe("A→C opaque round-trip matrix", () => {
 // ── A→E 双轨一致性（事件权威；E 强制等价）────────────────────
 
 describe("A→E dual-track ledger", () => {
-  /**
-   * 对照公式（E 强制）：collectStream.output ≡ replay 去掉 opaque 的子集；
-   * text / toolCalls / serverTool* 由 output 派生一致。
-   * response.completed 故意不带 output（非 bug）；完整 AIResponse 以 collectStream 为准。
-   */
-  function assertDualTrack(result: Awaited<ReturnType<typeof collectStream>>, label: string) {
-    const ledger = canonicalLedgerFromReplay(result.replay);
-    expect(result.output, `${label} output ≡ non-opaque replay`).toEqual(ledger);
-    expect(result.toolCalls, `${label} toolCalls`).toEqual(result.output.filter((item) => item.type === "tool_call"));
-    expect(result.text, `${label} text`).toBe(extractText(result.output));
-    expect(result.serverToolCalls ?? [], `${label} serverToolCalls`).toEqual(
-      result.output.filter((item) => item.type === "server_tool_call"),
-    );
-    expect(result.serverToolResults ?? [], `${label} serverToolResults`).toEqual(
-      result.output.filter((item) => item.type === "server_tool_result"),
-    );
-  }
-
   it("A→E dual-track: chat-completions text+tool_call ledger matches events", async () => {
     const chunks = [
       'data: {"id":"chat-dual","choices":[{"index":0,"delta":{"role":"assistant","content":"Hi"},"finish_reason":null}]}\n',
@@ -1420,24 +1438,6 @@ describe("A→E dual-track ledger", () => {
     expect(result.toolCalls).toHaveLength(1);
     expect(result.text).toBe("Hi");
   });
-
-  /**
-   * opaque 续接材料挂在 replay 末尾；output 不含 opaque（除非 response.completed.opaqueOutput）。
-   * 契约：replay 中 opaque 仅允许出现在所有非 opaque item 之后（恒尾置）。
-   */
-  function assertOpaqueTrailingInReplay(result: Awaited<ReturnType<typeof collectStream>>, label: string) {
-    const types = result.replay.map((item) => item.type);
-    const firstOpaque = types.indexOf("opaque");
-    if (firstOpaque === -1) return;
-    expect(
-      types.slice(firstOpaque).every((type) => type === "opaque"),
-      `${label} opaque must be trailing in replay`,
-    ).toBe(true);
-    expect(
-      result.output.every((item) => item.type !== "opaque"),
-      `${label} output must not include replay opaque envelopes`,
-    ).toBe(true);
-  }
 
   it("A→E dual-track: opaque is trailing in replay across HTTP adapters", async () => {
     const cases = await Promise.all([

@@ -205,7 +205,7 @@ export function createEventFactory(state: EventFactoryState) {
 
     /** 返回当前已记录的 warning 副本。 */
     get warnings(): StreamWarning[] {
-      return warnings.map((w) => ({ ...w }));
+      return warnings.map((w) => Object.assign({}, w));
     },
   };
 }
